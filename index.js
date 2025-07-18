@@ -335,6 +335,23 @@ async function processFileWithTextract(bucketName, objectKey) {
   }
 }
 
+function getEntityCategory(entityType) {
+  // Categorize AWS Comprehend entity types for better organization
+  const categories = {
+    'PERSON': 'People',
+    'LOCATION': 'Places',
+    'ORGANIZATION': 'Organizations',
+    'COMMERCIAL_ITEM': 'Products & Services',
+    'EVENT': 'Events',
+    'DATE': 'Dates & Times',
+    'QUANTITY': 'Numbers & Quantities',
+    'TITLE': 'Titles & Positions',
+    'OTHER': 'Other'
+  };
+  
+  return categories[entityType] || 'Other';
+}
+
 async function processTextWithComprehend(text) {
   try {
     // Comprehend has a 5000 character limit for most operations
@@ -400,21 +417,56 @@ async function processTextWithComprehend(text) {
         LanguageCode: results.language === 'unknown' ? 'en' : results.language
       }).promise();
       
+      // Enhanced entity mapping with detailed information
       results.entities = entityResult.Entities.map(entity => ({
         Text: entity.Text,
         Type: entity.Type,
         Score: entity.Score,
         BeginOffset: entity.BeginOffset,
-        EndOffset: entity.EndOffset
+        EndOffset: entity.EndOffset,
+        // Additional context information
+        Length: entity.EndOffset - entity.BeginOffset,
+        Category: getEntityCategory(entity.Type),
+        Confidence: entity.Score >= 0.8 ? 'High' : entity.Score >= 0.5 ? 'Medium' : 'Low'
       }));
+      
+      // Group entities by type for better organization
+      const entitySummary = {};
+      results.entities.forEach(entity => {
+        if (!entitySummary[entity.Type]) {
+          entitySummary[entity.Type] = [];
+        }
+        entitySummary[entity.Type].push({
+          text: entity.Text,
+          score: entity.Score,
+          confidence: entity.Confidence
+        });
+      });
+      
+      results.entitySummary = entitySummary;
+      results.entityStats = {
+        totalEntities: results.entities.length,
+        uniqueTypes: [...new Set(results.entities.map(e => e.Type))],
+        highConfidenceEntities: results.entities.filter(e => e.Score >= 0.8).length,
+        categories: [...new Set(results.entities.map(e => e.Category))]
+      };
       
       log('DEBUG', 'Entity detection completed', {
         entitiesCount: results.entities.length,
-        types: [...new Set(results.entities.map(e => e.Type))]
+        types: results.entityStats.uniqueTypes,
+        categories: results.entityStats.categories,
+        highConfidence: results.entityStats.highConfidenceEntities
       });
     } catch (error) {
       log('WARN', 'Entity detection failed', { error: error.message });
       results.entities = [];
+      results.entitySummary = {};
+      results.entityStats = {
+        totalEntities: 0,
+        uniqueTypes: [],
+        highConfidenceEntities: 0,
+        categories: []
+      };
     }
     
     // Key phrases extraction
@@ -479,6 +531,13 @@ async function processTextWithComprehend(text) {
       languageScore: 0,
       sentiment: null,
       entities: [],
+      entitySummary: {},
+      entityStats: {
+        totalEntities: 0,
+        uniqueTypes: [],
+        highConfidenceEntities: 0,
+        categories: []
+      },
       keyPhrases: [],
       syntax: [],
       processingTime: 0,

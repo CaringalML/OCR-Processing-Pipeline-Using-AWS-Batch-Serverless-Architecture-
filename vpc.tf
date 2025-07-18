@@ -389,6 +389,39 @@ resource "aws_vpc_endpoint" "textract" {
   }
 }
 
+# Comprehend VPC Endpoint (CRITICAL for text analysis)
+resource "aws_vpc_endpoint" "comprehend" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.comprehend"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = "*"
+        Action = [
+          "comprehend:DetectDominantLanguage",
+          "comprehend:DetectEntities",
+          "comprehend:DetectKeyPhrases",
+          "comprehend:DetectSentiment",
+          "comprehend:DetectSyntax",
+          "comprehend:DetectPiiEntities"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.project_name}-comprehend-endpoint"
+  }
+}
+
 # Optional: SSM VPC Endpoints (for debugging/troubleshooting)
 resource "aws_vpc_endpoint" "ssm" {
   count = var.enable_ssm_endpoints ? 1 : 0

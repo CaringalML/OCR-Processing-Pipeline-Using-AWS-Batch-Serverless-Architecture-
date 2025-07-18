@@ -3,6 +3,22 @@ import boto3
 import os
 from datetime import datetime
 from boto3.dynamodb.conditions import Key, Attr
+from decimal import Decimal
+
+def decimal_to_json(obj):
+    """Convert Decimal objects to JSON-serializable types"""
+    if isinstance(obj, Decimal):
+        # Convert to int if it's a whole number, otherwise to float
+        if obj % 1 == 0:
+            return int(obj)
+        else:
+            return float(obj)
+    elif isinstance(obj, dict):
+        return {k: decimal_to_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_json(item) for item in obj]
+    else:
+        return obj
 
 def lambda_handler(event, context):
     """
@@ -62,55 +78,39 @@ def lambda_handler(event, context):
                     })
                 }
             
-            file_metadata = metadata_response['Items'][0]
+            file_metadata = decimal_to_json(metadata_response['Items'][0])
             
             # Get processing results
             results_response = results_table.get_item(
                 Key={'file_id': file_id}
             )
             
-            processing_result = results_response.get('Item', {})
+            processing_result = decimal_to_json(results_response.get('Item', {}))
             
             # Generate CloudFront URL
             cloudfront_url = f"https://{cloudfront_domain}/{file_metadata['s3_key']}"
             
-            # Build response data with simplified types
+            # Build response data
             response_data = {
                 'fileId': file_id,
-                'fileName': str(file_metadata.get('file_name', '')),
-                'uploadTimestamp': str(file_metadata.get('upload_timestamp', '')),
-                'processingStatus': str(file_metadata.get('processing_status', '')),
-                'fileSize': int(file_metadata.get('file_size', 0)),
-                'contentType': str(file_metadata.get('content_type', '')),
+                'fileName': file_metadata.get('file_name', ''),
+                'uploadTimestamp': file_metadata.get('upload_timestamp', ''),
+                'processingStatus': file_metadata.get('processing_status', ''),
+                'fileSize': file_metadata.get('file_size', 0),
+                'contentType': file_metadata.get('content_type', ''),
                 'cloudFrontUrl': cloudfront_url
             }
             
             # Add processing results if available
             if processing_result:
                 response_data['extractedText'] = processing_result.get('extracted_text', '')
-                response_data['analysis'] = {
-                    'wordCount': int(processing_result.get('analysis', {}).get('word_count', 0)),
-                    'characterCount': int(processing_result.get('analysis', {}).get('character_count', 0)),
-                    'lineCount': int(processing_result.get('analysis', {}).get('line_count', 0)),
-                    'confidence': float(processing_result.get('analysis', {}).get('confidence', 0))
-                }
-                response_data['processingDuration'] = str(processing_result.get('processing_duration', ''))
+                response_data['analysis'] = processing_result.get('analysis', {})
+                response_data['processingDuration'] = processing_result.get('processing_duration', '')
                 
                 # Add Comprehend analysis if available
                 comprehend_analysis = processing_result.get('comprehend_analysis', {})
                 if comprehend_analysis:
-                    response_data['comprehendAnalysis'] = {
-                        'language': comprehend_analysis.get('language', 'unknown'),
-                        'languageScore': float(comprehend_analysis.get('languageScore', 0)),
-                        'sentiment': comprehend_analysis.get('sentiment', {}),
-                        'entities': comprehend_analysis.get('entities', []),
-                        'keyPhrases': comprehend_analysis.get('keyPhrases', []),
-                        'syntax': comprehend_analysis.get('syntax', []),
-                        'processingTime': str(comprehend_analysis.get('processingTime', 0)),
-                        'analyzedTextLength': int(comprehend_analysis.get('analyzedTextLength', 0)),
-                        'originalTextLength': int(comprehend_analysis.get('originalTextLength', 0)),
-                        'truncated': bool(comprehend_analysis.get('truncated', False))
-                    }
+                    response_data['comprehendAnalysis'] = comprehend_analysis
             
         else:
             # Query files by status
@@ -128,7 +128,7 @@ def lambda_handler(event, context):
                     ScanIndexForward=False  # Most recent first
                 )
             
-            items = response.get('Items', [])
+            items = decimal_to_json(response.get('Items', []))
             
             # Enrich items with CloudFront URLs and results
             processed_items = []
@@ -138,49 +138,33 @@ def lambda_handler(event, context):
                     results_response = results_table.get_item(
                         Key={'file_id': item['file_id']}
                     )
-                    processing_result = results_response.get('Item', {})
+                    processing_result = decimal_to_json(results_response.get('Item', {}))
                 else:
                     processing_result = {}
                 
                 # Generate CloudFront URL
                 cloudfront_url = f"https://{cloudfront_domain}/{item['s3_key']}"
                 
-                # Build item data with simplified types
+                # Build item data
                 item_data = {
-                    'fileId': str(item['file_id']),
-                    'fileName': str(item.get('file_name', '')),
-                    'uploadTimestamp': str(item.get('upload_timestamp', '')),
-                    'processingStatus': str(item.get('processing_status', '')),
-                    'fileSize': int(item.get('file_size', 0)),
-                    'contentType': str(item.get('content_type', '')),
+                    'fileId': item['file_id'],
+                    'fileName': item.get('file_name', ''),
+                    'uploadTimestamp': item.get('upload_timestamp', ''),
+                    'processingStatus': item.get('processing_status', ''),
+                    'fileSize': item.get('file_size', 0),
+                    'contentType': item.get('content_type', ''),
                     'cloudFrontUrl': cloudfront_url
                 }
                 
                 # Add processing results if available
                 if processing_result and item.get('processing_status') == 'processed':
                     item_data['extractedText'] = processing_result.get('extracted_text', '')
-                    item_data['analysis'] = {
-                        'wordCount': int(processing_result.get('analysis', {}).get('word_count', 0)),
-                        'characterCount': int(processing_result.get('analysis', {}).get('character_count', 0)),
-                        'lineCount': int(processing_result.get('analysis', {}).get('line_count', 0)),
-                        'confidence': float(processing_result.get('analysis', {}).get('confidence', 0))
-                    }
+                    item_data['analysis'] = processing_result.get('analysis', {})
                     
                     # Add Comprehend analysis if available
                     comprehend_analysis = processing_result.get('comprehend_analysis', {})
                     if comprehend_analysis:
-                        item_data['comprehendAnalysis'] = {
-                            'language': comprehend_analysis.get('language', 'unknown'),
-                            'languageScore': float(comprehend_analysis.get('languageScore', 0)),
-                            'sentiment': comprehend_analysis.get('sentiment', {}),
-                            'entities': comprehend_analysis.get('entities', []),
-                            'keyPhrases': comprehend_analysis.get('keyPhrases', []),
-                            'syntax': comprehend_analysis.get('syntax', []),
-                            'processingTime': str(comprehend_analysis.get('processingTime', 0)),
-                            'analyzedTextLength': int(comprehend_analysis.get('analyzedTextLength', 0)),
-                            'originalTextLength': int(comprehend_analysis.get('originalTextLength', 0)),
-                            'truncated': bool(comprehend_analysis.get('truncated', False))
-                        }
+                        item_data['comprehendAnalysis'] = comprehend_analysis
                 
                 processed_items.append(item_data)
             
