@@ -125,12 +125,32 @@ async function processS3File() {
       confidence: extractedData.confidence
     });
     
-    // Process extracted text with AWS Comprehend
-    let comprehendData = {};
+    // Format the extracted text
+    let formattedTextData = {};
+    let textForComprehend = extractedData.text;
+    
     if (extractedData.text && extractedData.text.trim().length > 0) {
-      log('INFO', 'Starting Comprehend analysis');
+      log('INFO', 'Formatting extracted text');
+      formattedTextData = formatExtractedText(extractedData.text);
+      
+      // Use the formatted text for Comprehend analysis
+      textForComprehend = formattedTextData.formatted || extractedData.text;
+      
+      log('INFO', 'Text formatting completed', {
+        originalChars: formattedTextData.stats.originalChars,
+        cleanedChars: formattedTextData.stats.cleanedChars,
+        paragraphs: formattedTextData.stats.paragraphCount,
+        sentences: formattedTextData.stats.sentenceCount,
+        reduction: `${formattedTextData.stats.reductionPercent}%`
+      });
+    }
+    
+    // Process formatted text with AWS Comprehend
+    let comprehendData = {};
+    if (textForComprehend && textForComprehend.trim().length > 0) {
+      log('INFO', 'Starting Comprehend analysis on formatted text');
       const comprehendStartTime = Date.now();
-      comprehendData = await processTextWithComprehend(extractedData.text);
+      comprehendData = await processTextWithComprehend(textForComprehend);
       const comprehendTime = (Date.now() - comprehendStartTime) / 1000;
       
       log('INFO', 'Comprehend analysis completed', {
@@ -153,6 +173,12 @@ async function processS3File() {
       content_type: contentType,
       processing_duration: `${totalProcessingTime.toFixed(2)} seconds`,
       extracted_text: extractedData.text,
+      formatted_text: formattedTextData.formatted || extractedData.text,
+      text_formatting: {
+        paragraphs: formattedTextData.paragraphs || [],
+        stats: formattedTextData.stats || {},
+        hasFormatting: !!formattedTextData.formatted
+      },
       analysis: {
         word_count: extractedData.wordCount,
         character_count: extractedData.text.length,
@@ -161,7 +187,7 @@ async function processS3File() {
       },
       comprehend_analysis: comprehendData,
       metadata: {
-        processor_version: '2.1.0',
+        processor_version: '2.2.0',
         batch_job_id: process.env.AWS_BATCH_JOB_ID || 'unknown',
         textract_job_id: extractedData.jobId,
         textract_duration: `${textractTime.toFixed(2)} seconds`,
@@ -350,6 +376,123 @@ function getEntityCategory(entityType) {
   };
   
   return categories[entityType] || 'Other';
+}
+
+function formatExtractedText(rawText) {
+  try {
+    if (!rawText || typeof rawText !== 'string') {
+      return {
+        formatted: '',
+        paragraphs: [],
+        stats: { paragraphCount: 0, sentenceCount: 0, cleanedChars: 0 }
+      };
+    }
+    
+    // Step 1: Clean up basic formatting issues
+    let cleaned = rawText
+      // Remove multiple consecutive newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Remove carriage returns
+      .replace(/\r/g, '')
+      // Remove tabs and replace with spaces
+      .replace(/\t/g, ' ')
+      // Remove multiple consecutive spaces
+      .replace(/ {2,}/g, ' ')
+      // Remove leading/trailing whitespace from each line
+      .split('\n')
+      .map(line => line.trim())
+      .join('\n')
+      // Remove empty lines at start and end
+      .trim();
+    
+    // Step 2: Detect and format paragraphs
+    const lines = cleaned.split('\n').filter(line => line.length > 0);
+    const paragraphs = [];
+    let currentParagraph = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const nextLine = lines[i + 1];
+      
+      // Check if line is likely a paragraph break
+      const isEndOfSentence = /[.!?]$/.test(line);
+      const isShortLine = line.length < 50;
+      const nextLineStartsCapital = nextLine && /^[A-Z]/.test(nextLine);
+      const isHeading = line.length < 60 && /^[A-Z\d]/.test(line) && !isEndOfSentence;
+      
+      currentParagraph.push(line);
+      
+      // Determine if we should start a new paragraph
+      if (isHeading || 
+          (isEndOfSentence && isShortLine) || 
+          (isEndOfSentence && nextLineStartsCapital) ||
+          i === lines.length - 1) {
+        
+        const paragraphText = currentParagraph.join(' ').trim();
+        if (paragraphText) {
+          paragraphs.push({
+            text: paragraphText,
+            type: isHeading && currentParagraph.length === 1 ? 'heading' : 'paragraph',
+            wordCount: paragraphText.split(/\s+/).length,
+            charCount: paragraphText.length
+          });
+        }
+        currentParagraph = [];
+      }
+    }
+    
+    // Step 3: Create formatted output
+    const formatted = paragraphs
+      .map(p => {
+        if (p.type === 'heading') {
+          return `\n${p.text}\n${'='.repeat(Math.min(p.text.length, 50))}\n`;
+        }
+        return p.text;
+      })
+      .join('\n\n');
+    
+    // Step 4: Apply additional formatting improvements
+    const finalFormatted = formatted
+      // Fix common OCR issues
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between camelCase
+      .replace(/(\d+)([A-Za-z])/g, '$1 $2') // Add space between numbers and letters
+      .replace(/([A-Za-z])(\d+)/g, '$1 $2') // Add space between letters and numbers
+      // Fix punctuation spacing
+      .replace(/\s+([,.!?;:])/g, '$1') // Remove space before punctuation
+      .replace(/([,.!?;:])(?!\s|$)/g, '$1 ') // Add space after punctuation
+      // Fix quote formatting
+      .replace(/"\s+/g, '"') // Remove space after opening quote
+      .replace(/\s+"/g, '"') // Remove space before closing quote
+      // Capitalize sentences
+      .replace(/(^|[.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
+      // Final cleanup
+      .replace(/ {2,}/g, ' ') // Remove multiple spaces again
+      .trim();
+    
+    // Step 5: Calculate statistics
+    const sentences = finalFormatted.match(/[.!?]+/g) || [];
+    const stats = {
+      paragraphCount: paragraphs.length,
+      sentenceCount: sentences.length,
+      cleanedChars: finalFormatted.length,
+      originalChars: rawText.length,
+      reductionPercent: Math.round((1 - finalFormatted.length / rawText.length) * 100)
+    };
+    
+    return {
+      formatted: finalFormatted,
+      paragraphs: paragraphs,
+      stats: stats
+    };
+    
+  } catch (error) {
+    log('ERROR', 'Text formatting error', { error: error.message });
+    return {
+      formatted: rawText,
+      paragraphs: [{ text: rawText, type: 'paragraph', wordCount: rawText.split(/\s+/).length, charCount: rawText.length }],
+      stats: { paragraphCount: 1, sentenceCount: 0, cleanedChars: rawText.length }
+    };
+  }
 }
 
 async function processTextWithComprehend(text) {

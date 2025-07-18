@@ -104,6 +104,8 @@ def lambda_handler(event, context):
             # Add processing results if available
             if processing_result:
                 response_data['extractedText'] = processing_result.get('extracted_text', '')
+                response_data['formattedText'] = processing_result.get('formatted_text', '')
+                response_data['textFormatting'] = processing_result.get('text_formatting', {})
                 response_data['analysis'] = processing_result.get('analysis', {})
                 response_data['processingDuration'] = processing_result.get('processing_duration', '')
                 
@@ -159,6 +161,8 @@ def lambda_handler(event, context):
                 # Add processing results if available
                 if processing_result and item.get('processing_status') == 'processed':
                     item_data['extractedText'] = processing_result.get('extracted_text', '')
+                    item_data['formattedText'] = processing_result.get('formatted_text', '')
+                    item_data['textFormatting'] = processing_result.get('text_formatting', {})
                     item_data['analysis'] = processing_result.get('analysis', {})
                     
                     # Add Comprehend analysis if available
