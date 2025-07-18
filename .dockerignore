@@ -1,0 +1,21 @@
+# Terraform files
+*.tf
+*.tfstate*
+*.tfvars
+.terraform/
+lambda_function.*
+
+# Documentation
+README.md
+*.md
+
+# Git
+.git/
+.gitignore
+
+# GitHub Actions
+.github/workflows/
+
+# Other
+node_modules/
+npm-debug.log*

@@ -1,0 +1,78 @@
+# Dead Letter Queue for failed messages
+resource "aws_sqs_queue" "batch_dlq" {
+  name                       = "${var.project_name}-${var.environment}-batch-dlq"
+  delay_seconds              = 0
+  max_message_size           = 262144
+  message_retention_seconds  = 1209600 # 14 days
+  receive_wait_time_seconds  = 0
+  visibility_timeout_seconds = 300
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-batch-dlq"
+  })
+}
+
+# Main SQS Queue for Batch processing
+resource "aws_sqs_queue" "batch_queue" {
+  name                       = "${var.project_name}-${var.environment}-batch-queue"
+  delay_seconds              = 0
+  max_message_size           = 262144
+  message_retention_seconds  = 345600 # 4 days
+  receive_wait_time_seconds  = 20     # Long polling
+  visibility_timeout_seconds = var.sqs_visibility_timeout_seconds
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.batch_dlq.arn
+    maxReceiveCount     = var.sqs_max_receive_count
+  })
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-batch-queue"
+  })
+}
+
+# SQS Queue Policy to allow EventBridge to send messages
+resource "aws_sqs_queue_policy" "batch_queue_policy" {
+  queue_url = aws_sqs_queue.batch_queue.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action   = "sqs:SendMessage"
+        Resource = aws_sqs_queue.batch_queue.arn
+        Condition = {
+          ArnEquals = {
+            "aws:SourceArn" = aws_cloudwatch_event_rule.s3_upload_rule.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+# CloudWatch Alarm for DLQ
+resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
+  alarm_name          = "${var.project_name}-${var.environment}-dlq-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "0"
+  alarm_description   = "This metric monitors messages in the DLQ"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.batch_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}

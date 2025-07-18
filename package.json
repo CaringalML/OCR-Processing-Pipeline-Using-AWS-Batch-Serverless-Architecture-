@@ -1,0 +1,22 @@
+{
+  "name": "file-processor-batch-job",
+  "version": "2.0.0",
+  "description": "A file processing application for AWS Batch with S3 and Textract integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "aws",
+    "batch",
+    "ocr",
+    "textract",
+    "processor",
+    "nodejs"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.1498.0"
+  }
+}
