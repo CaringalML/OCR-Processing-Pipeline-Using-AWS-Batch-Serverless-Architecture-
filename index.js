@@ -390,7 +390,20 @@ function formatExtractedText(rawText) {
     
     // Step 1: Pre-process to handle common OCR issues
     let preprocessed = rawText
-      // Fix common OCR spacing issues first
+      // Fix URLs and email addresses first (remove spaces)
+      .replace(/(\w+)\.\s+(\w+)\.\s+(\w+)/g, '$1.$2.$3') // Fix domain names like www. example. com
+      .replace(/(\w+)\.\s+(\w+)/g, '$1.$2') // Fix two-part domains
+      .replace(/(\w+)\s*@\s*(\w+)/g, '$1@$2') // Fix email @ symbol
+      .replace(/https?\s*:\s*\/\s*\//g, match => match.replace(/\s+/g, '')) // Fix http:// or https://
+      .replace(/(\w+)\s*\/\s*(\w+)/g, (match, p1, p2) => {
+        // Fix forward slashes in URLs but not regular text
+        if (p1.match(/^(www|http|https|ftp|com|org|net|gov|edu|co|io)$/i) || 
+            p2.match(/^(com|org|net|gov|edu|co|io|html|php|jsp|aspx)$/i)) {
+          return `${p1}/${p2}`;
+        }
+        return match;
+      })
+      // Fix common OCR spacing issues
       .replace(/\.\s+([A-Z])/g, '. $1') // Fix period spacing
       .replace(/([a-z])\s+([A-Z])/g, '$1 $2') // Fix word spacing
       .replace(/(\w)\s+([,.])/g, '$1$2') // Remove space before punctuation
@@ -481,6 +494,12 @@ function formatExtractedText(rawText) {
     const formatted = paragraphs
       .map(p => p.text)
       .join('\n\n')
+      // Final URL and email cleanup (catch any remaining issues)
+      .replace(/(\w+)\.\s+(\w+)\.\s+(\w+)\.\s+(\w+)/g, '$1.$2.$3.$4') // Fix 4-part domains
+      .replace(/(\w+)\.\s+(\w+)\.\s+(\w+)/g, '$1.$2.$3') // Fix 3-part domains  
+      .replace(/(\w+)\.\s+(\w+)/g, '$1.$2') // Fix 2-part domains
+      .replace(/(\w+)\s*@\s*(\w+)\.\s*(\w+)\.\s*(\w+)/g, '$1@$2.$3.$4') // Fix emails
+      .replace(/(\w+)\s*@\s*(\w+)\.\s*(\w+)/g, '$1@$2.$3') // Fix simpler emails
       // Final cleanup
       .replace(/\s+([,.!?;:])/g, '$1') // Remove space before punctuation
       .replace(/([,.!?;:])(?!\s|$)/g, '$1 ') // Ensure space after punctuation
