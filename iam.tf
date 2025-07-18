@@ -182,6 +182,18 @@ resource "aws_iam_role_policy" "batch_task_policy" {
           "textract:GetDocumentTextDetection"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "comprehend:DetectDominantLanguage",
+          "comprehend:DetectEntities",
+          "comprehend:DetectKeyPhrases",
+          "comprehend:DetectSentiment",
+          "comprehend:DetectSyntax",
+          "comprehend:DetectPiiEntities"
+        ]
+        Resource = "*"
       }
     ]
   })

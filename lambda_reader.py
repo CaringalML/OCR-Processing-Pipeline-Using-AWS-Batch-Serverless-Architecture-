@@ -95,6 +95,22 @@ def lambda_handler(event, context):
                     'confidence': float(processing_result.get('analysis', {}).get('confidence', 0))
                 }
                 response_data['processingDuration'] = str(processing_result.get('processing_duration', ''))
+                
+                # Add Comprehend analysis if available
+                comprehend_analysis = processing_result.get('comprehend_analysis', {})
+                if comprehend_analysis:
+                    response_data['comprehendAnalysis'] = {
+                        'language': comprehend_analysis.get('language', 'unknown'),
+                        'languageScore': float(comprehend_analysis.get('languageScore', 0)),
+                        'sentiment': comprehend_analysis.get('sentiment', {}),
+                        'entities': comprehend_analysis.get('entities', []),
+                        'keyPhrases': comprehend_analysis.get('keyPhrases', []),
+                        'syntax': comprehend_analysis.get('syntax', []),
+                        'processingTime': str(comprehend_analysis.get('processingTime', 0)),
+                        'analyzedTextLength': int(comprehend_analysis.get('analyzedTextLength', 0)),
+                        'originalTextLength': int(comprehend_analysis.get('originalTextLength', 0)),
+                        'truncated': bool(comprehend_analysis.get('truncated', False))
+                    }
             
         else:
             # Query files by status
@@ -149,6 +165,22 @@ def lambda_handler(event, context):
                         'lineCount': int(processing_result.get('analysis', {}).get('line_count', 0)),
                         'confidence': float(processing_result.get('analysis', {}).get('confidence', 0))
                     }
+                    
+                    # Add Comprehend analysis if available
+                    comprehend_analysis = processing_result.get('comprehend_analysis', {})
+                    if comprehend_analysis:
+                        item_data['comprehendAnalysis'] = {
+                            'language': comprehend_analysis.get('language', 'unknown'),
+                            'languageScore': float(comprehend_analysis.get('languageScore', 0)),
+                            'sentiment': comprehend_analysis.get('sentiment', {}),
+                            'entities': comprehend_analysis.get('entities', []),
+                            'keyPhrases': comprehend_analysis.get('keyPhrases', []),
+                            'syntax': comprehend_analysis.get('syntax', []),
+                            'processingTime': str(comprehend_analysis.get('processingTime', 0)),
+                            'analyzedTextLength': int(comprehend_analysis.get('analyzedTextLength', 0)),
+                            'originalTextLength': int(comprehend_analysis.get('originalTextLength', 0)),
+                            'truncated': bool(comprehend_analysis.get('truncated', False))
+                        }
                 
                 processed_items.append(item_data)
             

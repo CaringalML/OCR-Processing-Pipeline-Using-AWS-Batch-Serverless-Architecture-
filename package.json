@@ -1,7 +1,7 @@
 {
   "name": "file-processor-batch-job",
-  "version": "2.0.0",
-  "description": "A file processing application for AWS Batch with S3 and Textract integration",
+  "version": "2.1.0",
+  "description": "A file processing application for AWS Batch with S3, Textract, and Comprehend integration",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

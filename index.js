@@ -5,6 +5,7 @@ const AWS = require('aws-sdk');
 const s3 = new AWS.S3();
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 const textract = new AWS.Textract();
+const comprehend = new AWS.Comprehend();
 
 // Production logging (reduced verbosity, structured format)
 const logLevel = process.env.LOG_LEVEL || 'INFO';
@@ -115,21 +116,42 @@ async function processS3File() {
     // Process file with AWS Textract
     const startTime = Date.now();
     const extractedData = await processFileWithTextract(bucketName, objectKey);
-    const processingTime = (Date.now() - startTime) / 1000;
+    const textractTime = (Date.now() - startTime) / 1000;
     
     log('INFO', 'Textract processing completed', {
-      processingTimeSeconds: processingTime,
+      processingTimeSeconds: textractTime,
       wordCount: extractedData.wordCount,
       lineCount: extractedData.lineCount,
       confidence: extractedData.confidence
     });
+    
+    // Process extracted text with AWS Comprehend
+    let comprehendData = {};
+    if (extractedData.text && extractedData.text.trim().length > 0) {
+      log('INFO', 'Starting Comprehend analysis');
+      const comprehendStartTime = Date.now();
+      comprehendData = await processTextWithComprehend(extractedData.text);
+      const comprehendTime = (Date.now() - comprehendStartTime) / 1000;
+      
+      log('INFO', 'Comprehend analysis completed', {
+        processingTimeSeconds: comprehendTime,
+        language: comprehendData.language,
+        sentiment: comprehendData.sentiment?.Sentiment,
+        entitiesCount: comprehendData.entities?.length || 0,
+        keyPhrasesCount: comprehendData.keyPhrases?.length || 0
+      });
+    } else {
+      log('INFO', 'Skipping Comprehend analysis - no text extracted');
+    }
+    
+    const totalProcessingTime = (Date.now() - startTime) / 1000;
     
     // Generate processing results
     const processingResults = {
       processed_at: new Date().toISOString(),
       file_size: fileSize,
       content_type: contentType,
-      processing_duration: `${processingTime.toFixed(2)} seconds`,
+      processing_duration: `${totalProcessingTime.toFixed(2)} seconds`,
       extracted_text: extractedData.text,
       analysis: {
         word_count: extractedData.wordCount,
@@ -137,10 +159,13 @@ async function processS3File() {
         line_count: extractedData.lineCount,
         confidence: extractedData.confidence
       },
+      comprehend_analysis: comprehendData,
       metadata: {
-        processor_version: '2.0.0',
+        processor_version: '2.1.0',
         batch_job_id: process.env.AWS_BATCH_JOB_ID || 'unknown',
-        textract_job_id: extractedData.jobId
+        textract_job_id: extractedData.jobId,
+        textract_duration: `${textractTime.toFixed(2)} seconds`,
+        comprehend_duration: comprehendData.processingTime ? `${comprehendData.processingTime.toFixed(2)} seconds` : 'N/A'
       }
     };
     
@@ -158,10 +183,12 @@ async function processS3File() {
     });
     
     log('INFO', 'File processing completed successfully', {
-      processingTimeSeconds: processingTime,
+      processingTimeSeconds: totalProcessingTime,
       extractedWords: extractedData.wordCount,
       extractedLines: extractedData.lineCount,
-      confidence: extractedData.confidence
+      confidence: extractedData.confidence,
+      comprehendLanguage: comprehendData.language,
+      comprehendSentiment: comprehendData.sentiment?.Sentiment
     });
     
     return processingResults;
@@ -305,6 +332,161 @@ async function processFileWithTextract(bucketName, objectKey) {
     }
     
     throw error;
+  }
+}
+
+async function processTextWithComprehend(text) {
+  try {
+    // Comprehend has a 5000 character limit for most operations
+    const maxLength = 5000;
+    const textToAnalyze = text.length > maxLength ? text.substring(0, maxLength) : text;
+    
+    log('INFO', 'Starting Comprehend analysis', {
+      originalLength: text.length,
+      analyzedLength: textToAnalyze.length,
+      truncated: text.length > maxLength
+    });
+    
+    const startTime = Date.now();
+    const results = {};
+    
+    // Language detection
+    try {
+      const languageResult = await comprehend.detectDominantLanguage({
+        Text: textToAnalyze
+      }).promise();
+      
+      results.language = languageResult.Languages[0]?.LanguageCode || 'unknown';
+      results.languageScore = languageResult.Languages[0]?.Score || 0;
+      
+      log('DEBUG', 'Language detection completed', {
+        language: results.language,
+        score: results.languageScore
+      });
+    } catch (error) {
+      log('WARN', 'Language detection failed', { error: error.message });
+      results.language = 'unknown';
+      results.languageScore = 0;
+    }
+    
+    // Sentiment analysis
+    try {
+      const sentimentResult = await comprehend.detectSentiment({
+        Text: textToAnalyze,
+        LanguageCode: results.language === 'unknown' ? 'en' : results.language
+      }).promise();
+      
+      results.sentiment = {
+        Sentiment: sentimentResult.Sentiment,
+        SentimentScore: sentimentResult.SentimentScore
+      };
+      
+      log('DEBUG', 'Sentiment analysis completed', {
+        sentiment: results.sentiment.Sentiment,
+        positive: results.sentiment.SentimentScore.Positive,
+        negative: results.sentiment.SentimentScore.Negative,
+        neutral: results.sentiment.SentimentScore.Neutral,
+        mixed: results.sentiment.SentimentScore.Mixed
+      });
+    } catch (error) {
+      log('WARN', 'Sentiment analysis failed', { error: error.message });
+      results.sentiment = null;
+    }
+    
+    // Entity detection
+    try {
+      const entityResult = await comprehend.detectEntities({
+        Text: textToAnalyze,
+        LanguageCode: results.language === 'unknown' ? 'en' : results.language
+      }).promise();
+      
+      results.entities = entityResult.Entities.map(entity => ({
+        Text: entity.Text,
+        Type: entity.Type,
+        Score: entity.Score,
+        BeginOffset: entity.BeginOffset,
+        EndOffset: entity.EndOffset
+      }));
+      
+      log('DEBUG', 'Entity detection completed', {
+        entitiesCount: results.entities.length,
+        types: [...new Set(results.entities.map(e => e.Type))]
+      });
+    } catch (error) {
+      log('WARN', 'Entity detection failed', { error: error.message });
+      results.entities = [];
+    }
+    
+    // Key phrases extraction
+    try {
+      const keyPhrasesResult = await comprehend.detectKeyPhrases({
+        Text: textToAnalyze,
+        LanguageCode: results.language === 'unknown' ? 'en' : results.language
+      }).promise();
+      
+      results.keyPhrases = keyPhrasesResult.KeyPhrases.map(phrase => ({
+        Text: phrase.Text,
+        Score: phrase.Score,
+        BeginOffset: phrase.BeginOffset,
+        EndOffset: phrase.EndOffset
+      }));
+      
+      log('DEBUG', 'Key phrases extraction completed', {
+        keyPhrasesCount: results.keyPhrases.length
+      });
+    } catch (error) {
+      log('WARN', 'Key phrases extraction failed', { error: error.message });
+      results.keyPhrases = [];
+    }
+    
+    // Syntax analysis (PII detection requires special setup, skipping for now)
+    try {
+      const syntaxResult = await comprehend.detectSyntax({
+        Text: textToAnalyze,
+        LanguageCode: results.language === 'unknown' ? 'en' : results.language
+      }).promise();
+      
+      results.syntax = syntaxResult.SyntaxTokens.map(token => ({
+        Text: token.Text,
+        PartOfSpeech: token.PartOfSpeech.Tag,
+        Score: token.PartOfSpeech.Score,
+        BeginOffset: token.BeginOffset,
+        EndOffset: token.EndOffset
+      }));
+      
+      log('DEBUG', 'Syntax analysis completed', {
+        tokensCount: results.syntax.length
+      });
+    } catch (error) {
+      log('WARN', 'Syntax analysis failed', { error: error.message });
+      results.syntax = [];
+    }
+    
+    const processingTime = (Date.now() - startTime) / 1000;
+    results.processingTime = processingTime;
+    results.analyzedTextLength = textToAnalyze.length;
+    results.originalTextLength = text.length;
+    results.truncated = text.length > maxLength;
+    
+    return results;
+    
+  } catch (error) {
+    log('ERROR', 'Comprehend processing error', { error: error.message });
+    
+    // Return empty results on error
+    return {
+      language: 'unknown',
+      languageScore: 0,
+      sentiment: null,
+      entities: [],
+      keyPhrases: [],
+      syntax: [],
+      processingTime: 0,
+      analyzedTextLength: 0,
+      originalTextLength: text.length,
+      truncated: false,
+      error: error.message
+    };
   }
 }
 
