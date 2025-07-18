@@ -388,99 +388,117 @@ function formatExtractedText(rawText) {
       };
     }
     
-    // Step 1: Clean up basic formatting issues
-    let cleaned = rawText
-      // Remove multiple consecutive newlines
-      .replace(/\n{3,}/g, '\n\n')
-      // Remove carriage returns
-      .replace(/\r/g, '')
-      // Remove tabs and replace with spaces
-      .replace(/\t/g, ' ')
-      // Remove multiple consecutive spaces
-      .replace(/ {2,}/g, ' ')
-      // Remove leading/trailing whitespace from each line
-      .split('\n')
-      .map(line => line.trim())
-      .join('\n')
-      // Remove empty lines at start and end
-      .trim();
+    // Step 1: Pre-process to handle common OCR issues
+    let preprocessed = rawText
+      // Fix common OCR spacing issues first
+      .replace(/\.\s+([A-Z])/g, '. $1') // Fix period spacing
+      .replace(/([a-z])\s+([A-Z])/g, '$1 $2') // Fix word spacing
+      .replace(/(\w)\s+([,.])/g, '$1$2') // Remove space before punctuation
+      .replace(/([,.!?;:])\s*/g, '$1 ') // Add single space after punctuation
+      // Remove excessive newlines but keep paragraph structure
+      .replace(/\n{4,}/g, '\n\n\n') // Cap at 3 newlines max
+      .replace(/\r/g, '') // Remove carriage returns
+      .replace(/\t/g, ' '); // Replace tabs with spaces
     
-    // Step 2: Detect and format paragraphs
-    const lines = cleaned.split('\n').filter(line => line.length > 0);
-    const paragraphs = [];
-    let currentParagraph = [];
+    // Step 2: Smart line joining
+    const lines = preprocessed.split('\n');
+    const processedLines = [];
+    let currentLine = '';
     
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const nextLine = lines[i + 1];
+      const line = lines[i].trim();
       
-      // Check if line is likely a paragraph break
-      const isEndOfSentence = /[.!?]$/.test(line);
-      const isShortLine = line.length < 50;
-      const nextLineStartsCapital = nextLine && /^[A-Z]/.test(nextLine);
-      const isHeading = line.length < 60 && /^[A-Z\d]/.test(line) && !isEndOfSentence;
-      
-      currentParagraph.push(line);
-      
-      // Determine if we should start a new paragraph
-      if (isHeading || 
-          (isEndOfSentence && isShortLine) || 
-          (isEndOfSentence && nextLineStartsCapital) ||
-          i === lines.length - 1) {
-        
-        const paragraphText = currentParagraph.join(' ').trim();
-        if (paragraphText) {
-          paragraphs.push({
-            text: paragraphText,
-            type: isHeading && currentParagraph.length === 1 ? 'heading' : 'paragraph',
-            wordCount: paragraphText.split(/\s+/).length,
-            charCount: paragraphText.length
-          });
+      if (line.length === 0) {
+        // Empty line - preserve paragraph break
+        if (currentLine) {
+          processedLines.push(currentLine);
+          currentLine = '';
         }
-        currentParagraph = [];
+        processedLines.push('');
+        continue;
+      }
+      
+      // Check if this line should be joined with previous
+      const isVeryShort = line.length < 20;
+      const endsWithPunctuation = /[.!?]$/.test(currentLine);
+      const startsWithCapital = /^[A-Z]/.test(line);
+      const looksLikeHeading = line.length < 40 && line === line.toUpperCase();
+      
+      if (currentLine && !endsWithPunctuation && !startsWithCapital && !looksLikeHeading && !isVeryShort) {
+        // Join with previous line
+        currentLine += ' ' + line;
+      } else {
+        // Start new line
+        if (currentLine) {
+          processedLines.push(currentLine);
+        }
+        currentLine = line;
       }
     }
     
-    // Step 3: Create formatted output
-    const formatted = paragraphs
-      .map(p => {
-        if (p.type === 'heading') {
-          return `\n${p.text}\n${'='.repeat(Math.min(p.text.length, 50))}\n`;
-        }
-        return p.text;
-      })
-      .join('\n\n');
+    if (currentLine) {
+      processedLines.push(currentLine);
+    }
     
-    // Step 4: Apply additional formatting improvements
-    const finalFormatted = formatted
-      // Fix common OCR issues
-      .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between camelCase
-      .replace(/(\d+)([A-Za-z])/g, '$1 $2') // Add space between numbers and letters
-      .replace(/([A-Za-z])(\d+)/g, '$1 $2') // Add space between letters and numbers
-      // Fix punctuation spacing
-      .replace(/\s+([,.!?;:])/g, '$1') // Remove space before punctuation
-      .replace(/([,.!?;:])(?!\s|$)/g, '$1 ') // Add space after punctuation
-      // Fix quote formatting
-      .replace(/"\s+/g, '"') // Remove space after opening quote
-      .replace(/\s+"/g, '"') // Remove space before closing quote
-      // Capitalize sentences
-      .replace(/(^|[.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
+    // Step 3: Create clean paragraphs
+    const paragraphs = [];
+    let currentParagraph = [];
+    
+    for (const line of processedLines) {
+      if (line === '') {
+        // Empty line marks paragraph break
+        if (currentParagraph.length > 0) {
+          const text = currentParagraph.join(' ').trim();
+          if (text) {
+            paragraphs.push({
+              text: text,
+              type: 'paragraph',
+              wordCount: text.split(/\s+/).length,
+              charCount: text.length
+            });
+          }
+          currentParagraph = [];
+        }
+      } else {
+        currentParagraph.push(line);
+      }
+    }
+    
+    // Don't forget the last paragraph
+    if (currentParagraph.length > 0) {
+      const text = currentParagraph.join(' ').trim();
+      if (text) {
+        paragraphs.push({
+          text: text,
+          type: 'paragraph',
+          wordCount: text.split(/\s+/).length,
+          charCount: text.length
+        });
+      }
+    }
+    
+    // Step 4: Create final formatted output
+    const formatted = paragraphs
+      .map(p => p.text)
+      .join('\n\n')
       // Final cleanup
-      .replace(/ {2,}/g, ' ') // Remove multiple spaces again
+      .replace(/\s+([,.!?;:])/g, '$1') // Remove space before punctuation
+      .replace(/([,.!?;:])(?!\s|$)/g, '$1 ') // Ensure space after punctuation
+      .replace(/ {2,}/g, ' ') // Remove multiple spaces
       .trim();
     
     // Step 5: Calculate statistics
-    const sentences = finalFormatted.match(/[.!?]+/g) || [];
+    const sentences = formatted.match(/[.!?]+/g) || [];
     const stats = {
       paragraphCount: paragraphs.length,
       sentenceCount: sentences.length,
-      cleanedChars: finalFormatted.length,
+      cleanedChars: formatted.length,
       originalChars: rawText.length,
-      reductionPercent: Math.round((1 - finalFormatted.length / rawText.length) * 100)
+      reductionPercent: Math.round((1 - formatted.length / rawText.length) * 100)
     };
     
     return {
-      formatted: finalFormatted,
+      formatted: formatted,
       paragraphs: paragraphs,
       stats: stats
     };
