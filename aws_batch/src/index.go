@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"regexp"
@@ -807,7 +806,7 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 	// Sentiment analysis
 	sentResp, err := comprehendClient.DetectSentiment(ctx, &comprehend.DetectSentimentInput{
 		Text:         aws.String(textToAnalyze),
-		LanguageCode: aws.String(langCode),
+		LanguageCode: comprehendTypes.LanguageCode(langCode),
 	})
 	if err != nil {
 		logger.Log(WARN, "WARN", "Sentiment analysis failed", map[string]interface{}{
@@ -823,7 +822,7 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 	// Entity detection
 	entResp, err := comprehendClient.DetectEntities(ctx, &comprehend.DetectEntitiesInput{
 		Text:         aws.String(textToAnalyze),
-		LanguageCode: aws.String(langCode),
+		LanguageCode: comprehendTypes.LanguageCode(langCode),
 	})
 	if err != nil {
 		logger.Log(WARN, "WARN", "Entity detection failed", map[string]interface{}{
@@ -894,7 +893,7 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 	// Key phrases
 	keyResp, err := comprehendClient.DetectKeyPhrases(ctx, &comprehend.DetectKeyPhrasesInput{
 		Text:         aws.String(textToAnalyze),
-		LanguageCode: aws.String(langCode),
+		LanguageCode: comprehendTypes.LanguageCode(langCode),
 	})
 	if err != nil {
 		logger.Log(WARN, "WARN", "Key phrases extraction failed", map[string]interface{}{
@@ -916,7 +915,7 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 	// Syntax analysis
 	synResp, err := comprehendClient.DetectSyntax(ctx, &comprehend.DetectSyntaxInput{
 		Text:         aws.String(textToAnalyze),
-		LanguageCode: aws.String(langCode),
+		LanguageCode: comprehendTypes.SyntaxLanguageCode(langCode),
 	})
 	if err != nil {
 		logger.Log(WARN, "WARN", "Syntax analysis failed", map[string]interface{}{
