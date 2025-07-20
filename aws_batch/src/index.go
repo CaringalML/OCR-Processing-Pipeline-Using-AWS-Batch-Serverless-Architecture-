@@ -354,8 +354,19 @@ func processS3File(ctx context.Context) (map[string]interface{}, error) {
 		"processingTimeSeconds": textractTime,
 		"wordCount":             extractedData.WordCount,
 		"lineCount":             extractedData.LineCount,
+		"extractedChars":        len(extractedData.Text),
 		"confidence":            extractedData.Confidence,
+		"textractJobId":         extractedData.JobID,
 	})
+
+	// Validate Textract results
+	if extractedData.Text == "" || extractedData.WordCount == 0 {
+		logger.Log(WARN, "WARN", "Textract returned empty or minimal results", map[string]interface{}{
+			"textLength": len(extractedData.Text),
+			"wordCount":  extractedData.WordCount,
+			"confidence": extractedData.Confidence,
+		})
+	}
 
 	// Format extracted text
 	var formattedTextData FormattedText
@@ -417,6 +428,14 @@ func processS3File(ctx context.Context) (map[string]interface{}, error) {
 			"line_count":      extractedData.LineCount,
 			"confidence":      extractedData.Confidence,
 		},
+		"textract_analysis": map[string]interface{}{
+			"text":        extractedData.Text,
+			"word_count":  extractedData.WordCount,
+			"line_count":  extractedData.LineCount,
+			"confidence":  extractedData.Confidence,
+			"job_id":      extractedData.JobID,
+			"processing_time": fmt.Sprintf("%.2f seconds", textractTime),
+		},
 		"comprehend_analysis": comprehendData,
 		"metadata": map[string]interface{}{
 			"processor_version": "2.2.0",
@@ -425,6 +444,31 @@ func processS3File(ctx context.Context) (map[string]interface{}, error) {
 			"textract_duration": fmt.Sprintf("%.2f seconds", textractTime),
 			"comprehend_duration": fmt.Sprintf("%.2f seconds", comprehendData.ProcessingTime),
 		},
+	}
+
+	// Log processing data summary before storing
+	logger.Log(INFO, "INFO", "Storing Textract analysis", map[string]interface{}{
+		"fileId":        fileID,
+		"extractedChars": len(extractedData.Text),
+		"wordCount":     extractedData.WordCount,
+		"lineCount":     extractedData.LineCount,
+		"confidence":    extractedData.Confidence,
+		"textractJobId": extractedData.JobID,
+	})
+
+	if comprehendData.Language != "unknown" {
+		logger.Log(INFO, "INFO", "Storing Comprehend analysis", map[string]interface{}{
+			"fileId":           fileID,
+			"language":         comprehendData.Language,
+			"hasSentiment":     comprehendData.Sentiment != nil,
+			"entitiesCount":    len(comprehendData.Entities),
+			"keyPhrasesCount":  len(comprehendData.KeyPhrases),
+		})
+	} else {
+		logger.Log(WARN, "WARN", "Storing processing results with limited Comprehend data", map[string]interface{}{
+			"fileId":     fileID,
+			"language":   comprehendData.Language,
+		})
 	}
 
 	// Store results
@@ -793,6 +837,14 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 		OriginalTextLength: len(text),
 		AnalyzedTextLength: len(textToAnalyze),
 		Truncated:          len(text) > maxLength,
+		Language:           "unknown",
+		LanguageScore:      0.0,
+		Sentiment:          nil,
+		Entities:           []EntityResult{},
+		EntitySummary:      make(map[string][]EntitySummaryItem),
+		EntityStats:        EntityStats{},
+		KeyPhrases:         []KeyPhraseResult{},
+		Syntax:             []SyntaxResult{},
 	}
 
 	// Language detection
@@ -948,6 +1000,17 @@ func processTextWithComprehend(ctx context.Context, text string) ComprehendResul
 	}
 
 	result.ProcessingTime = time.Since(startTime).Seconds()
+	
+	logger.Log(INFO, "INFO", "Comprehend analysis completed", map[string]interface{}{
+		"language":           result.Language,
+		"languageScore":      result.LanguageScore,
+		"hasSentiment":       result.Sentiment != nil,
+		"entitiesCount":      len(result.Entities),
+		"keyPhrasesCount":    len(result.KeyPhrases),
+		"syntaxTokensCount":  len(result.Syntax),
+		"processingTime":     result.ProcessingTime,
+	})
+	
 	return result
 }
 
@@ -1033,13 +1096,24 @@ func storeProcessingResults(ctx context.Context, fileID string, results map[stri
 	for key, value := range results {
 		attrValue, err := attributeValueFromInterface(value)
 		if err != nil {
-			logger.Log(WARN, "WARN", "Failed to convert attribute", map[string]interface{}{
+			logger.Log(WARN, "WARN", "Failed to convert attribute, storing as JSON string", map[string]interface{}{
 				"key":   key,
 				"error": err.Error(),
 			})
-			continue
+			// Don't skip - try to store as JSON string instead
+			jsonBytes, jsonErr := json.Marshal(value)
+			if jsonErr != nil {
+				logger.Log(ERROR, "ERROR", "Failed to marshal as JSON, skipping field", map[string]interface{}{
+					"key":      key,
+					"jsonErr":  jsonErr.Error(),
+					"origErr":  err.Error(),
+				})
+				continue
+			}
+			item[key] = &dynamodbTypes.AttributeValueMemberS{Value: string(jsonBytes)}
+		} else {
+			item[key] = attrValue
 		}
-		item[key] = attrValue
 	}
 
 	_, err := dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
@@ -1087,16 +1161,38 @@ func attributeValueFromInterface(v interface{}) (dynamodbTypes.AttributeValue, e
 		for k, v := range value {
 			attr, err := attributeValueFromInterface(v)
 			if err != nil {
-				continue
+				// Try to store as JSON string if conversion fails
+				jsonBytes, jsonErr := json.Marshal(v)
+				if jsonErr != nil {
+					continue // Skip this field if JSON marshaling also fails
+				}
+				m[k] = &dynamodbTypes.AttributeValueMemberS{Value: string(jsonBytes)}
+			} else {
+				m[k] = attr
 			}
-			m[k] = attr
 		}
 		return &dynamodbTypes.AttributeValueMemberM{Value: m}, nil
+	case []interface{}:
+		items := make([]dynamodbTypes.AttributeValue, 0, len(value))
+		for _, item := range value {
+			attr, err := attributeValueFromInterface(item)
+			if err != nil {
+				// Try to store as JSON string if conversion fails
+				jsonBytes, jsonErr := json.Marshal(item)
+				if jsonErr != nil {
+					continue // Skip this item if JSON marshaling also fails
+				}
+				items = append(items, &dynamodbTypes.AttributeValueMemberS{Value: string(jsonBytes)})
+			} else {
+				items = append(items, attr)
+			}
+		}
+		return &dynamodbTypes.AttributeValueMemberL{Value: items}, nil
 	default:
 		// For complex types, marshal to JSON
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to marshal value of type %T: %w", value, err)
 		}
 		return &dynamodbTypes.AttributeValueMemberS{Value: string(jsonBytes)}, nil
 	}

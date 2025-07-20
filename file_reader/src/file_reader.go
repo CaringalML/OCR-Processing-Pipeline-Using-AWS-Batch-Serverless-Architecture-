@@ -37,6 +37,7 @@ type ProcessingResult struct {
 	Analysis            map[string]interface{} `dynamodbav:"analysis"`
 	ProcessingDuration  string                 `dynamodbav:"processing_duration"`
 	ComprehendAnalysis  map[string]interface{} `dynamodbav:"comprehend_analysis"`
+	TextractAnalysis    map[string]interface{} `dynamodbav:"textract_analysis"`
 }
 
 // Response structures
@@ -59,6 +60,7 @@ type SingleFileResponse struct {
 	Analysis           map[string]interface{} `json:"analysis,omitempty"`
 	ProcessingDuration string                 `json:"processingDuration,omitempty"`
 	ComprehendAnalysis map[string]interface{} `json:"comprehendAnalysis,omitempty"`
+	TextractAnalysis   map[string]interface{} `json:"textractAnalysis,omitempty"`
 }
 
 type MultiFileResponse struct {
@@ -182,7 +184,14 @@ func handleSingleFileRequest(fileID string, headers map[string]string) (events.A
 	} else if resultResult.Item != nil {
 		if err := dynamodbattribute.UnmarshalMap(resultResult.Item, &processingResult); err != nil {
 			log.Printf("Failed to unmarshal processing results for %s: %v", fileID, err)
+		} else {
+			// Validate that essential data was retrieved
+			if processingResult.ExtractedText == "" && len(processingResult.Analysis) == 0 {
+				log.Printf("Warning: Processing results for %s appear to be incomplete - missing extracted text and analysis", fileID)
+			}
 		}
+	} else {
+		log.Printf("Warning: No processing results found for %s in table %s", fileID, resultsTableName)
 	}
 
 	// Generate CloudFront URL
@@ -207,6 +216,7 @@ func handleSingleFileRequest(fileID string, headers map[string]string) (events.A
 		responseData.Analysis = processingResult.Analysis
 		responseData.ProcessingDuration = processingResult.ProcessingDuration
 		responseData.ComprehendAnalysis = processingResult.ComprehendAnalysis
+		responseData.TextractAnalysis = processingResult.TextractAnalysis
 	}
 
 	responseBody, err := json.Marshal(responseData)
@@ -282,7 +292,14 @@ func handleMultipleFilesRequest(statusFilter string, limit int64, headers map[st
 			} else if resultResult.Item != nil {
 				if err := dynamodbattribute.UnmarshalMap(resultResult.Item, &processingResult); err != nil {
 					log.Printf("Failed to unmarshal processing results for %s: %v", fileMetadata.FileID, err)
+				} else {
+					// Validate that essential data was retrieved
+					if processingResult.ExtractedText == "" && len(processingResult.Analysis) == 0 {
+						log.Printf("Warning: Processing results for %s appear to be incomplete - missing extracted text and analysis", fileMetadata.FileID)
+					}
 				}
+			} else {
+				log.Printf("Warning: No processing results found for %s in table %s", fileMetadata.FileID, resultsTableName)
 			}
 		}
 
@@ -307,6 +324,7 @@ func handleMultipleFilesRequest(statusFilter string, limit int64, headers map[st
 			itemData.TextFormatting = processingResult.TextFormatting
 			itemData.Analysis = processingResult.Analysis
 			itemData.ComprehendAnalysis = processingResult.ComprehendAnalysis
+			itemData.TextractAnalysis = processingResult.TextractAnalysis
 		}
 
 		processedItems = append(processedItems, itemData)
