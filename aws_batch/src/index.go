@@ -681,7 +681,8 @@ func formatExtractedText(rawText string) FormattedText {
 	// Final cleanup
 	formatted = fixURLsAndEmails(formatted)
 	formatted = regexp.MustCompile(`\s+([,.!?;:])`).ReplaceAllString(formatted, "$1")
-	formatted = regexp.MustCompile(`([,.!?;:])(?!\s|$)`).ReplaceAllString(formatted, "$1 ")
+	// Fix spacing after punctuation - replace the unsupported negative lookahead
+	formatted = regexp.MustCompile(`([,.!?;:])([^\s])`).ReplaceAllString(formatted, "$1 $2")
 	formatted = regexp.MustCompile(` {2,}`).ReplaceAllString(formatted, " ")
 	formatted = strings.TrimSpace(formatted)
 
@@ -716,8 +717,8 @@ func fixURLsAndEmails(text string) string {
 		return match
 	})
 
-	// Fix URLs starting with www.
-	wwwRegex := regexp.MustCompile(`www\.\s+([^\s\n\r\t]+?)(\s+(?:I|,|\||$))`)
+	// Fix URLs starting with www. - simplified pattern
+	wwwRegex := regexp.MustCompile(`www\.\s+([^\s\n\r\t]+?)(\s+[I,|]|\s*$)`)
 	text = wwwRegex.ReplaceAllStringFunc(text, func(match string) string {
 		urlPart := regexp.MustCompile(`www\.\s+`).ReplaceAllString(match, "www.")
 		urlPart = regexp.MustCompile(`\.\s+`).ReplaceAllString(urlPart, ".")
@@ -725,24 +726,28 @@ func fixURLsAndEmails(text string) string {
 		return strings.ReplaceAll(urlPart, " ", "")
 	})
 
-	// Fix domain patterns
-	text = regexp.MustCompile(`(\w+)\.\s+(\w+)\.\s+(\w+)(?:\s|$|[^\w])`).ReplaceAllString(text, "$1.$2.$3")
-	text = regexp.MustCompile(`(\w+)\.\s+(\w+)(?:\s|$|[^\w])`).ReplaceAllString(text, "$1.$2")
+	// Fix domain patterns - simplified patterns
+	text = regexp.MustCompile(`(\w+)\.\s+(\w+)\.\s+(\w+)(\s|$)`).ReplaceAllString(text, "$1.$2.$3$4")
+	text = regexp.MustCompile(`(\w+)\.\s+(\w+)(\s|$)`).ReplaceAllString(text, "$1.$2$3")
 
 	// Fix http:// and https://
 	text = regexp.MustCompile(`https?\s*:\s*\/\s*\/\s*`).ReplaceAllStringFunc(text, func(match string) string {
 		return strings.ReplaceAll(match, " ", "")
 	})
 
-	// Fix TLDs
-	tldRegex := regexp.MustCompile(`(\S+)\.\s+(\w{2,3})(?:\s|$|[^\w])`)
+	// Fix TLDs - simplified pattern
+	tldRegex := regexp.MustCompile(`(\S+)\.\s+(\w{2,3})(\s|$)`)
 	text = tldRegex.ReplaceAllStringFunc(text, func(match string) string {
 		parts := regexp.MustCompile(`\.\s+`).Split(match, -1)
 		if len(parts) == 2 {
 			domain := parts[0]
 			tld := strings.TrimSpace(parts[1])
-			if regexp.MustCompile(`^(com|net|org|edu|gov|mil|int|nz|au|uk|us|ca|de|fr|jp|cn|io|co|me|info|biz)$`).MatchString(strings.ToLower(tld)) {
-				return domain + "." + tld
+			// Check if it's a valid TLD
+			validTlds := []string{"com", "net", "org", "edu", "gov", "mil", "int", "nz", "au", "uk", "us", "ca", "de", "fr", "jp", "cn", "io", "co", "me", "info", "biz"}
+			for _, validTld := range validTlds {
+				if strings.ToLower(tld) == validTld {
+					return domain + "." + tld
+				}
 			}
 		}
 		return match
