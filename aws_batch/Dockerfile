@@ -1,13 +1,13 @@
 # Multi-stage build for optimal image size
-FROM golang:1.21-alpine3.19 AS builder
+FROM golang:1.18-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
+# Install CA certificates
+RUN apk add --no-cache ca-certificates
 
 # Set working directory
 WORKDIR /build
 
-# Copy go mod files
+# Copy go mod files first for better caching
 COPY src/go.mod src/go.sum ./
 
 # Download dependencies

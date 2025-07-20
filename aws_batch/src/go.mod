@@ -1,14 +1,14 @@
 module github.com/ocr-processing-pipeline/aws-batch
 
-go 1.21
+go 1.18
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.24.0
-	github.com/aws/aws-sdk-go-v2/config v1.26.1
-	github.com/aws/aws-sdk-go-v2/service/comprehend v1.29.0
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.26.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.47.0
-	github.com/aws/aws-sdk-go-v2/service/textract v1.27.0
+	github.com/aws/aws-sdk-go-v2/config v1.18.45
+	github.com/aws/aws-sdk-go-v2/service/comprehend v1.24.0
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.40.0
+	github.com/aws/aws-sdk-go-v2/service/textract v1.22.0
 )
 
 require (
