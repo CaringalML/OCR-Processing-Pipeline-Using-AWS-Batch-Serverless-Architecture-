@@ -1,24 +1,17 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.npm
-.yarn-integrity
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Go
+*.exe
+*.exe~
+*.dll
 *.so
-.Python
-venv/
-env/
-.venv
-.env
-*.egg-info/
-dist/
-build/
+*.dylib
+*.test
+*.out
+go.work
+vendor/
+
+# Go build artifacts
+aws_batch/ocr-processor
+aws_batch/src/ocr-processor
 
 # Terraform
 .terraform/
@@ -47,6 +40,9 @@ aws-exports.js
 *.swo
 *~
 .DS_Store
+*.iml
+.project
+.settings/
 
 # Logs
 *.log
@@ -58,6 +54,7 @@ temp/
 dist/
 build/
 out/
+bin/
 
 # OS files
 Thumbs.db
@@ -66,3 +63,14 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
+
+# Lambda function zip files and binaries
+**/bootstrap
+**/*.zip
+
+# Test files
+*.jpeg
+*.jpg
+*.png
+*.pdf
+test-*

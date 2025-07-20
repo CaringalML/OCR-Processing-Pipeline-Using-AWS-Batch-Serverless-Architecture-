@@ -1,0 +1,24 @@
+# Ignore everything except src directory
+*
+!src/
+
+# But ignore test files and build artifacts in src
+src/*_test.go
+src/ocr-processor
+src/*.test
+src/*.out
+
+# Git files
+.git/
+.gitignore
+
+# Documentation
+*.md
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

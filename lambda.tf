@@ -1,38 +1,60 @@
-# SNS Topic for alerts
-resource "aws_sns_topic" "alerts" {
-  name = "${var.project_name}-${var.environment}-alerts"
-  tags = var.common_tags
+# Local exec to build Go binaries
+resource "null_resource" "build_go_lambdas" {
+  triggers = {
+    uploader_hash = filebase64sha256("${path.module}/file_uploader/src/file_uploader.go")
+    reader_hash = filebase64sha256("${path.module}/file_reader/src/file_reader.go")
+    sqs_processor_hash = filebase64sha256("${path.module}/sqs_processor/src/sqs_processor.go")
+    status_reconciliation_hash = filebase64sha256("${path.module}/batch_status_reconciliation/src/batch_status_reconciliation.go")
+    dead_job_detector_hash = filebase64sha256("${path.module}/dead_job_detector/src/dead_job_detector.go")
+    cleanup_lambda_hash = filebase64sha256("${path.module}/cleanup_lambda/src/cleanup_lambda.go")
+  }
+
+  provisioner "local-exec" {
+    command = "cd ${path.module} && cd file_uploader/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap file_uploader.go && zip ../file_uploader.zip bootstrap && cd ../.. && cd file_reader/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap file_reader.go && zip ../file_reader.zip bootstrap && cd ../.. && cd sqs_processor/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap sqs_processor.go && zip ../sqs_processor.zip bootstrap && cd ../.. && cd batch_status_reconciliation/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap batch_status_reconciliation.go && zip ../batch_status_reconciliation.zip bootstrap && cd ../.. && cd dead_job_detector/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap dead_job_detector.go && zip ../dead_job_detector.zip bootstrap && cd ../.. && cd cleanup_lambda/src && go mod tidy && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s -w' -o bootstrap cleanup_lambda.go && zip ../cleanup_lambda.zip bootstrap && cd ../.."
+  }
 }
 
-# Archive files for Lambda functions
+# Archive files for Lambda functions (using build script output)
 data "archive_file" "uploader_zip" {
   type        = "zip"
-  output_path = "${path.module}/lambda_function.zip"
-  source_file = "${path.module}/lambda_function.py"
+  source_file = "${path.module}/file_uploader/src/bootstrap"
+  output_path = "${path.module}/file_uploader/file_uploader.zip"
+  depends_on  = [null_resource.build_go_lambdas]
 }
 
 data "archive_file" "reader_zip" {
   type        = "zip"
-  output_path = "${path.module}/lambda_reader.zip"
-  source_file = "${path.module}/lambda_reader.py"
+  source_file = "${path.module}/file_reader/src/bootstrap"
+  output_path = "${path.module}/file_reader/file_reader.zip"
+  depends_on  = [null_resource.build_go_lambdas]
 }
 
 data "archive_file" "sqs_processor_zip" {
   type        = "zip"
-  output_path = "${path.module}/sqs_batch_processor.zip"
-  source_file = "${path.module}/sqs_batch_processor.py"
+  source_file = "${path.module}/sqs_processor/src/bootstrap"
+  output_path = "${path.module}/sqs_processor/sqs_processor.zip"
+  depends_on  = [null_resource.build_go_lambdas]
 }
 
 data "archive_file" "batch_reconciliation_zip" {
   type        = "zip"
-  output_path = "${path.module}/batch_status_reconciliation.zip"
-  source_file = "${path.module}/batch_status_reconciliation.py"
+  source_file = "${path.module}/batch_status_reconciliation/src/bootstrap"
+  output_path = "${path.module}/batch_status_reconciliation/batch_status_reconciliation.zip"
+  depends_on  = [null_resource.build_go_lambdas]
 }
 
 data "archive_file" "dead_job_detector_zip" {
   type        = "zip"
-  output_path = "${path.module}/dead_job_detector.zip"
-  source_file = "${path.module}/dead_job_detector.py"
+  source_file = "${path.module}/dead_job_detector/src/bootstrap"
+  output_path = "${path.module}/dead_job_detector/dead_job_detector.zip"
+  depends_on  = [null_resource.build_go_lambdas]
+}
+
+data "archive_file" "cleanup_lambda_zip" {
+  type        = "zip"
+  source_file = "${path.module}/cleanup_lambda/src/bootstrap"
+  output_path = "${path.module}/cleanup_lambda/cleanup_lambda.zip"
+  depends_on  = [null_resource.build_go_lambdas]
 }
 
 # Uploader Lambda Function (S3 file uploader)
@@ -40,8 +62,8 @@ resource "aws_lambda_function" "uploader" {
   filename         = data.archive_file.uploader_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-uploader"
   role             = aws_iam_role.uploader_role.arn
-  handler          = "lambda_function.lambda_handler"
-  runtime          = "python3.9"
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
   timeout          = 300
   memory_size      = 256
   source_code_hash = data.archive_file.uploader_zip.output_base64sha256
@@ -70,8 +92,8 @@ resource "aws_lambda_function" "reader" {
   filename         = data.archive_file.reader_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-reader"
   role             = aws_iam_role.reader_role.arn
-  handler          = "lambda_reader.lambda_handler"
-  runtime          = "python3.9"
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
   timeout          = 60
   memory_size      = 256
   source_code_hash = data.archive_file.reader_zip.output_base64sha256
@@ -101,8 +123,8 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   filename         = data.archive_file.sqs_processor_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-sqs-batch-processor"
   role             = aws_iam_role.sqs_processor_role.arn
-  handler          = "sqs_batch_processor.lambda_handler"
-  runtime          = "python3.9"
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
   timeout          = 60
   memory_size      = 256
   source_code_hash = data.archive_file.sqs_processor_zip.output_base64sha256
@@ -147,13 +169,19 @@ resource "aws_cloudwatch_log_group" "sqs_processor_logs" {
   tags              = var.common_tags
 }
 
+resource "aws_cloudwatch_log_group" "cleanup_lambda_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-cleanup-lambda"
+  retention_in_days = var.cleanup_log_retention_days
+  tags              = var.common_tags
+}
+
 # Batch Status Reconciliation Lambda Function
 resource "aws_lambda_function" "batch_status_reconciliation" {
   filename         = data.archive_file.batch_reconciliation_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-batch-status-reconciliation"
   role             = aws_iam_role.batch_reconciliation_role.arn
-  handler          = "batch_status_reconciliation.lambda_handler"
-  runtime          = "python3.9"
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
   timeout          = 60
   memory_size      = 256
   source_code_hash = data.archive_file.batch_reconciliation_zip.output_base64sha256
@@ -176,19 +204,13 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
   })
 }
 
-resource "aws_cloudwatch_log_group" "batch_reconciliation_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-batch-status-reconciliation"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
-}
-
 # Dead Job Detector Lambda Function
 resource "aws_lambda_function" "dead_job_detector" {
   filename         = data.archive_file.dead_job_detector_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-dead-job-detector"
   role             = aws_iam_role.dead_job_detector_role.arn
-  handler          = "dead_job_detector.lambda_handler"
-  runtime          = "python3.9"
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
   timeout          = 300
   memory_size      = 256
   source_code_hash = data.archive_file.dead_job_detector_zip.output_base64sha256
@@ -212,8 +234,32 @@ resource "aws_lambda_function" "dead_job_detector" {
   })
 }
 
-resource "aws_cloudwatch_log_group" "dead_job_detector_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-dead-job-detector"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+# Cleanup Lambda Function (Automated cleanup of old jobs and tasks)
+resource "aws_lambda_function" "cleanup_lambda" {
+  filename         = data.archive_file.cleanup_lambda_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-cleanup-lambda"
+  role             = aws_iam_role.cleanup_lambda_execution.arn
+  handler          = "bootstrap"
+  runtime          = "provided.al2"
+  timeout          = 300
+  memory_size      = 256
+  source_code_hash = data.archive_file.cleanup_lambda_zip.output_base64sha256
+
+  environment {
+    variables = {
+      BATCH_JOB_QUEUE   = aws_batch_job_queue.main.name
+      CLEANUP_AGE_HOURS = var.cleanup_age_hours
+      LOG_LEVEL         = "INFO"
+      ENVIRONMENT       = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.cleanup_lambda_policy,
+    aws_cloudwatch_log_group.cleanup_lambda_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-cleanup-lambda"
+  })
 }
