@@ -22,17 +22,22 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o ocr-processor \
     index.go
 
-# Final stage - minimal runtime image
-FROM scratch
+# Final stage - use alpine for AWS Batch compatibility
+FROM alpine:3.18
 
-# Copy CA certificates for HTTPS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Install CA certificates and create user
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
 
 # Copy the binary
-COPY --from=builder /build/ocr-processor /ocr-processor
+COPY --from=builder /build/ocr-processor /usr/local/bin/ocr-processor
 
-# Set non-root user (scratch doesn't have users, but we can use UID)
-USER 1001
+# Set permissions
+RUN chmod +x /usr/local/bin/ocr-processor
+
+# Switch to non-root user
+USER appuser
 
 # Run the binary
-ENTRYPOINT ["/ocr-processor"]
+ENTRYPOINT ["/usr/local/bin/ocr-processor"]

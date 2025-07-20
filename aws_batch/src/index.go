@@ -202,11 +202,17 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// Log startup info
+	// Log startup info with more debugging
 	isDev := os.Getenv("NODE_ENV") == "development"
+	
+	// Always log basic startup info for troubleshooting
+	logger.Log(INFO, "INFO", "OCR Processor starting", map[string]interface{}{
+		"version": "2.2.0-go",
+		"runtime": "go",
+	})
+	
 	if isDev || logger.level == DEBUG {
 		logger.Log(DEBUG, "DEBUG", "Container startup debug info", map[string]interface{}{
-			"goVersion": strings.TrimPrefix(strings.TrimSpace(strings.Split(os.Args[0], " ")[0]), "go"),
 			"environment": map[string]string{
 				"AWS_BATCH_JOB_ID": os.Getenv("AWS_BATCH_JOB_ID"),
 				"S3_BUCKET":        os.Getenv("S3_BUCKET"),
@@ -216,13 +222,27 @@ func main() {
 				"AWS_REGION":       os.Getenv("AWS_REGION"),
 			},
 		})
-	} else {
-		hasRequiredEnvVars := os.Getenv("S3_BUCKET") != "" && os.Getenv("S3_KEY") != "" &&
-			os.Getenv("FILE_ID") != "" && os.Getenv("DYNAMODB_TABLE") != ""
-		logger.Log(INFO, "INFO", "OCR Processor starting - batch mode only", map[string]interface{}{
-			"hasRequiredEnvVars": hasRequiredEnvVars,
-		})
 	}
+	
+	// Validate environment variables early
+	requiredVars := []string{"S3_BUCKET", "S3_KEY", "FILE_ID", "DYNAMODB_TABLE"}
+	var missingVars []string
+	for _, v := range requiredVars {
+		if os.Getenv(v) == "" {
+			missingVars = append(missingVars, v)
+		}
+	}
+	
+	if len(missingVars) > 0 {
+		logger.Log(ERROR, "ERROR", "Missing required environment variables", map[string]interface{}{
+			"missingVars": missingVars,
+		})
+		os.Exit(1)
+	}
+	
+	logger.Log(INFO, "INFO", "Environment validation passed", map[string]interface{}{
+		"allRequiredVarsPresent": true,
+	})
 
 	// Initialize AWS clients
 	ctx := context.Background()
@@ -258,22 +278,6 @@ func initializeAWSClients(ctx context.Context) error {
 }
 
 func runBatchJob(ctx context.Context) error {
-	// Validate required environment variables
-	requiredVars := []string{"S3_BUCKET", "S3_KEY", "FILE_ID", "DYNAMODB_TABLE"}
-	var missingVars []string
-	for _, v := range requiredVars {
-		if os.Getenv(v) == "" {
-			missingVars = append(missingVars, v)
-		}
-	}
-
-	if len(missingVars) > 0 {
-		logger.Log(ERROR, "ERROR", "Missing required environment variables", map[string]interface{}{
-			"missingVars": missingVars,
-		})
-		return fmt.Errorf("missing required environment variables: %v", missingVars)
-	}
-
 	logger.Log(INFO, "INFO", "Starting batch processing", map[string]interface{}{
 		"batchJobId": os.Getenv("AWS_BATCH_JOB_ID"),
 		"jobQueue":   os.Getenv("AWS_BATCH_JQ_NAME"),
@@ -281,6 +285,9 @@ func runBatchJob(ctx context.Context) error {
 
 	result, err := processS3File(ctx)
 	if err != nil {
+		logger.Log(ERROR, "ERROR", "Batch processing failed", map[string]interface{}{
+			"error": err.Error(),
+		})
 		return err
 	}
 
