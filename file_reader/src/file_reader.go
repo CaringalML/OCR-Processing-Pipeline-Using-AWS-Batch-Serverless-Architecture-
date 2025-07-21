@@ -208,8 +208,8 @@ func handleSingleFileRequest(fileID string, headers map[string]string) (events.A
 		CloudFrontURL:    cloudFrontURL,
 	}
 
-	// Add processing results if available
-	if processingResult.FileID != "" {
+	// Add processing results if available - check for extracted text or analysis data
+	if processingResult.ExtractedText != "" || len(processingResult.Analysis) > 0 || len(processingResult.ComprehendAnalysis) > 0 || len(processingResult.TextractAnalysis) > 0 {
 		responseData.ExtractedText = processingResult.ExtractedText
 		responseData.FormattedText = processingResult.FormattedText
 		responseData.TextFormatting = processingResult.TextFormatting
@@ -317,12 +317,13 @@ func handleMultipleFilesRequest(statusFilter string, limit int64, headers map[st
 			CloudFrontURL:    cloudFrontURL,
 		}
 
-		// Add processing results if available and status is processed
-		if processingResult.FileID != "" && fileMetadata.ProcessingStatus == "processed" {
+		// Add processing results if available and status is processed - check for actual data
+		if fileMetadata.ProcessingStatus == "processed" && (processingResult.ExtractedText != "" || len(processingResult.Analysis) > 0 || len(processingResult.ComprehendAnalysis) > 0 || len(processingResult.TextractAnalysis) > 0) {
 			itemData.ExtractedText = processingResult.ExtractedText
 			itemData.FormattedText = processingResult.FormattedText
 			itemData.TextFormatting = processingResult.TextFormatting
 			itemData.Analysis = processingResult.Analysis
+			itemData.ProcessingDuration = processingResult.ProcessingDuration
 			itemData.ComprehendAnalysis = processingResult.ComprehendAnalysis
 			itemData.TextractAnalysis = processingResult.TextractAnalysis
 		}
