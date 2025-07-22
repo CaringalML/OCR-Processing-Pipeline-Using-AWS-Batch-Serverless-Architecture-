@@ -376,17 +376,29 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
         })
         
         # Start asynchronous document analysis - text only
-        start_params = {
-            'DocumentLocation': {
-                'S3Object': {
-                    'Bucket': bucket_name,
-                    'Name': object_key
+        # For text-only extraction, we can use start_document_text_detection instead
+        # which doesn't require FeatureTypes parameter
+        try:
+            response = textract_client.start_document_text_detection(
+                DocumentLocation={
+                    'S3Object': {
+                        'Bucket': bucket_name,
+                        'Name': object_key
+                    }
                 }
-            },
-            'FeatureTypes': ['LINES']  # Extract only text lines, not tables/forms
-        }
-        
-        response = textract_client.start_document_analysis(**start_params)
+            )
+        except Exception as e:
+            # If text detection fails, try document analysis with valid feature types
+            log('WARN', 'Text detection failed, trying document analysis', {'error': str(e)})
+            response = textract_client.start_document_analysis(
+                DocumentLocation={
+                    'S3Object': {
+                        'Bucket': bucket_name,
+                        'Name': object_key
+                    }
+                },
+                FeatureTypes=['TABLES', 'FORMS']  # Valid feature types for document analysis
+            )
         job_id = response['JobId']
         log('INFO', 'Textract job submitted', {'textractJobId': job_id})
         
@@ -398,7 +410,12 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
         while job_status == 'IN_PROGRESS' and attempts < max_attempts:
             time.sleep(5)  # Wait 5 seconds
             
-            status_response = textract_client.get_document_analysis(JobId=job_id)
+            # Try text detection result first, then document analysis
+            try:
+                status_response = textract_client.get_document_text_detection(JobId=job_id)
+            except:
+                status_response = textract_client.get_document_analysis(JobId=job_id)
+            
             job_status = status_response['JobStatus']
             attempts += 1
             
@@ -428,7 +445,12 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
             if next_token:
                 params['NextToken'] = next_token
             
-            response = textract_client.get_document_analysis(**params)
+            # Try text detection result first, then document analysis
+            try:
+                response = textract_client.get_document_text_detection(**params)
+            except:
+                response = textract_client.get_document_analysis(**params)
+            
             all_blocks.extend(response.get('Blocks', []))
             next_token = response.get('NextToken')
             page_count += 1
