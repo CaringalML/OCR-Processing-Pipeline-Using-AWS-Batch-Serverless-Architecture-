@@ -10,9 +10,10 @@ import logging
 import time
 import signal
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 import re
+from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -45,7 +46,7 @@ def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
     
     if levels.get(level.upper(), 20) >= current_level:
         log_entry = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'level': level.upper(),
             'message': message,
             'batchJobId': os.getenv('AWS_BATCH_JOB_ID'),
@@ -83,7 +84,7 @@ def health_check() -> Dict[str, Any]:
     """Simple health check for container health monitoring"""
     return {
         'status': 'healthy',
-        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'uptime': time.time(),
         'mode': 'batch-only',
         'version': '2.0.0'
@@ -125,7 +126,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         # Update processing status to 'processing'
         await update_file_status(dynamo_table, file_id, 'processing', {
-            'processing_started': datetime.utcnow().isoformat() + 'Z',
+            'processing_started': datetime.now(timezone.utc).isoformat(),
             'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown')
         })
         
@@ -202,7 +203,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         # Generate processing results
         processing_results = {
-            'processed_at': datetime.utcnow().isoformat() + 'Z',
+            'processed_at': datetime.now(timezone.utc).isoformat(),
             'file_size': file_size,
             'content_type': content_type,
             'processing_duration': f'{total_processing_time:.2f} seconds',
@@ -238,7 +239,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         # Update file status to 'processed'
         await update_file_status(dynamo_table, file_id, 'processed', {
-            'processing_completed': datetime.utcnow().isoformat() + 'Z',
+            'processing_completed': datetime.now(timezone.utc).isoformat(),
             'processing_duration': processing_results['processing_duration']
         })
         
@@ -263,7 +264,7 @@ async def process_s3_file() -> Dict[str, Any]:
         try:
             await update_file_status(dynamo_table, file_id, 'failed', {
                 'error_message': str(error),
-                'failed_at': datetime.utcnow().isoformat() + 'Z'
+                'failed_at': datetime.now(timezone.utc).isoformat()
             })
             log('INFO', 'File status updated to failed')
         except Exception as update_error:
@@ -765,7 +766,7 @@ async def update_file_status(table_name: str, file_id: str, status: str, additio
         update_expression = 'SET processing_status = :status, last_updated = :updated'
         expression_attribute_values = {
             ':status': status,
-            ':updated': datetime.utcnow().isoformat() + 'Z'
+            ':updated': datetime.now(timezone.utc).isoformat()
         }
         
         # Add additional data to the update
@@ -794,6 +795,18 @@ async def update_file_status(table_name: str, file_id: str, status: str, additio
         raise
 
 
+def convert_floats_to_decimal(obj):
+    """Recursively convert all float values to Decimal for DynamoDB compatibility"""
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    elif isinstance(obj, dict):
+        return {k: convert_floats_to_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_floats_to_decimal(i) for i in obj]
+    else:
+        return obj
+
+
 async def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
     """Store processing results in DynamoDB"""
     results_table_name = os.getenv('DYNAMODB_TABLE', '').replace('-file-metadata', '-processing-results')
@@ -801,10 +814,11 @@ async def store_processing_results(file_id: str, results: Dict[str, Any]) -> Non
     try:
         table = dynamodb.Table(results_table_name)
         
-        item = {
+        # Convert all float values to Decimal
+        item = convert_floats_to_decimal({
             'file_id': file_id,
             **results
-        }
+        })
         
         table.put_item(Item=item)
         log('DEBUG', 'Processing results stored', {'fileId': file_id, 'table': results_table_name})
