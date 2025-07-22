@@ -109,12 +109,13 @@ def lambda_handler(event, context):
                                 'file_id': file_id,
                                 'upload_timestamp': upload_timestamp
                             },
-                            UpdateExpression='SET processing_status = :status, batch_job_id = :job_id, batch_job_name = :job_name, last_updated = :updated',
+                            UpdateExpression='SET processing_status = :status, batch_job_id = :job_id, batch_job_name = :job_name, last_updated = :updated, processing_started = :started',
                             ExpressionAttributeValues={
                                 ':status': 'processing',
                                 ':job_id': job_id,
                                 ':job_name': job_name,
-                                ':updated': datetime.utcnow().isoformat()
+                                ':updated': datetime.utcnow().isoformat(),
+                                ':started': int(datetime.utcnow().timestamp())
                             }
                         )
                     else:

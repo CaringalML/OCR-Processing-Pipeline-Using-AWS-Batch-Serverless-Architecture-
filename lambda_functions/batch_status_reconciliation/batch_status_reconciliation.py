@@ -103,25 +103,33 @@ def update_status_to_processed(table: Any, file_id: str, job_id: str) -> None:
     import time
     
     try:
+        # First, query to get the correct upload_timestamp
+        query_response = table.query(
+            KeyConditionExpression='file_id = :file_id',
+            ExpressionAttributeValues={':file_id': file_id},
+            Limit=1
+        )
+        
+        if not query_response['Items']:
+            logger.warning(f"File {file_id} not found in DynamoDB")
+            return
+            
+        upload_timestamp = query_response['Items'][0]['upload_timestamp']
+        
         response = table.update_item(
-            Key={'file_id': file_id},
+            Key={
+                'file_id': file_id,
+                'upload_timestamp': upload_timestamp
+            },
             UpdateExpression='SET processing_status = :status, processing_completed = :completed, last_updated = :updated, batch_job_final_status = :batch_status',
             ExpressionAttributeValues={
                 ':status': 'processed',
                 ':completed': int(time.time()),
                 ':updated': int(time.time()),
-                ':batch_status': 'SUCCEEDED'
-            },
-            ConditionExpression='attribute_exists(file_id) AND processing_status = :processing_status',
-            ExpressionAttributeValues={
-                **{
-                    ':status': 'processed',
-                    ':completed': int(time.time()),
-                    ':updated': int(time.time()),
-                    ':batch_status': 'SUCCEEDED'
-                },
+                ':batch_status': 'SUCCEEDED',
                 ':processing_status': 'processing'
             },
+            ConditionExpression='attribute_exists(file_id) AND processing_status = :processing_status',
             ReturnValues='UPDATED_NEW'
         )
         logger.info(f"Updated file_id {file_id} to processed status")
@@ -141,27 +149,34 @@ def update_status_to_failed(table: Any, file_id: str, job_id: str, job_detail: D
         # Extract failure reason from job detail
         status_reason = job_detail.get('statusReason', 'Batch job failed')
         
+        # First, query to get the correct upload_timestamp
+        query_response = table.query(
+            KeyConditionExpression='file_id = :file_id',
+            ExpressionAttributeValues={':file_id': file_id},
+            Limit=1
+        )
+        
+        if not query_response['Items']:
+            logger.warning(f"File {file_id} not found in DynamoDB")
+            return
+            
+        upload_timestamp = query_response['Items'][0]['upload_timestamp']
+        
         response = table.update_item(
-            Key={'file_id': file_id},
+            Key={
+                'file_id': file_id,
+                'upload_timestamp': upload_timestamp
+            },
             UpdateExpression='SET processing_status = :status, failed_at = :failed_at, last_updated = :updated, error_message = :error, batch_job_final_status = :batch_status',
             ExpressionAttributeValues={
                 ':status': 'failed',
                 ':failed_at': int(time.time()),
                 ':updated': int(time.time()),
                 ':error': f"Batch job failed: {status_reason}",
-                ':batch_status': 'FAILED'
-            },
-            ConditionExpression='attribute_exists(file_id) AND processing_status = :processing_status',
-            ExpressionAttributeValues={
-                **{
-                    ':status': 'failed',
-                    ':failed_at': int(time.time()),
-                    ':updated': int(time.time()),
-                    ':error': f"Batch job failed: {status_reason}",
-                    ':batch_status': 'FAILED'
-                },
+                ':batch_status': 'FAILED',
                 ':processing_status': 'processing'
             },
+            ConditionExpression='attribute_exists(file_id) AND processing_status = :processing_status',
             ReturnValues='UPDATED_NEW'
         )
         logger.info(f"Updated file_id {file_id} to failed status")

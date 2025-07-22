@@ -83,18 +83,69 @@ def find_stuck_processing_jobs(table: Any, max_processing_minutes: int) -> List[
     cutoff_time = int(time.time()) - (max_processing_minutes * 60)
     
     try:
-        # Scan for jobs in processing status that started before cutoff time
+        # Scan for jobs in processing status
+        # Note: We'll check processing_started in the results since it might not always exist
         response = table.scan(
-            FilterExpression='processing_status = :status AND processing_started < :cutoff',
+            FilterExpression='processing_status = :status',
             ExpressionAttributeValues={
-                ':status': 'processing',
-                ':cutoff': cutoff_time
+                ':status': 'processing'
             }
         )
         
-        stuck_jobs = response.get('Items', [])
+        all_processing_jobs = response.get('Items', [])
+        stuck_jobs = []
         
-        logger.info(f"Found {len(stuck_jobs)} jobs stuck in processing status")
+        # Filter jobs that have been processing for too long
+        for job in all_processing_jobs:
+            # Check if processing_started exists
+            processing_started = job.get('processing_started')
+            
+            if processing_started:
+                # If it's a timestamp (int), use it directly
+                if isinstance(processing_started, int):
+                    if processing_started < cutoff_time:
+                        stuck_jobs.append(job)
+                # If it's an ISO string, try to parse it
+                elif isinstance(processing_started, str):
+                    try:
+                        from datetime import datetime
+                        started_time = datetime.fromisoformat(processing_started.replace('Z', '+00:00')).timestamp()
+                        if started_time < cutoff_time:
+                            stuck_jobs.append(job)
+                    except:
+                        # If we can't parse it, include it as stuck to be safe
+                        stuck_jobs.append(job)
+            else:
+                # If no processing_started field, check last_updated or upload_timestamp
+                last_updated = job.get('last_updated')
+                upload_timestamp = job.get('upload_timestamp')
+                
+                # Try to determine if it's been too long since any update
+                reference_time = None
+                
+                if last_updated:
+                    try:
+                        from datetime import datetime
+                        reference_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00')).timestamp()
+                    except:
+                        pass
+                
+                if not reference_time and upload_timestamp:
+                    try:
+                        from datetime import datetime
+                        reference_time = datetime.fromisoformat(upload_timestamp.replace('Z', '+00:00')).timestamp()
+                    except:
+                        pass
+                
+                # If we found a reference time and it's too old, consider it stuck
+                if reference_time and reference_time < cutoff_time:
+                    stuck_jobs.append(job)
+                elif not reference_time:
+                    # If we can't determine when it started, include it to be safe
+                    logger.warning(f"Job {job.get('file_id')} has no timestamp fields, including as stuck")
+                    stuck_jobs.append(job)
+        
+        logger.info(f"Found {len(stuck_jobs)} jobs stuck in processing status out of {len(all_processing_jobs)} total processing jobs")
         
         return stuck_jobs
         
@@ -206,8 +257,24 @@ def update_status_to_processed(table: Any, file_id: str, batch_job_id: str) -> N
     import time
     
     try:
+        # First, query to get the correct upload_timestamp
+        query_response = table.query(
+            KeyConditionExpression='file_id = :file_id',
+            ExpressionAttributeValues={':file_id': file_id},
+            Limit=1
+        )
+        
+        if not query_response['Items']:
+            logger.warning(f"File {file_id} not found in DynamoDB")
+            return
+            
+        upload_timestamp = query_response['Items'][0]['upload_timestamp']
+        
         table.update_item(
-            Key={'file_id': file_id},
+            Key={
+                'file_id': file_id,
+                'upload_timestamp': upload_timestamp
+            },
             UpdateExpression='SET processing_status = :status, processing_completed = :completed, last_updated = :updated, batch_job_final_status = :batch_status',
             ExpressionAttributeValues={
                 ':status': 'processed',
@@ -229,8 +296,24 @@ def update_status_to_failed(table: Any, file_id: str, error_message: str) -> Non
     import time
     
     try:
+        # First, query to get the correct upload_timestamp
+        query_response = table.query(
+            KeyConditionExpression='file_id = :file_id',
+            ExpressionAttributeValues={':file_id': file_id},
+            Limit=1
+        )
+        
+        if not query_response['Items']:
+            logger.warning(f"File {file_id} not found in DynamoDB")
+            return
+            
+        upload_timestamp = query_response['Items'][0]['upload_timestamp']
+        
         table.update_item(
-            Key={'file_id': file_id},
+            Key={
+                'file_id': file_id,
+                'upload_timestamp': upload_timestamp
+            },
             UpdateExpression='SET processing_status = :status, failed_at = :failed_at, last_updated = :updated, error_message = :error, batch_job_final_status = :batch_status',
             ExpressionAttributeValues={
                 ':status': 'failed',

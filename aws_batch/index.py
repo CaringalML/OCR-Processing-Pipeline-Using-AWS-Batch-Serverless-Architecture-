@@ -382,8 +382,8 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
                     'Bucket': bucket_name,
                     'Name': object_key
                 }
-            }
-            # Removed FeatureTypes to only extract text, not tables/forms
+            },
+            'FeatureTypes': ['LINES']  # Extract only text lines, not tables/forms
         }
         
         response = textract_client.start_document_analysis(**start_params)
