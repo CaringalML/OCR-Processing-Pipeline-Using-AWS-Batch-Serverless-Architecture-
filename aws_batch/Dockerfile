@@ -4,11 +4,28 @@ FROM python:3.12-alpine3.20
 # Set working directory
 WORKDIR /app
 
+# Install system dependencies required for text processing libraries
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    build-base \
+    && rm -rf /var/cache/apk/*
+
 # Copy requirements file first
 COPY requirements.txt ./
 
-# Install dependencies as root user
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies as root user
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Install text correction libraries
+RUN pip install --no-cache-dir \
+    textblob==0.17.1 \
+    pyspellchecker==0.7.2
+
+# Download TextBlob corpora for better text correction
+RUN python -m textblob.download_corpora lite
 
 # Copy the rest of the application code
 COPY . .
@@ -18,15 +35,16 @@ RUN addgroup -g 1001 -S python && \
     adduser -S python -u 1001 -G python && \
     chown -R python:python /app
 
+# Remove build dependencies to reduce image size (keep runtime dependencies)
+RUN apk del gcc musl-dev build-base
+
 # Switch to non-root user
 USER python
 
-# Expose port (not necessary for AWS Batch but good practice)
-EXPOSE 3000
-
-# Add health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD python -c "import requests; import sys; sys.exit(0 if requests.get('http://localhost:3000/health').status_code == 200 else 1)" 2>/dev/null || exit 0
+# Set environment variables for better Python performance
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
 # Command to run the application
 CMD ["python", "index.py"]

@@ -2,9 +2,9 @@ name: Terraform Validate and Deploy to AWS ECR
 
 on:
   push:
-    branches: [ origin/v2-python ]
+    branches: [ v2-python ]
   pull_request:
-    branches: [ origin/v2-python ]
+    branches: [ v2-python ]
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -27,7 +27,7 @@ jobs:
       run: terraform validate
 
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -35,13 +35,15 @@ jobs:
 
     - name: Login to Amazon ECR
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
+      uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build and Push Docker Image to ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ github.sha }}
       run: |
-        IMAGE_TAG=latest
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./aws_batch
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./aws_batch
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest

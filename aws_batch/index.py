@@ -2,6 +2,7 @@
 """
 OCR Processing Pipeline - Batch Processing Only
 Converts documents to text using AWS Textract and analyzes with AWS Comprehend
+Fixed for DynamoDB compatibility
 """
 
 import json
@@ -11,12 +12,28 @@ import time
 import signal
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import boto3
 from botocore.exceptions import ClientError
+
+# Text correction libraries
+try:
+    from textblob import TextBlob
+    TEXTBLOB_AVAILABLE = True
+except ImportError:
+    TEXTBLOB_AVAILABLE = False
+    log('WARN', 'TextBlob not available - text correction disabled')
+
+try:
+    import spellchecker
+    from spellchecker import SpellChecker
+    SPELLCHECKER_AVAILABLE = True
+except ImportError:
+    SPELLCHECKER_AVAILABLE = False
+    log('WARN', 'PySpellChecker not available - advanced spell checking disabled')
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
@@ -91,8 +108,72 @@ def health_check() -> Dict[str, Any]:
     }
 
 
-async def process_s3_file() -> Dict[str, Any]:
-    """Main S3 file processing function"""
+def convert_to_dynamodb_compatible(obj: Any) -> Any:
+    """
+    Recursively convert Python objects to DynamoDB-compatible format.
+    Handles floats, None values, and empty containers.
+    """
+    if obj is None:
+        return 'NULL'  # DynamoDB doesn't support null values directly
+    elif isinstance(obj, float):
+        if obj != obj:  # Check for NaN
+            return Decimal('0')
+        elif obj == float('inf') or obj == float('-inf'):
+            return Decimal('0')
+        else:
+            try:
+                # Convert to string first to avoid precision issues
+                return Decimal(str(round(obj, 6)))
+            except (InvalidOperation, ValueError):
+                return Decimal('0')
+    elif isinstance(obj, int):
+        return obj
+    elif isinstance(obj, str):
+        return obj if obj else 'EMPTY'  # DynamoDB doesn't like empty strings
+    elif isinstance(obj, bool):
+        return obj
+    elif isinstance(obj, dict):
+        if not obj:  # Empty dict
+            return {'EMPTY': 'DICT'}
+        converted = {}
+        for k, v in obj.items():
+            # Convert key to string if needed
+            key = str(k) if not isinstance(k, str) else k
+            if not key:  # Empty key
+                key = 'EMPTY_KEY'
+            converted[key] = convert_to_dynamodb_compatible(v)
+        return converted
+    elif isinstance(obj, (list, tuple)):
+        if not obj:  # Empty list
+            return ['EMPTY_LIST']
+        return [convert_to_dynamodb_compatible(item) for item in obj]
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    else:
+        # For any other type, convert to string
+        return str(obj) if obj is not None else 'NULL'
+
+
+def safe_decimal_conversion(value: Union[float, int, str]) -> Decimal:
+    """Safely convert a value to Decimal with error handling"""
+    try:
+        if isinstance(value, (int, str)):
+            return Decimal(str(value))
+        elif isinstance(value, float):
+            if value != value:  # NaN check
+                return Decimal('0')
+            elif value == float('inf') or value == float('-inf'):
+                return Decimal('0')
+            else:
+                return Decimal(str(round(value, 6)))
+        else:
+            return Decimal('0')
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal('0')
+
+
+def process_s3_file() -> Dict[str, Any]:
+    """Main S3 file processing function - synchronous version"""
     bucket_name = os.getenv('S3_BUCKET')
     object_key = os.getenv('S3_KEY')
     file_id = os.getenv('FILE_ID')
@@ -125,7 +206,7 @@ async def process_s3_file() -> Dict[str, Any]:
         log('INFO', 'Updating status to processing')
         
         # Update processing status to 'processing'
-        await update_file_status(dynamo_table, file_id, 'processing', {
+        update_file_status(dynamo_table, file_id, 'processing', {
             'processing_started': datetime.now(timezone.utc).isoformat(),
             'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown')
         })
@@ -152,7 +233,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         # Process file with AWS Textract
         start_time = time.time()
-        extracted_data = await process_file_with_textract(bucket_name, object_key)
+        extracted_data = process_file_with_textract(bucket_name, object_key)
         textract_time = time.time() - start_time
         
         log('INFO', 'Textract processing completed', {
@@ -162,23 +243,30 @@ async def process_s3_file() -> Dict[str, Any]:
             'confidence': extracted_data['confidence']
         })
         
-        # Format the extracted text
+        # Format the extracted text with correction
         formatted_text_data = {}
+        corrected_text_data = {}
         text_for_comprehend = extracted_data['text']
         
         if extracted_data['text'] and extracted_data['text'].strip():
             log('INFO', 'Formatting extracted text')
             formatted_text_data = format_extracted_text(extracted_data['text'])
             
-            # Use the formatted text for Comprehend analysis
-            text_for_comprehend = formatted_text_data.get('formatted', extracted_data['text'])
+            # Apply text correction to the formatted text
+            log('INFO', 'Applying text correction')
+            corrected_text_data = apply_text_correction(formatted_text_data.get('formatted', extracted_data['text']))
             
-            log('INFO', 'Text formatting completed', {
+            # Use the corrected text for Comprehend analysis
+            text_for_comprehend = corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text']))
+            
+            log('INFO', 'Text formatting and correction completed', {
                 'originalChars': formatted_text_data['stats']['originalChars'],
-                'cleanedChars': formatted_text_data['stats']['cleanedChars'],
+                'formattedChars': formatted_text_data['stats']['cleanedChars'],
+                'correctedChars': corrected_text_data.get('corrected_length', 0),
                 'paragraphs': formatted_text_data['stats']['paragraphCount'],
                 'sentences': formatted_text_data['stats']['sentenceCount'],
-                'reduction': f"{formatted_text_data['stats']['reductionPercent']}%"
+                'correctionsApplied': corrected_text_data.get('corrections_made', 0),
+                'correctionMethod': corrected_text_data.get('method', 'none')
             })
         
         # Process formatted text with AWS Comprehend
@@ -186,7 +274,7 @@ async def process_s3_file() -> Dict[str, Any]:
         if text_for_comprehend and text_for_comprehend.strip():
             log('INFO', 'Starting Comprehend analysis on formatted text')
             comprehend_start_time = time.time()
-            comprehend_data = await process_text_with_comprehend(text_for_comprehend)
+            comprehend_data = process_text_with_comprehend(text_for_comprehend)
             comprehend_time = time.time() - comprehend_start_time
             
             log('INFO', 'Comprehend analysis completed', {
@@ -201,7 +289,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         total_processing_time = time.time() - start_time
         
-        # Generate processing results
+        # Generate processing results with text correction
         processing_results = {
             'processed_at': datetime.now(timezone.utc).isoformat(),
             'file_size': file_size,
@@ -209,36 +297,43 @@ async def process_s3_file() -> Dict[str, Any]:
             'processing_duration': f'{total_processing_time:.2f} seconds',
             'extracted_text': extracted_data['text'],
             'formatted_text': formatted_text_data.get('formatted', extracted_data['text']),
-            'text_formatting': {
-                'paragraphs': formatted_text_data.get('paragraphs', []),
-                'stats': formatted_text_data.get('stats', {}),
-                'hasFormatting': bool(formatted_text_data.get('formatted'))
-            },
-            'analysis': {
+            'corrected_text': corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])),
+            'summary_analysis': {
                 'word_count': extracted_data['wordCount'],
                 'character_count': len(extracted_data['text']),
                 'line_count': extracted_data['lineCount'],
-                'confidence': extracted_data['confidence']
+                'paragraph_count': formatted_text_data.get('stats', {}).get('paragraphCount', 0),
+                'sentence_count': formatted_text_data.get('stats', {}).get('sentenceCount', 0),
+                'confidence': extracted_data['confidence'],
+                'corrections_applied': corrected_text_data.get('corrections_made', 0),
+                'correction_method': corrected_text_data.get('method', 'none')
+            },
+            'text_correction_details': {
+                'corrections_made': corrected_text_data.get('corrections_made', 0),
+                'method_used': corrected_text_data.get('method', 'none'),
+                'sample_corrections': corrected_text_data.get('correction_details', []),
+                'length_change': corrected_text_data.get('corrected_length', 0) - corrected_text_data.get('original_length', 0)
             },
             'comprehend_analysis': comprehend_data,
             'metadata': {
-                'processor_version': '2.2.0',
+                'processor_version': '2.3.0',  # Updated version
                 'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown'),
                 'textract_job_id': extracted_data['jobId'],
                 'textract_duration': f'{textract_time:.2f} seconds',
-                'comprehend_duration': f"{comprehend_data.get('processingTime', 0):.2f} seconds" if comprehend_data.get('processingTime') else 'N/A'
+                'comprehend_duration': f"{comprehend_data.get('processingTime', 0):.2f} seconds" if comprehend_data.get('processingTime') else 'N/A',
+                'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE
             }
         }
         
         log('INFO', 'Storing processing results')
         
         # Store processing results in DynamoDB
-        await store_processing_results(file_id, processing_results)
+        store_processing_results(file_id, processing_results)
         
         log('INFO', 'Updating status to processed')
         
         # Update file status to 'processed'
-        await update_file_status(dynamo_table, file_id, 'processed', {
+        update_file_status(dynamo_table, file_id, 'processed', {
             'processing_completed': datetime.now(timezone.utc).isoformat(),
             'processing_duration': processing_results['processing_duration']
         })
@@ -262,7 +357,7 @@ async def process_s3_file() -> Dict[str, Any]:
         
         # Update status to 'failed'
         try:
-            await update_file_status(dynamo_table, file_id, 'failed', {
+            update_file_status(dynamo_table, file_id, 'failed', {
                 'error_message': str(error),
                 'failed_at': datetime.now(timezone.utc).isoformat()
             })
@@ -273,22 +368,22 @@ async def process_s3_file() -> Dict[str, Any]:
         raise
 
 
-async def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, Any]:
-    """Process file with AWS Textract"""
+def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, Any]:
+    """Process file with AWS Textract - synchronous version"""
     try:
         log('INFO', 'Starting Textract document analysis', {
             's3Uri': f's3://{bucket_name}/{object_key}'
         })
         
-        # Start asynchronous document analysis
+        # Start asynchronous document analysis - text only
         start_params = {
             'DocumentLocation': {
                 'S3Object': {
                     'Bucket': bucket_name,
                     'Name': object_key
                 }
-            },
-            'FeatureTypes': ['TABLES', 'FORMS']  # Extract tables and forms in addition to text
+            }
+            # Removed FeatureTypes to only extract text, not tables/forms
         }
         
         response = textract_client.start_document_analysis(**start_params)
@@ -388,6 +483,155 @@ async def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[
         raise
 
 
+def apply_text_correction(text: str) -> Dict[str, Any]:
+    """
+    Apply text correction using available libraries.
+    Returns both corrected text and correction statistics.
+    """
+    if not text or not text.strip():
+        return {
+            'corrected_text': text,
+            'corrections_made': 0,
+            'correction_details': [],
+            'method': 'none'
+        }
+    
+    correction_details = []
+    corrected_text = text
+    corrections_made = 0
+    method_used = 'none'
+    
+    try:
+        # Method 1: TextBlob correction (preferred for OCR errors)
+        if TEXTBLOB_AVAILABLE:
+            log('DEBUG', 'Applying TextBlob text correction')
+            blob = TextBlob(text)
+            corrected_blob = blob.correct()
+            corrected_text = str(corrected_blob)
+            method_used = 'textblob'
+            
+            # Count differences
+            original_words = text.split()
+            corrected_words = corrected_text.split()
+            
+            if len(original_words) == len(corrected_words):
+                for i, (orig, corr) in enumerate(zip(original_words, corrected_words)):
+                    if orig != corr:
+                        corrections_made += 1
+                        correction_details.append({
+                            'position': i,
+                            'original': orig,
+                            'corrected': corr,
+                            'type': 'spelling'
+                        })
+            
+            log('DEBUG', f'TextBlob correction completed - {corrections_made} corrections made')
+        
+        # Method 2: PySpellChecker as fallback/enhancement
+        elif SPELLCHECKER_AVAILABLE:
+            log('DEBUG', 'Applying PySpellChecker text correction')
+            spell = SpellChecker()
+            words = text.split()
+            corrected_words = []
+            method_used = 'pyspellchecker'
+            
+            for i, word in enumerate(words):
+                # Remove punctuation for spell checking
+                clean_word = ''.join(char for char in word if char.isalpha())
+                if clean_word and clean_word.lower() in spell:
+                    corrected_words.append(word)
+                elif clean_word:
+                    # Get the most likely correction
+                    correction = spell.correction(clean_word.lower())
+                    if correction and correction != clean_word.lower():
+                        # Preserve original case and punctuation
+                        corrected_word = word.replace(clean_word, correction.capitalize() if clean_word.isupper() else correction)
+                        corrected_words.append(corrected_word)
+                        corrections_made += 1
+                        correction_details.append({
+                            'position': i,
+                            'original': word,
+                            'corrected': corrected_word,
+                            'type': 'spelling'
+                        })
+                    else:
+                        corrected_words.append(word)
+                else:
+                    corrected_words.append(word)
+            
+            corrected_text = ' '.join(corrected_words)
+            log('DEBUG', f'PySpellChecker correction completed - {corrections_made} corrections made')
+        
+        # Method 3: Basic OCR-specific corrections (always applied)
+        if method_used == 'none':
+            log('DEBUG', 'Applying basic OCR corrections')
+            corrected_text = apply_basic_ocr_corrections(text)
+            method_used = 'basic_ocr'
+            # Count basic corrections (approximate)
+            if corrected_text != text:
+                corrections_made = len(text.split()) - len(corrected_text.split()) + abs(len(text) - len(corrected_text)) // 10
+        
+    except Exception as error:
+        log('WARN', 'Text correction failed, using original text', {'error': str(error)})
+        corrected_text = text
+        method_used = 'failed'
+    
+    return {
+        'corrected_text': corrected_text,
+        'corrections_made': corrections_made,
+        'correction_details': correction_details[:10],  # Limit to first 10 for storage
+        'method': method_used,
+        'original_length': len(text),
+        'corrected_length': len(corrected_text)
+    }
+
+
+def apply_basic_ocr_corrections(text: str) -> str:
+    """
+    Apply basic OCR-specific corrections for common character recognition errors.
+    This works without external libraries.
+    """
+    if not text:
+        return text
+    
+    # Common OCR character substitutions
+    ocr_corrections = {
+        # Number/letter confusions
+        r'\b0\b': 'O',  # Standalone 0 to O
+        r'\bO\b(?=\d)': '0',  # O followed by digits to 0
+        r'\b1\b(?=[A-Za-z])': 'I',  # 1 before letters to I
+        r'\bI\b(?=\d)': '1',  # I before digits to 1
+        r'\b5\b(?=[A-Za-z])': 'S',  # 5 before letters to S
+        r'\b8\b(?=[A-Za-z])': 'B',  # 8 before letters to B
+        
+        # Common character confusions
+        r'\brn\b': 'm',  # rn to m
+        r'\bvv\b': 'w',  # vv to w
+        r'\bcl\b': 'd',  # cl to d
+        r'\bri\b': 'n',  # ri to n
+        
+        # Fix spacing around punctuation
+        r'\s+([,.!?;:])': r'\1',  # Remove space before punctuation
+        r'([,.!?;:])\s*': r'\1 ',  # Ensure space after punctuation
+        
+        # Fix common word breaks
+        r'\bthe\s+': 'the ',
+        r'\band\s+': 'and ',
+        r'\bwith\s+': 'with ',
+        r'\bthat\s+': 'that ',
+        r'\bthis\s+': 'this ',
+        
+        # Multiple spaces to single space
+        r'\s{2,}': ' ',
+    }
+    
+    corrected = text
+    for pattern, replacement in ocr_corrections.items():
+        corrected = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
+    
+    return corrected.strip()
+
+
 def get_entity_category(entity_type: str) -> str:
     """Categorize AWS Comprehend entity types for better organization"""
     categories = {
@@ -412,7 +656,7 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
             return {
                 'formatted': '',
                 'paragraphs': [],
-                'stats': {'paragraphCount': 0, 'sentenceCount': 0, 'cleanedChars': 0}
+                'stats': {'paragraphCount': 0, 'sentenceCount': 0, 'cleanedChars': 0, 'originalChars': 0, 'reductionPercent': 0}
             }
         
         def fix_urls_and_emails(text: str) -> str:
@@ -525,12 +769,15 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
         
         # Calculate statistics
         sentences = re.findall(r'[.!?]+', formatted)
+        original_len = len(raw_text)
+        formatted_len = len(formatted)
+        
         stats = {
             'paragraphCount': len(paragraphs),
             'sentenceCount': len(sentences),
-            'cleanedChars': len(formatted),
-            'originalChars': len(raw_text),
-            'reductionPercent': round((1 - len(formatted) / len(raw_text)) * 100) if len(raw_text) > 0 else 0
+            'cleanedChars': formatted_len,
+            'originalChars': original_len,
+            'reductionPercent': round((1 - formatted_len / original_len) * 100) if original_len > 0 else 0
         }
         
         return {
@@ -542,15 +789,16 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
     except Exception as error:
         log('ERROR', 'Text formatting error', {'error': str(error)})
         word_count = len(raw_text.split()) if raw_text else 0
+        original_len = len(raw_text) if raw_text else 0
         return {
             'formatted': raw_text,
-            'paragraphs': [{'text': raw_text, 'type': 'paragraph', 'wordCount': word_count, 'charCount': len(raw_text)}],
-            'stats': {'paragraphCount': 1, 'sentenceCount': 0, 'cleanedChars': len(raw_text)}
+            'paragraphs': [{'text': raw_text, 'type': 'paragraph', 'wordCount': word_count, 'charCount': original_len}],
+            'stats': {'paragraphCount': 1, 'sentenceCount': 0, 'cleanedChars': original_len, 'originalChars': original_len, 'reductionPercent': 0}
         }
 
 
-async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
-    """Process text with AWS Comprehend"""
+def process_text_with_comprehend(text: str) -> Dict[str, Any]:
+    """Process text with AWS Comprehend - synchronous version"""
     try:
         # Comprehend has a 5000 character limit for most operations
         max_length = 5000
@@ -570,16 +818,16 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
             language_result = comprehend_client.detect_dominant_language(Text=text_to_analyze)
             
             results['language'] = language_result['Languages'][0]['LanguageCode'] if language_result['Languages'] else 'unknown'
-            results['languageScore'] = language_result['Languages'][0]['Score'] if language_result['Languages'] else 0
+            results['languageScore'] = safe_decimal_conversion(language_result['Languages'][0]['Score'] if language_result['Languages'] else 0)
             
             log('DEBUG', 'Language detection completed', {
                 'language': results['language'],
-                'score': results['languageScore']
+                'score': float(results['languageScore'])
             })
         except Exception as error:
             log('WARN', 'Language detection failed', {'error': str(error)})
             results['language'] = 'unknown'
-            results['languageScore'] = 0
+            results['languageScore'] = Decimal('0')
         
         # Sentiment analysis
         try:
@@ -590,19 +838,32 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
             
             results['sentiment'] = {
                 'Sentiment': sentiment_result['Sentiment'],
-                'SentimentScore': sentiment_result['SentimentScore']
+                'SentimentScore': {
+                    'Positive': safe_decimal_conversion(sentiment_result['SentimentScore']['Positive']),
+                    'Negative': safe_decimal_conversion(sentiment_result['SentimentScore']['Negative']),
+                    'Neutral': safe_decimal_conversion(sentiment_result['SentimentScore']['Neutral']),
+                    'Mixed': safe_decimal_conversion(sentiment_result['SentimentScore']['Mixed'])
+                }
             }
             
             log('DEBUG', 'Sentiment analysis completed', {
                 'sentiment': results['sentiment']['Sentiment'],
-                'positive': results['sentiment']['SentimentScore']['Positive'],
-                'negative': results['sentiment']['SentimentScore']['Negative'],
-                'neutral': results['sentiment']['SentimentScore']['Neutral'],
-                'mixed': results['sentiment']['SentimentScore']['Mixed']
+                'positive': float(results['sentiment']['SentimentScore']['Positive']),
+                'negative': float(results['sentiment']['SentimentScore']['Negative']),
+                'neutral': float(results['sentiment']['SentimentScore']['Neutral']),
+                'mixed': float(results['sentiment']['SentimentScore']['Mixed'])
             })
         except Exception as error:
             log('WARN', 'Sentiment analysis failed', {'error': str(error)})
-            results['sentiment'] = None
+            results['sentiment'] = {
+                'Sentiment': 'UNKNOWN',
+                'SentimentScore': {
+                    'Positive': Decimal('0'),
+                    'Negative': Decimal('0'),
+                    'Neutral': Decimal('0'),
+                    'Mixed': Decimal('0')
+                }
+            }
         
         # Entity detection
         try:
@@ -617,7 +878,7 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
                 results['entities'].append({
                     'Text': entity['Text'],
                     'Type': entity['Type'],
-                    'Score': entity['Score'],
+                    'Score': safe_decimal_conversion(entity['Score']),
                     'BeginOffset': entity['BeginOffset'],
                     'EndOffset': entity['EndOffset'],
                     'Length': entity['EndOffset'] - entity['BeginOffset'],
@@ -636,12 +897,12 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
                     'confidence': entity['Confidence']
                 })
             
-            results['entitySummary'] = entity_summary
+            results['entitySummary'] = entity_summary if entity_summary else {'EMPTY': 'NO_ENTITIES'}
             results['entityStats'] = {
                 'totalEntities': len(results['entities']),
-                'uniqueTypes': list(set(e['Type'] for e in results['entities'])),
-                'highConfidenceEntities': len([e for e in results['entities'] if e['Score'] >= 0.8]),
-                'categories': list(set(e['Category'] for e in results['entities']))
+                'uniqueTypes': list(set(e['Type'] for e in results['entities'])) if results['entities'] else ['NONE'],
+                'highConfidenceEntities': len([e for e in results['entities'] if float(e['Score']) >= 0.8]),
+                'categories': list(set(e['Category'] for e in results['entities'])) if results['entities'] else ['NONE']
             }
             
             log('DEBUG', 'Entity detection completed', {
@@ -653,12 +914,12 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
         except Exception as error:
             log('WARN', 'Entity detection failed', {'error': str(error)})
             results['entities'] = []
-            results['entitySummary'] = {}
+            results['entitySummary'] = {'EMPTY': 'NO_ENTITIES'}
             results['entityStats'] = {
                 'totalEntities': 0,
-                'uniqueTypes': [],
+                'uniqueTypes': ['NONE'],
                 'highConfidenceEntities': 0,
-                'categories': []
+                'categories': ['NONE']
             }
         
         # Key phrases extraction
@@ -672,17 +933,20 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
             for phrase in key_phrases_result['KeyPhrases']:
                 results['keyPhrases'].append({
                     'Text': phrase['Text'],
-                    'Score': phrase['Score'],
+                    'Score': safe_decimal_conversion(phrase['Score']),
                     'BeginOffset': phrase['BeginOffset'],
                     'EndOffset': phrase['EndOffset']
                 })
             
+            if not results['keyPhrases']:
+                results['keyPhrases'] = [{'Text': 'NO_KEY_PHRASES', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}]
+            
             log('DEBUG', 'Key phrases extraction completed', {
-                'keyPhrasesCount': len(results['keyPhrases'])
+                'keyPhrasesCount': len([kp for kp in results['keyPhrases'] if kp['Text'] != 'NO_KEY_PHRASES'])
             })
         except Exception as error:
             log('WARN', 'Key phrases extraction failed', {'error': str(error)})
-            results['keyPhrases'] = []
+            results['keyPhrases'] = [{'Text': 'NO_KEY_PHRASES', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}]
         
         # Syntax analysis
         try:
@@ -696,20 +960,23 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
                 results['syntax'].append({
                     'Text': token['Text'],
                     'PartOfSpeech': token['PartOfSpeech']['Tag'],
-                    'Score': token['PartOfSpeech']['Score'],
+                    'Score': safe_decimal_conversion(token['PartOfSpeech']['Score']),
                     'BeginOffset': token['BeginOffset'],
                     'EndOffset': token['EndOffset']
                 })
             
+            if not results['syntax']:
+                results['syntax'] = [{'Text': 'NO_SYNTAX', 'PartOfSpeech': 'UNKNOWN', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}]
+            
             log('DEBUG', 'Syntax analysis completed', {
-                'tokensCount': len(results['syntax'])
+                'tokensCount': len([s for s in results['syntax'] if s['Text'] != 'NO_SYNTAX'])
             })
         except Exception as error:
             log('WARN', 'Syntax analysis failed', {'error': str(error)})
-            results['syntax'] = []
+            results['syntax'] = [{'Text': 'NO_SYNTAX', 'PartOfSpeech': 'UNKNOWN', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}]
         
         processing_time = time.time() - start_time
-        results['processingTime'] = processing_time
+        results['processingTime'] = safe_decimal_conversion(processing_time)
         results['analyzedTextLength'] = len(text_to_analyze)
         results['originalTextLength'] = len(text)
         results['truncated'] = len(text) > max_length
@@ -722,19 +989,27 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
         # Return empty results on error
         return {
             'language': 'unknown',
-            'languageScore': 0,
-            'sentiment': None,
+            'languageScore': Decimal('0'),
+            'sentiment': {
+                'Sentiment': 'UNKNOWN',
+                'SentimentScore': {
+                    'Positive': Decimal('0'),
+                    'Negative': Decimal('0'),
+                    'Neutral': Decimal('0'),
+                    'Mixed': Decimal('0')
+                }
+            },
             'entities': [],
-            'entitySummary': {},
+            'entitySummary': {'EMPTY': 'NO_ENTITIES'},
             'entityStats': {
                 'totalEntities': 0,
-                'uniqueTypes': [],
+                'uniqueTypes': ['NONE'],
                 'highConfidenceEntities': 0,
-                'categories': []
+                'categories': ['NONE']
             },
-            'keyPhrases': [],
-            'syntax': [],
-            'processingTime': 0,
+            'keyPhrases': [{'Text': 'NO_KEY_PHRASES', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}],
+            'syntax': [{'Text': 'NO_SYNTAX', 'PartOfSpeech': 'UNKNOWN', 'Score': Decimal('0'), 'BeginOffset': 0, 'EndOffset': 0}],
+            'processingTime': Decimal('0'),
             'analyzedTextLength': 0,
             'originalTextLength': len(text),
             'truncated': False,
@@ -742,8 +1017,8 @@ async def process_text_with_comprehend(text: str) -> Dict[str, Any]:
         }
 
 
-async def update_file_status(table_name: str, file_id: str, status: str, additional_data: Dict[str, Any] = None) -> None:
-    """Update file status in DynamoDB"""
+def update_file_status(table_name: str, file_id: str, status: str, additional_data: Dict[str, Any] = None) -> None:
+    """Update file status in DynamoDB - synchronous version"""
     if additional_data is None:
         additional_data = {}
     
@@ -762,6 +1037,9 @@ async def update_file_status(table_name: str, file_id: str, status: str, additio
         
         upload_timestamp = response['Items'][0]['upload_timestamp']
         
+        # Convert additional data to DynamoDB compatible format
+        additional_data_converted = convert_to_dynamodb_compatible(additional_data)
+        
         # Update the item
         update_expression = 'SET processing_status = :status, last_updated = :updated'
         expression_attribute_values = {
@@ -770,7 +1048,7 @@ async def update_file_status(table_name: str, file_id: str, status: str, additio
         }
         
         # Add additional data to the update
-        for i, (key, value) in enumerate(additional_data.items()):
+        for i, (key, value) in enumerate(additional_data_converted.items()):
             attr_name = f':val{i}'
             update_expression += f', {key} = {attr_name}'
             expression_attribute_values[attr_name] = value
@@ -795,27 +1073,15 @@ async def update_file_status(table_name: str, file_id: str, status: str, additio
         raise
 
 
-def convert_floats_to_decimal(obj):
-    """Recursively convert all float values to Decimal for DynamoDB compatibility"""
-    if isinstance(obj, float):
-        return Decimal(str(obj))
-    elif isinstance(obj, dict):
-        return {k: convert_floats_to_decimal(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_floats_to_decimal(i) for i in obj]
-    else:
-        return obj
-
-
-async def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
-    """Store processing results in DynamoDB"""
+def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
+    """Store processing results in DynamoDB - synchronous version"""
     results_table_name = os.getenv('DYNAMODB_TABLE', '').replace('-file-metadata', '-processing-results')
     
     try:
         table = dynamodb.Table(results_table_name)
         
-        # Convert all float values to Decimal
-        item = convert_floats_to_decimal({
+        # Convert all values to DynamoDB compatible format
+        item = convert_to_dynamodb_compatible({
             'file_id': file_id,
             **results
         })
@@ -847,18 +1113,12 @@ def run_batch_job() -> None:
     })
     
     try:
-        import asyncio
-        
-        # For Python < 3.7 compatibility
-        if hasattr(asyncio, 'run'):
-            result = asyncio.run(process_s3_file())
-        else:
-            loop = asyncio.get_event_loop()
-            result = loop.run_until_complete(process_s3_file())
+        # Process synchronously (no async/await)
+        result = process_s3_file()
         
         log('INFO', 'Batch job completed successfully', {
             'processingDuration': result['processing_duration'],
-            'textExtracted': result['analysis']['word_count'] > 0
+            'textExtracted': result['summary_analysis']['word_count'] > 0
         })
         sys.exit(0)
     except Exception as error:
