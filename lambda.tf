@@ -8,31 +8,31 @@ resource "aws_sns_topic" "alerts" {
 data "archive_file" "uploader_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_function.zip"
-  source_file = "${path.module}/lambda_function.py"
+  source_file = "${path.module}/lambda_functions/lambda_function/lambda_function.py"
 }
 
 data "archive_file" "reader_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_reader.zip"
-  source_file = "${path.module}/lambda_reader.py"
+  source_file = "${path.module}/lambda_functions/lambda_reader/lambda_reader.py"
 }
 
 data "archive_file" "sqs_processor_zip" {
   type        = "zip"
   output_path = "${path.module}/sqs_batch_processor.zip"
-  source_file = "${path.module}/sqs_batch_processor.py"
+  source_file = "${path.module}/lambda_functions/sqs_batch_processor/sqs_batch_processor.py"
 }
 
 data "archive_file" "batch_reconciliation_zip" {
   type        = "zip"
   output_path = "${path.module}/batch_status_reconciliation.zip"
-  source_file = "${path.module}/batch_status_reconciliation.py"
+  source_file = "${path.module}/lambda_functions/batch_status_reconciliation/batch_status_reconciliation.py"
 }
 
 data "archive_file" "dead_job_detector_zip" {
   type        = "zip"
   output_path = "${path.module}/dead_job_detector.zip"
-  source_file = "${path.module}/dead_job_detector.py"
+  source_file = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.py"
 }
 
 # Uploader Lambda Function (S3 file uploader)

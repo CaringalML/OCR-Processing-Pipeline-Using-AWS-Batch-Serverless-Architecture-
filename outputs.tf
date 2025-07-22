@@ -129,7 +129,7 @@ output "docker_build_commands" {
     aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.main.repository_url}
     
     # Build and tag the image
-    docker build -t ${aws_ecr_repository.main.name} .
+    docker build -t ${aws_ecr_repository.main.name} ./aws_batch
     docker tag ${aws_ecr_repository.main.name}:latest ${aws_ecr_repository.main.repository_url}:latest
     
     # Push to ECR

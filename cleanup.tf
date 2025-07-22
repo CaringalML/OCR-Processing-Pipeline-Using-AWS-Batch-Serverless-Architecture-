@@ -258,7 +258,7 @@ def cleanup_ecs_tasks(ecs_client: Any, age_hours: int) -> int:
     return cleanup_count
 EOF
 
-  filename = "${path.module}/cleanup_lambda_function.py"
+  filename = "${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.py"
 }
 
 # Automatic cleanup of old Cleanup Lambda files when content changes
@@ -273,8 +273,8 @@ resource "null_resource" "cleanup_lambda_cleanup" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Cleaning up old Cleanup Lambda files..."
-      rm -f ${path.module}/cleanup_lambda_function.zip
-      rm -f ${path.module}/cleanup_lambda_function.py.backup
+      rm -f ${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.zip
+      rm -f ${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.py.backup
       echo "Cleanup Lambda cleanup completed"
     EOT
   }
@@ -285,7 +285,7 @@ resource "null_resource" "cleanup_lambda_cleanup" {
 # Create ZIP file for Cleanup Lambda
 data "archive_file" "cleanup_lambda_zip" {
   type        = "zip"
-  output_path = "${path.module}/cleanup_lambda_function.zip"
+  output_path = "${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.zip"
   source_file = local_file.cleanup_lambda_function.filename
 
   depends_on = [
