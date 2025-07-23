@@ -114,7 +114,7 @@ def health_check() -> Dict[str, Any]:
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'uptime': time.time(),
         'mode': 'batch-only',
-        'version': '2.7.0'
+        'version': '2.8.0' # Version updated for enhanced grammar
     }
 
 
@@ -243,9 +243,10 @@ def apply_enhanced_colon_grammar_fix(text: str) -> Dict[str, Any]:
     }
 
 
-def apply_enhanced_grammar_fixes(text: str) -> Dict[str, Any]:
+def apply_advanced_grammar_and_style_fixes(text: str) -> Dict[str, Any]:
     """
-    Apply enhanced grammar fixes for common OCR and writing issues
+    Apply a comprehensive set of advanced grammar and style fixes using regex.
+    This goes beyond basic corrections to improve clarity, conciseness, and correctness.
     """
     if not text or not text.strip():
         return {
@@ -255,96 +256,74 @@ def apply_enhanced_grammar_fixes(text: str) -> Dict[str, Any]:
         }
     
     fixed_text = text
-    fixes_applied = []
-    grammar_fixes = 0
+    fixes_applied_details = []
     
-    # 1. Fix subject-verb agreement issues
-    before_agreement = fixed_text
-    # "which are not yet" vs "which is not yet" - context dependent
-    # Fix obvious plural/singular mismatches
-    fixed_text = re.sub(r'\bthis\s+(\w+)\s+are\b', r'this \1 is', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\bthese\s+(\w+)\s+is\b', r'these \1 are', fixed_text, flags=re.IGNORECASE)
-    if before_agreement != fixed_text:
-        fixes_applied.append("Fixed subject-verb agreement")
-        grammar_fixes += 1
-    
-    # 2. Fix article usage (a/an)
-    before_articles = fixed_text
-    # Fix "a automatic" -> "an automatic"
-    fixed_text = re.sub(r'\ba\s+([aeiouAEIOU])', r'an \1', fixed_text)
-    # Fix "an" before consonants (but be careful with silent h, etc.)
-    fixed_text = re.sub(r'\ban\s+([bcdfgjklmnpqrstvwxyzBCDFGJKLMNPQRSTVWXYZ][^aeiou])', r'a \1', fixed_text)
-    if before_articles != fixed_text:
-        fixes_applied.append("Fixed article usage (a/an)")
-        grammar_fixes += 1
-    
-    # 3. Fix verb tenses and forms
-    before_verbs = fixed_text
-    # Fix "being developed" context issues
-    # "With an automatic guidance system for cars being developed" - this is actually correct
-    # But fix obvious tense issues
-    fixed_text = re.sub(r'\bwill\s+be\s+(\w+ed)\b', r'will be \1', fixed_text)  # Remove redundancy
-    fixed_text = re.sub(r'\bhave\s+(\w+)\s+meal\b', r'have a \1 meal', fixed_text)  # "have meal" -> "have a meal"
-    if before_verbs != fixed_text:
-        fixes_applied.append("Fixed verb forms and tenses")
-        grammar_fixes += 1
-    
-    # 4. Fix preposition usage
-    before_prep = fixed_text
-    # "flirt with his passenger" - correct
-    # "go out into the street" - correct
-    # Fix common preposition errors
-    fixed_text = re.sub(r'\bfly\s+across\s+the\s+Atlantic\s+to\s+(\w+)\b', r'fly across the Atlantic to \1', fixed_text)
-    if before_prep != fixed_text:
-        fixes_applied.append("Fixed preposition usage")
-        grammar_fixes += 1
-    
-    # 5. Fix pronoun usage and clarity
-    before_pronouns = fixed_text
-    # Fix unclear pronoun references
-    # "which may become a usual means" -> "which may become usual means" (remove extra 'a')
-    fixed_text = re.sub(r'\ba\s+usual\s+means\b', 'usual means', fixed_text)
-    # Fix "one can also use" -> keep as is, it's correct
-    if before_pronouns != fixed_text:
-        fixes_applied.append("Fixed pronoun and article clarity")
-        grammar_fixes += 1
-    
-    # 6. Fix modifiers and adjective order
-    before_modifiers = fixed_text
-    # "small electric car" - correct order
-    # Fix any obvious modifier placement issues
-    fixed_text = re.sub(r'\bmore\s+efficient\s+than\s+it\s+is\s+today\b', 'more efficient than it is today', fixed_text)
-    if before_modifiers != fixed_text:
-        fixes_applied.append("Fixed modifier placement")
-        grammar_fixes += 1
-    
-    # 7. Fix parallel structure in lists
-    before_parallel = fixed_text
-    # "dream, read the newspaper, have a meal, flirt" - good parallel structure
-    # Ensure all items in series have consistent structure
-    activity_pattern = r'(dream),\s+(read\s+[^,]+),\s+(have\s+[^,]+),\s+(flirt\s+[^,]+)'
-    match = re.search(activity_pattern, fixed_text)
-    if match:
-        # Structure is already parallel, keep as is
-        pass
-    if before_parallel != fixed_text:
-        fixes_applied.append("Improved parallel structure")
-        grammar_fixes += 1
-    
-    # 8. Fix double negatives and redundancy
-    before_redundancy = fixed_text
-    # Remove redundant words and phrases
-    fixed_text = re.sub(r'\bmay\s+become\s+a\s+usual\b', 'may become usual', fixed_text)
-    fixed_text = re.sub(r'\bthere\s+may\s+be\s+no\s+need\s+to\b', 'there may be no need to', fixed_text)  # This is correct
-    if before_redundancy != fixed_text:
-        fixes_applied.append("Removed redundancy")
-        grammar_fixes += 1
+    # A list of tuples: (pattern, replacement, description)
+    grammar_rules = [
+        # --- Subject-Verb Agreement ---
+        (r'\b(he|she|it|this|that)\s+are\b', r'\1 is', "Corrected singular pronoun with 'are' to 'is'"),
+        (r'\b(we|they|these|those)\s+is\b', r'\1 are', "Corrected plural pronoun with 'is' to 'are'"),
+        (r'\bThere\s+is\s+([a-zA-Z]+s)\b', r'There are \1', "Corrected 'There is' for plural noun"),
+        (r'\bThere\s+are\s+([a-zA-Z]+)(?<!s)\b', r'There is \1', "Corrected 'There are' for singular noun"),
+        (r'\b(everyone|everybody|someone|somebody|no one|nobody)\s+are\b', r'\1 is', "Corrected indefinite pronoun subject-verb agreement"),
+        (r'\b(The\s+cars|These\s+systems)\s+is\b', r'\1 are', "Corrected plural subject-verb agreement"),
+
+        # --- Commonly Confused Words (Homophones) ---
+        (r'\bits\s+your\b', "it's your", "Corrected 'its your' to 'it\\'s your'"),
+        (r'\b(Y|y)ou\'re\s+(car|house|book)\b', r'\1our \2', "Corrected 'you\\'re' to 'your' for possessive"),
+        (r'\b(Y|y)our\s+(welcome|a)\b', r'\1ou\'re \2', "Corrected 'your' to 'you\\'re'"),
+        (r'\b(T|t)heir\s+(is|are)\b', r'\1here \2', "Corrected 'their' to 'there'"),
+        (r'\b(T|t)here\s+(house|car)\b', r'\1heir \2', "Corrected 'there' to 'their'"),
+        (r'\b(T|t)hey\'re\s+(house|car)\b', r'\1heir \2', "Corrected 'they\\'re' to 'their'"),
+        (r'\b(T|t)heir\s+coming\b', r'\1hey\'re coming', "Corrected 'their' to 'they\\'re'"),
+        (r'\b(I|we)\s+are\s+going\s+to\s+the\s+store,\s+to\b', r'\1 are going to the store, too', "Corrected 'to' to 'too'"),
+        (r'\bto\s+many\b', 'too many', "Corrected 'to many' to 'too many'"),
+
+        # --- Pronoun Case ---
+        (r'\b(between|among)\s+(you|him|her|us|them)\s+and\s+I\b', r'\1 \2 and me', "Corrected pronoun case 'I' to 'me' in prepositional phrase"),
+        (r'\b(Me|me)\s+and\s+(my|his|her)\s+(\w+)\s+(went|are)\b', r'My \2 and I \3', "Corrected pronoun case 'Me' to 'I' in subject"),
+
+        # --- Article and Determiner Fixes ---
+        (r'\ba\s+([aeiouAEIOU]\w*)\b', r'an \1', "Corrected article 'a' to 'an' before vowel sound"),
+        (r'\ban\s+([b-df-hj-np-tv-zB-DF-HJ-NP-TV-Z]\w*)\b', r'a \1', "Corrected article 'an' to 'a' before consonant sound"),
+        (r'\ba\s+usual\s+means\b', 'usual means', 'Removed unnecessary article for clarity'),
+        (r'\bmay\s+become\s+a\s+usual\b', 'may become usual', 'Removed unnecessary article for conciseness'),
+        (r'\b(a|an)\s+less\b', 'fewer', "Corrected 'less' to 'fewer' for countable nouns"),
+        (r'\b(amount)\s+of\s+people\b', 'number of people', "Corrected 'amount' to 'number' for countable nouns"),
+
+        # --- Redundancy and Wordiness ---
+        (r'\b(absolutely|totally)\s+essential\b', 'essential', 'Removed redundant adverb'),
+        (r'\b(advance|future)\s+warning\b', 'warning', 'Removed redundant adjective'),
+        (r'\b(end|final)\s+result\b', 'result', 'Removed redundant adjective'),
+        (r'\b(unexpected)\s+surprise\b', 'surprise', 'Removed redundant adjective'),
+        (r'\b(past)\s+history\b', 'history', 'Removed redundant adjective'),
+        (r'\b(reason)\s+is\s+because\b', r'\1 is that', "Corrected 'reason is because' to 'reason is that'"),
+        (r'\b(irregardless)\b', 'regardless', "Corrected 'irregardless' to 'regardless'"),
+
+        # --- Tense and Verb Forms ---
+        (r'\b(I|you|we|they)\s+has\b', r'\1 have', "Corrected verb form 'has' to 'have'"),
+        (r'\b(he|she|it)\s+have\b', r'\1 has', "Corrected verb form 'have' to 'has'"),
+        (r'\b(could|should|would)\s+of\b', r'\1 have', "Corrected 'could of' to 'could have'"),
+        (r'\bsuppose\s+to\b', 'supposed to', "Corrected 'suppose to' to 'supposed to'"),
+        
+        # --- Miscellaneous Common Errors ---
+        (r'\s+,\s+', ', ', "Fixed spacing around comma"),
+        (r'\s+\.\s+', '. ', "Fixed spacing around period"),
+    ]
+
+    for pattern, replacement, description in grammar_rules:
+        new_text, num_subs = re.subn(pattern, replacement, fixed_text, flags=re.IGNORECASE)
+        if num_subs > 0:
+            fixed_text = new_text
+            fixes_applied_details.append(f"{description} ({num_subs} instance(s))")
+
+    grammar_fixes = len(fixes_applied_details)
     
     return {
         'fixed_text': fixed_text,
         'grammar_fixes': grammar_fixes,
-        'fixes_applied': fixes_applied,
-        'processing_notes': f"Applied {grammar_fixes} grammar fixes"
+        'fixes_applied': fixes_applied_details,
+        'processing_notes': f"Applied {grammar_fixes} advanced grammar and style fixes"
     }
 
 
@@ -476,65 +455,45 @@ def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
                 refined_text = refined_text.replace(token.text, token.text.capitalize())
                 refinements_count += 1
         
-        # 2. Apply enhanced grammar fixes
-        grammar_result = apply_enhanced_grammar_fixes(refined_text)
-        if grammar_result['grammar_fixes'] > 0:
-            refined_text = grammar_result['fixed_text']
-            refinements_count += grammar_result['grammar_fixes']
-        
-        # 3. Fix sentence structure using spaCy analysis
+        # 2. Fix sentence structure using spaCy analysis
         sentences = list(doc.sents)
         for sent in sentences:
-            sent_text = sent.text.strip()
-            
-            # Check for sentence fragments
+            # Check for sentence fragments (basic check)
             has_verb = any(token.pos_ == 'VERB' for token in sent)
-            has_subject = any(token.dep_ in ['nsubj', 'nsubjpass'] for token in sent)
-            
-            # If sentence lacks structure, try to fix
-            if not has_verb and len(sent_text.split()) > 3:
-                # This might be a fragment, but we'll be conservative
+            if not has_verb and len(sent.text.split()) > 3:
+                # This might be a fragment, but we'll be conservative to avoid incorrect changes
                 pass
         
-        # 4. Fix common grammatical patterns
+        # 3. Fix common grammatical patterns using linguistic context
         before_patterns = refined_text
         
-        # Fix "which" vs "that" for restrictive/non-restrictive clauses
-        # Restrictive (essential): use "that" 
-        # Non-restrictive (additional info): use "which" with commas
+        # Fix "which" vs "that" for restrictive/non-restrictive clauses (simplified rule)
         refined_text = re.sub(r'\b(\w+)\s+which\s+(are|is)\s+not\s+yet\b', r'\1 that \2 not yet', refined_text)
         refined_text = re.sub(r'\b(\w+)\s+which\s+may\s+become\b', r'\1 that may become', refined_text)
-        
-        # Fix "one of these" vs "one of those"
-        refined_text = re.sub(r'\bOne\s+of\s+these\s+is\s+the\b', 'One of these is the', refined_text)
-        
-        # Improve flow with better connectors
-        refined_text = re.sub(r'\bIn\s+fact,\s+there\s+may\s+be\b', 'In fact, there may be', refined_text)
         
         if before_patterns != refined_text:
             refinements_count += 1
         
-        # 5. Remove redundant words
+        # 4. Remove redundant words
         before_redundant = refined_text
         refined_text = re.sub(r'\b(\w+)\s+\1\b', r'\1', refined_text)
         if before_redundant != refined_text:
             refinements_count += 1
         
-        # 6. Ensure text ends naturally
+        # 5. Ensure text ends naturally
         if refined_text and not refined_text.rstrip().endswith(('.', '!', '?')):
             refined_text = refined_text.rstrip() + '.'
             refinements_count += 1
         
-        # 7. Final natural cleanup
+        # 6. Final natural cleanup
         refined_text = re.sub(r'\s+', ' ', refined_text).strip()
         
         return {
             'refined_text': refined_text,
             'refinements_applied': refinements_count,
-            'method': 'spacy_enhanced_grammar',
+            'method': 'spacy_polish',
             'entities_found': entities_found[:20],
             'sentences_processed': len(sentences),
-            'grammar_fixes_applied': grammar_result.get('fixes_applied', [])
         }
         
     except Exception as e:
@@ -706,7 +665,7 @@ def process_s3_file() -> Dict[str, Any]:
             },
             'comprehend_analysis': comprehend_data,
             'metadata': {
-                'processor_version': '2.7.0',  # Updated version with comprehensive dash handling
+                'processor_version': '2.8.0',  # Updated version with comprehensive dash handling and advanced grammar
                 'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown'),
                 'textract_job_id': extracted_data['jobId'],
                 'textract_duration': f'{textract_time:.2f} seconds',
@@ -1133,8 +1092,19 @@ def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
         methods_used.append(spell_result['method'])
         processing_notes.append(f"Spell corrections: {spell_corrections}")
         all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
+
+    # Step 2: Apply advanced grammar and style fixes
+    grammar_result = apply_advanced_grammar_and_style_fixes(refined_text)
+    if grammar_result['grammar_fixes'] > 0:
+        refined_text = grammar_result['fixed_text']
+        grammar_refinements += grammar_result['grammar_fixes']
+        total_improvements += grammar_result['grammar_fixes']
+        methods_used.append('advanced_regex_grammar')
+        processing_notes.append(f"Advanced grammar fixes: {grammar_result['grammar_fixes']}")
+        grammar_fixes_applied.extend(grammar_result['fixes_applied'])
+        all_fixes_applied.extend(grammar_result['fixes_applied'])
     
-    # Step 2: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
+    # Step 3: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
     flow_result = apply_natural_flow_punctuation(refined_text)
     if flow_result['flow_fixes'] > 0:
         refined_text = flow_result['refined_text']
@@ -1144,18 +1114,17 @@ def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
         processing_notes.append(f"Natural flow fixes: {flow_improvements}")
         all_fixes_applied.extend(flow_result['fixes_applied'])
     
-    # Step 3: Apply spaCy NLP refinement with enhanced grammar (if available)
+    # Step 4: Apply spaCy NLP refinement for a final polish (if available)
     if SPACY_AVAILABLE:
         spacy_result = refine_text_with_spacy_natural(refined_text)
         if spacy_result['refinements_applied'] > 0:
             refined_text = spacy_result['refined_text']
-            grammar_refinements = spacy_result['refinements_applied']
-            total_improvements += grammar_refinements
+            spacy_refinements = spacy_result['refinements_applied']
+            total_improvements += spacy_refinements
             entities_found = spacy_result.get('entities_found', [])
-            grammar_fixes_applied = spacy_result.get('grammar_fixes_applied', [])
-            methods_used.append('spacy_enhanced_grammar')
-            processing_notes.append(f"Grammar refinements: {grammar_refinements}")
-            all_fixes_applied.append(f"Applied {grammar_refinements} grammar refinements")
+            methods_used.append(spacy_result['method'])
+            processing_notes.append(f"spaCy polishing: {spacy_refinements}")
+            all_fixes_applied.append(f"Applied {spacy_refinements} spaCy-based refinements")
     
     return {
         'refined_text': refined_text,
