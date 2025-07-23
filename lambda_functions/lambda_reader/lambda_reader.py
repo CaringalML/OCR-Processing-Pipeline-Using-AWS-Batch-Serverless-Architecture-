@@ -105,26 +105,23 @@ def lambda_handler(event, context):
             if processing_result:
                 response_data['extractedText'] = processing_result.get('extracted_text', '')
                 response_data['formattedText'] = processing_result.get('formatted_text', '')
-                response_data['correctedText'] = processing_result.get('corrected_text', '')
                 response_data['refinedText'] = processing_result.get('refined_text', '')
                 response_data['processingDuration'] = processing_result.get('processing_duration', '')
                 
-                # Add Textract analysis with text correction details
+                # Add Textract analysis with text refinement details
                 summary_analysis = processing_result.get('summary_analysis', {})
-                text_correction_details = processing_result.get('text_correction_details', {})
-                
                 text_refinement_details = processing_result.get('text_refinement_details', {})
                 
                 response_data['textract_analysis'] = {
                     'total_words': summary_analysis.get('word_count', 0),
                     'total_paragraphs': summary_analysis.get('paragraph_count', 0),
                     'total_sentences': summary_analysis.get('sentence_count', 0),
-                    'corrections_made': text_correction_details.get('corrections_made', 0),
-                    'correction_method': text_correction_details.get('method_used', 'none'),
-                    'corrected_words': text_correction_details.get('sample_corrections', []),
-                    'refinements_applied': text_refinement_details.get('refinements_applied', 0),
-                    'refinement_method': text_refinement_details.get('method_used', 'none'),
+                    'total_improvements': text_refinement_details.get('total_improvements', 0),
+                    'spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                    'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
+                    'methods_used': text_refinement_details.get('methods_used', []),
                     'entities_found': len(text_refinement_details.get('entities_found', [])),
+                    'processing_notes': text_refinement_details.get('processing_notes', ''),
                     'confidence_score': summary_analysis.get('confidence', '0'),
                     'character_count': summary_analysis.get('character_count', 0),
                     'line_count': summary_analysis.get('line_count', 0)
@@ -183,25 +180,22 @@ def lambda_handler(event, context):
                 if processing_result and item.get('processing_status') == 'processed':
                     item_data['extractedText'] = processing_result.get('extracted_text', '')
                     item_data['formattedText'] = processing_result.get('formatted_text', '')
-                    item_data['correctedText'] = processing_result.get('corrected_text', '')
                     item_data['refinedText'] = processing_result.get('refined_text', '')
                     
-                    # Add Textract analysis with text correction details
+                    # Add Textract analysis with text refinement details
                     summary_analysis = processing_result.get('summary_analysis', {})
-                    text_correction_details = processing_result.get('text_correction_details', {})
-                    
                     text_refinement_details = processing_result.get('text_refinement_details', {})
                     
                     item_data['textract_analysis'] = {
                         'total_words': summary_analysis.get('word_count', 0),
                         'total_paragraphs': summary_analysis.get('paragraph_count', 0),
                         'total_sentences': summary_analysis.get('sentence_count', 0),
-                        'corrections_made': text_correction_details.get('corrections_made', 0),
-                        'correction_method': text_correction_details.get('method_used', 'none'),
-                        'corrected_words': text_correction_details.get('sample_corrections', []),
-                        'refinements_applied': text_refinement_details.get('refinements_applied', 0),
-                        'refinement_method': text_refinement_details.get('method_used', 'none'),
+                        'total_improvements': text_refinement_details.get('total_improvements', 0),
+                        'spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                        'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
+                        'methods_used': text_refinement_details.get('methods_used', []),
                         'entities_found': len(text_refinement_details.get('entities_found', [])),
+                        'processing_notes': text_refinement_details.get('processing_notes', ''),
                         'confidence_score': summary_analysis.get('confidence', '0'),
                         'character_count': summary_analysis.get('character_count', 0),
                         'line_count': summary_analysis.get('line_count', 0)

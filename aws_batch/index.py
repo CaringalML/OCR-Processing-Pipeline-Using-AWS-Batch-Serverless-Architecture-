@@ -253,38 +253,31 @@ def process_s3_file() -> Dict[str, Any]:
             'confidence': extracted_data['confidence']
         })
         
-        # Format the extracted text with correction
+        # Process text through 3 stages: extracted -> formatted -> refined
         formatted_text_data = {}
-        corrected_text_data = {}
         refined_text_data = {}
         text_for_comprehend = extracted_data['text']
         
         if extracted_data['text'] and extracted_data['text'].strip():
+            # Stage 1: Format extracted text (remove \n, clean spacing, join lines)
             log('INFO', 'Formatting extracted text')
             formatted_text_data = format_extracted_text(extracted_data['text'])
             
-            # Apply text correction to the formatted text
-            log('INFO', 'Applying text correction')
-            corrected_text_data = apply_text_correction(formatted_text_data.get('formatted', extracted_data['text']))
+            # Stage 2: Apply comprehensive refinement (spell check + grammar + NLP)
+            log('INFO', 'Applying comprehensive text refinement')
+            refined_text_data = apply_comprehensive_text_refinement(formatted_text_data.get('formatted', extracted_data['text']))
             
-            # Apply spaCy-based text refinement to the corrected text
-            log('INFO', 'Applying spaCy text refinement')
-            refined_text_data = refine_text_with_spacy(corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])))
+            # Use the refined text for Comprehend analysis
+            text_for_comprehend = refined_text_data.get('refined_text', formatted_text_data.get('formatted', extracted_data['text']))
             
-            # Use the refined text for Comprehend analysis (fallback to corrected text if refinement fails)
-            text_for_comprehend = refined_text_data.get('refined_text', corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])))
-            
-            log('INFO', 'Text formatting, correction, and refinement completed', {
-                'originalChars': formatted_text_data['stats']['originalChars'],
-                'formattedChars': formatted_text_data['stats']['cleanedChars'],
-                'correctedChars': corrected_text_data.get('corrected_length', 0),
-                'refinedChars': refined_text_data.get('refined_length', 0),
-                'paragraphs': formatted_text_data['stats']['paragraphCount'],
-                'sentences': formatted_text_data['stats']['sentenceCount'],
-                'correctionsApplied': corrected_text_data.get('corrections_made', 0),
-                'refinementsApplied': refined_text_data.get('refinements_applied', 0),
-                'correctionMethod': corrected_text_data.get('method', 'none'),
-                'refinementMethod': refined_text_data.get('method', 'none'),
+            log('INFO', 'Text processing completed', {
+                'stage1_extractedChars': len(extracted_data['text']),
+                'stage2_formattedChars': formatted_text_data['stats']['cleanedChars'],
+                'stage3_refinedChars': refined_text_data.get('refined_length', 0),
+                'totalImprovements': refined_text_data.get('total_improvements', 0),
+                'spellCorrections': refined_text_data.get('spell_corrections', 0),
+                'grammarRefinements': refined_text_data.get('grammar_refinements', 0),
+                'methodsUsed': refined_text_data.get('methods_used', []),
                 'entitiesFound': len(refined_text_data.get('entities_found', []))
             })
         
@@ -317,8 +310,7 @@ def process_s3_file() -> Dict[str, Any]:
             'processing_duration': f'{total_processing_time:.2f} seconds',
             'extracted_text': extracted_data['text'],
             'formatted_text': formatted_text_data.get('formatted', extracted_data['text']),
-            'corrected_text': corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])),
-            'refined_text': refined_text_data.get('refined_text', corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text']))),
+            'refined_text': refined_text_data.get('refined_text', formatted_text_data.get('formatted', extracted_data['text'])),
             'summary_analysis': {
                 'word_count': extracted_data['wordCount'],
                 'character_count': len(extracted_data['text']),
@@ -326,26 +318,19 @@ def process_s3_file() -> Dict[str, Any]:
                 'paragraph_count': formatted_text_data.get('stats', {}).get('paragraphCount', 0),
                 'sentence_count': formatted_text_data.get('stats', {}).get('sentenceCount', 0),
                 'confidence': extracted_data['confidence'],
-                'corrections_applied': corrected_text_data.get('corrections_made', 0),
-                'correction_method': corrected_text_data.get('method', 'none'),
-                'refinements_applied': refined_text_data.get('refinements_applied', 0),
-                'refinement_method': refined_text_data.get('method', 'none'),
-                'entities_found': len(refined_text_data.get('entities_found', [])),
-                'sentences_processed': refined_text_data.get('sentences_processed', 0)
-            },
-            'text_correction_details': {
-                'corrections_made': corrected_text_data.get('corrections_made', 0),
-                'method_used': corrected_text_data.get('method', 'none'),
-                'sample_corrections': corrected_text_data.get('correction_details', []),
-                'length_change': corrected_text_data.get('corrected_length', 0) - corrected_text_data.get('original_length', 0)
+                'total_improvements': refined_text_data.get('total_improvements', 0),
+                'spell_corrections': refined_text_data.get('spell_corrections', 0),
+                'grammar_refinements': refined_text_data.get('grammar_refinements', 0),
+                'methods_used': refined_text_data.get('methods_used', []),
+                'entities_found': len(refined_text_data.get('entities_found', []))
             },
             'text_refinement_details': {
-                'refinements_applied': refined_text_data.get('refinements_applied', 0),
-                'method_used': refined_text_data.get('method', 'none'),
+                'total_improvements': refined_text_data.get('total_improvements', 0),
+                'spell_corrections': refined_text_data.get('spell_corrections', 0),
+                'grammar_refinements': refined_text_data.get('grammar_refinements', 0),
+                'methods_used': refined_text_data.get('methods_used', []),
                 'entities_found': refined_text_data.get('entities_found', []),
-                'sentences_processed': refined_text_data.get('sentences_processed', 0),
-                'sample_refinements': refined_text_data.get('refinement_details', []),
-                'pos_statistics': refined_text_data.get('pos_statistics', {}),
+                'processing_notes': refined_text_data.get('processing_notes', 'No processing applied'),
                 'length_change': refined_text_data.get('refined_length', 0) - refined_text_data.get('original_length', 0)
             },
             'comprehend_analysis': comprehend_data,
@@ -643,6 +628,139 @@ def apply_text_correction(text: str) -> Dict[str, Any]:
     }
 
 
+def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
+    """
+    Apply comprehensive OCR fixes including:
+    - Hyphenated word rejoining
+    - OCR character error corrections
+    - URL/email preservation
+    - Artifact removal
+    """
+    if not text or not text.strip():
+        return {'fixed_text': text, 'fixes_applied': 0}
+    
+    fixed_text = text
+    fixes_applied = 0
+    
+    # Fix hyphenated words at line breaks
+    before_hyphen = fixed_text
+    fixed_text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', fixed_text)
+    fixed_text = re.sub(r'\b(guid|ance)\s*\n\s*(ance|system)', lambda m: 
+                        'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
+                        else 'guidance system' if m.group(1).lower() == 'guid' 
+                        else m.group(0), fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\b(se)\s*\n\s*(lect)', r'select', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\b(pas)\s*\n\s*(senger)', r'passenger', fixed_text, flags=re.IGNORECASE)
+    if before_hyphen != fixed_text:
+        fixes_applied += 1
+    
+    # Fix OCR character errors
+    before_ocr = fixed_text
+    # Protect emails and URLs first
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    
+    protected_patterns = []
+    def protect_pattern(match):
+        placeholder = f"__PROTECTED_{len(protected_patterns)}__"
+        protected_patterns.append(match.group(0))
+        return placeholder
+    
+    fixed_text = re.sub(email_pattern, protect_pattern, fixed_text)
+    fixed_text = re.sub(url_pattern, protect_pattern, fixed_text)
+    
+    # Apply OCR fixes
+    fixed_text = re.sub(r'\bgui[>\/\|\\]dan[\/\\]ce\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bsel[€£\$]ct\b', 'select', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bp[@&]ssenger\b', 'passenger', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\blane1\b', 'lane', fixed_text)
+    fixed_text = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', fixed_text)
+    
+    # Restore protected patterns
+    for i, pattern in enumerate(protected_patterns):
+        fixed_text = fixed_text.replace(f"__PROTECTED_{i}__", pattern)
+    
+    if before_ocr != fixed_text:
+        fixes_applied += 1
+    
+    # Remove trailing artifacts
+    before_artifact = fixed_text
+    fixed_text = re.sub(r'\s+\w{1,3}-\s*$', '', fixed_text)  # Remove "pi-" at end
+    fixed_text = re.sub(r'\s+\w{1,2}\s*$', '', fixed_text)   # Remove short orphaned words
+    if before_artifact != fixed_text:
+        fixes_applied += 1
+    
+    return {'fixed_text': fixed_text, 'fixes_applied': fixes_applied}
+
+
+def apply_comprehensive_text_refinement(text: str) -> Dict[str, Any]:
+    """
+    Apply all text refinements in one pass: spell correction + spaCy NLP + grammar fixes.
+    This produces the final refined text from formatted text.
+    """
+    if not text or not text.strip():
+        return {
+            'refined_text': text,
+            'total_improvements': 0,
+            'spell_corrections': 0,
+            'grammar_refinements': 0,
+            'methods_used': [],
+            'entities_found': [],
+            'processing_notes': 'Empty text'
+        }
+    
+    refined_text = text
+    total_improvements = 0
+    spell_corrections = 0
+    grammar_refinements = 0
+    ocr_fixes = 0
+    methods_used = []
+    entities_found = []
+    processing_notes = []
+    
+    # Step 0: Apply comprehensive OCR and formatting fixes first
+    ocr_result = apply_comprehensive_ocr_fixes(text)
+    if ocr_result['fixes_applied'] > 0:
+        refined_text = ocr_result['fixed_text']
+        ocr_fixes = ocr_result['fixes_applied']
+        total_improvements += ocr_fixes
+        methods_used.append('ocr_fixes')
+        processing_notes.append(f"OCR fixes: {ocr_fixes}")
+    
+    # Step 1: Apply spell correction (TextBlob or PySpellChecker)
+    spell_result = apply_text_correction(refined_text)
+    if spell_result['corrections_made'] > 0:
+        refined_text = spell_result['corrected_text']
+        spell_corrections = spell_result['corrections_made']
+        total_improvements += spell_corrections
+        methods_used.append(spell_result['method'])
+        processing_notes.append(f"Spell corrections: {spell_corrections}")
+    
+    # Step 2: Apply spaCy NLP refinement (if available)
+    if SPACY_AVAILABLE:
+        spacy_result = refine_text_with_spacy(refined_text)
+        if spacy_result['refinements_applied'] > 0:
+            refined_text = spacy_result['refined_text']
+            grammar_refinements = spacy_result['refinements_applied']
+            total_improvements += grammar_refinements
+            entities_found = spacy_result.get('entities_found', [])
+            methods_used.append('spacy_nlp')
+            processing_notes.append(f"Grammar refinements: {grammar_refinements}")
+    
+    return {
+        'refined_text': refined_text,
+        'total_improvements': total_improvements,
+        'ocr_fixes': ocr_fixes,
+        'spell_corrections': spell_corrections,
+        'grammar_refinements': grammar_refinements,
+        'methods_used': methods_used,
+        'entities_found': entities_found,
+        'processing_notes': '; '.join(processing_notes) if processing_notes else 'No improvements needed',
+        'original_length': len(text),
+        'refined_length': len(refined_text)
+    }
+
+
 def refine_text_with_spacy(text: str) -> Dict[str, Any]:
     """
     Use spaCy for advanced NLP-based text refinement.
@@ -935,7 +1053,7 @@ def get_entity_category(entity_type: str) -> str:
 
 
 def format_extracted_text(raw_text: str) -> Dict[str, Any]:
-    """Format extracted text for better readability"""
+    """Format extracted text by only removing \\n characters - keep everything else identical"""
     try:
         if not raw_text or not isinstance(raw_text, str):
             return {
@@ -944,270 +1062,35 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
                 'stats': {'paragraphCount': 0, 'sentenceCount': 0, 'cleanedChars': 0, 'originalChars': 0, 'reductionPercent': 0}
             }
         
-        def fix_urls_and_emails(text: str) -> str:
-            """Fix URLs and emails that got broken during OCR"""
-            # Fix email patterns
-            text = re.sub(r'(\w+)\s*@\s*([^\s\n\r\t]+)', lambda m: f"{m.group(1)}@{m.group(2).replace(' ', '')}", text)
-            
-            # Fix www. patterns
-            text = re.sub(r'www\.\s+([^\s\n\r\t]+?)(\s+(?:I|,|\||$))', 
-                         lambda m: f"www.{m.group(1).replace(' ', '')}{m.group(2)}", text, flags=re.IGNORECASE)
-            
-            # Fix domain patterns with spaces around dots
-            text = re.sub(r'(\w+)\.\s+(\w+)\.\s+(\w+)(?=\s|$|[^\w])', r'\1.\2.\3', text)
-            text = re.sub(r'(\w+)\.\s+(\w+)(?=\s|$|[^\w])', r'\1.\2', text)
-            
-            # Fix http/https patterns
-            text = re.sub(r'https?\s*:\s*/\s*/\s*', lambda m: m.group(0).replace(' ', ''), text, flags=re.IGNORECASE)
-            
-            return text
+        # Simple formatting: ONLY remove \n characters, keep everything else identical
+        formatted_text = raw_text.replace('\n', ' ')
         
-        # Apply URL/email fixes first
-        preprocessed = fix_urls_and_emails(raw_text)
-        
-        def fix_ocr_character_errors(text: str) -> str:
-            """
-            Fix common OCR character recognition errors while preserving legitimate usage.
-            Only applies fixes when characters are clearly misplaced in word contexts.
-            """
-            # First, protect legitimate patterns by temporarily replacing them
-            protected_patterns = []
-            
-            # Protect email addresses
-            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-            def protect_email(match):
-                placeholder = f"__EMAIL_{len(protected_patterns)}__"
-                protected_patterns.append(match.group(0))
-                return placeholder
-            text = re.sub(email_pattern, protect_email, text)
-            
-            # Protect URLs
-            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-            def protect_url(match):
-                placeholder = f"__URL_{len(protected_patterns)}__"
-                protected_patterns.append(match.group(0))
-                return placeholder
-            text = re.sub(url_pattern, protect_url, text)
-            
-            # Protect www patterns
-            www_pattern = r'www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}[^\s]*'
-            def protect_www(match):
-                placeholder = f"__WWW_{len(protected_patterns)}__"
-                protected_patterns.append(match.group(0))
-                return placeholder
-            text = re.sub(www_pattern, protect_www, text)
-            
-            # Protect file paths
-            filepath_pattern = r'[A-Za-z]:\\[^\s<>"*|?]+|/[^\s<>"*|?]+'
-            def protect_filepath(match):
-                placeholder = f"__PATH_{len(protected_patterns)}__"
-                protected_patterns.append(match.group(0))
-                return placeholder
-            text = re.sub(filepath_pattern, protect_filepath, text)
-            
-            # Protect currency and measurements
-            money_pattern = r'\$\d+(?:\.\d{2})?|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:kg|lb|cm|inch|ft|meter|mile)'
-            def protect_money(match):
-                placeholder = f"__MEASURE_{len(protected_patterns)}__"
-                protected_patterns.append(match.group(0))
-                return placeholder
-            text = re.sub(money_pattern, protect_money, text, flags=re.IGNORECASE)
-            
-            # Now apply OCR character fixes to unprotected text
-            
-            # Common OCR character substitutions in words (not at word boundaries near protected content)
-            # Fix > and / when they appear mid-word (likely OCR errors)
-            text = re.sub(r'\b(\w+)[>\/\|\\](\w+)\b', lambda m: f"{m.group(1)}{m.group(2)}", text)
-            
-            # Fix common letter-to-symbol OCR errors in word contexts
-            text = re.sub(r'\b(\w*)[@&](\w+)\b', lambda m: f"{m.group(1)}a{m.group(2)}", text)  # @ -> a
-            text = re.sub(r'\b(\w+)[€£\$](\w+)\b', lambda m: f"{m.group(1)}e{m.group(2)}", text)  # €/£/$ -> e (in words)
-            text = re.sub(r'\b(\w+)0(\w+)\b', lambda m: f"{m.group(1)}o{m.group(2)}" if 'o' in m.group(1).lower() or 'o' in m.group(2).lower() else m.group(0), text)  # 0 -> o
-            text = re.sub(r'\b(\w+)1(\w+)\b', lambda m: f"{m.group(1)}l{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 1 -> l
-            text = re.sub(r'\b(\w+)5(\w+)\b', lambda m: f"{m.group(1)}s{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 5 -> s
-            text = re.sub(r'\b(\w+)8(\w+)\b', lambda m: f"{m.group(1)}b{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 8 -> b
-            
-            # Fix specific word patterns that are commonly mis-OCR'd
-            text = re.sub(r'\bgui[>\/\|\\]dan[\/\\]ce\b', 'guidance', text, flags=re.IGNORECASE)
-            text = re.sub(r'\bsel[€£\$]ct\b', 'select', text, flags=re.IGNORECASE)
-            text = re.sub(r'\bp[@&]ssenger\b', 'passenger', text, flags=re.IGNORECASE)
-            text = re.sub(r'\bauto[>\/\|]matic\b', 'automatic', text, flags=re.IGNORECASE)
-            text = re.sub(r'\btrans[>\/\|]port\b', 'transport', text, flags=re.IGNORECASE)
-            text = re.sub(r'\bdevel[0o]pment\b', 'development', text, flags=re.IGNORECASE)
-            text = re.sub(r'\beff[1l]cient\b', 'efficient', text, flags=re.IGNORECASE)
-            text = re.sub(r'\bveh[1l]cle\b', 'vehicle', text, flags=re.IGNORECASE)
-            
-            # Restore protected patterns
-            for i, pattern in enumerate(protected_patterns):
-                text = text.replace(f"__EMAIL_{i}__", pattern)
-                text = text.replace(f"__URL_{i}__", pattern)
-                text = text.replace(f"__WWW_{i}__", pattern)
-                text = text.replace(f"__PATH_{i}__", pattern)
-                text = text.replace(f"__MEASURE_{i}__", pattern)
-            
-            return text
-        
-        # Apply OCR character error fixes (after URL/email protection)
-        preprocessed = fix_ocr_character_errors(preprocessed)
-        
-        # Fix hyphenated words at line breaks AFTER OCR character fixes
-        # Pattern: word- \n next_part -> word next_part
-        preprocessed = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', preprocessed)
-        
-        # Fix partial words split across lines without hyphens
-        # Pattern: partial_word \n rest_of_word (when both parts don't form real words)
-        # This is more complex - we'll handle common patterns
-        preprocessed = re.sub(r'\b(guid|ance)\s*\n\s*(ance|system)', lambda m: 
-                            'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
-                            else 'guidance system' if m.group(1).lower() == 'guid' 
-                            else m.group(0), preprocessed, flags=re.IGNORECASE)
-        
-        preprocessed = re.sub(r'\b(se)\s*\n\s*(lect)', r'select', preprocessed, flags=re.IGNORECASE)
-        preprocessed = re.sub(r'\b(pas)\s*\n\s*(senger)', r'passenger', preprocessed, flags=re.IGNORECASE)
-        preprocessed = re.sub(r'\b(devel)\s*\n\s*(opment)', r'development', preprocessed, flags=re.IGNORECASE)
-        preprocessed = re.sub(r'\b(auto)\s*\n\s*(matic)', r'automatic', preprocessed, flags=re.IGNORECASE)
-        preprocessed = re.sub(r'\b(trans)\s*\n\s*(port)', r'transport', preprocessed, flags=re.IGNORECASE)
-        
-        # Continue with other preprocessing
-        preprocessed = re.sub(r'\.\s+([A-Z])', r'. \1', preprocessed)  # Fix period spacing
-        preprocessed = re.sub(r'([a-z])\s+([A-Z])', r'\1 \2', preprocessed)  # Fix word spacing
-        preprocessed = re.sub(r'(\w)\s+([,.])', r'\1\2', preprocessed)  # Remove space before punctuation
-        preprocessed = re.sub(r'([,.!?;:])\s*', r'\1 ', preprocessed)  # Add single space after punctuation
-        preprocessed = re.sub(r'\n{4,}', '\n\n\n', preprocessed)  # Cap at 3 newlines max
-        preprocessed = re.sub(r'\r', '', preprocessed)  # Remove carriage returns
-        preprocessed = re.sub(r'\t', ' ', preprocessed)  # Replace tabs with spaces
-        
-        # Fix common OCR number/letter artifacts in formatting stage
-        preprocessed = re.sub(r'\blane1\b', 'lane', preprocessed)  # lane1 -> lane
-        preprocessed = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', preprocessed)  # word1 he -> word he
-        
-        # Remove incomplete words at the end (like "pi-" at end of text)
-        preprocessed = re.sub(r'\s+\w{1,3}-\s*$', '', preprocessed)  # Remove short words ending with dash at end
-        preprocessed = re.sub(r'\s+\w{1,2}\s*$', '', preprocessed)   # Remove very short orphaned words at end
-        
-        # Smart line joining
-        lines = preprocessed.split('\n')
-        processed_lines = []
-        current_line = ''
-        
-        for line in lines:
-            line = line.strip()
-            
-            if not line:
-                # Empty line - preserve paragraph break
-                if current_line:
-                    processed_lines.append(current_line)
-                    current_line = ''
-                processed_lines.append('')
-                continue
-            
-            # Check if this line should be joined with previous
-            is_very_short = len(line) < 20
-            ends_with_punctuation = bool(re.search(r'[.!?]$', current_line))
-            starts_with_capital = bool(re.match(r'^[A-Z]', line))
-            looks_like_heading = len(line) < 40 and line == line.upper()
-            
-            # Special case: check if current_line ends with a partial word and line starts with rest of word
-            ends_with_hyphen = current_line.endswith('-') if current_line else False
-            current_line_words = current_line.split() if current_line else []
-            line_words = line.split() if line else []
-            
-            # Check for split word patterns (last word of current + first word of next)
-            should_join_split_word = False
-            if (current_line_words and line_words and not ends_with_punctuation 
-                and not starts_with_capital and len(current_line_words[-1]) < 8 
-                and len(line_words[0]) < 8):
-                # Potential split word - join them
-                should_join_split_word = True
-            
-            if (current_line and (ends_with_hyphen or should_join_split_word or 
-                (not ends_with_punctuation and not starts_with_capital 
-                and not looks_like_heading and not is_very_short))):
-                # Join with previous line
-                if ends_with_hyphen:
-                    # Remove hyphen when joining
-                    current_line = current_line.rstrip('-') + line
-                else:
-                    current_line += ' ' + line
-            else:
-                # Start new line
-                if current_line:
-                    processed_lines.append(current_line)
-                current_line = line
-        
-        if current_line:
-            processed_lines.append(current_line)
-        
-        # Create clean paragraphs
-        paragraphs = []
-        current_paragraph = []
-        
-        for line in processed_lines:
-            if line == '':
-                # Empty line marks paragraph break
-                if current_paragraph:
-                    text = ' '.join(current_paragraph).strip()
-                    if text:
-                        paragraphs.append({
-                            'text': text,
-                            'type': 'paragraph',
-                            'wordCount': len(text.split()),
-                            'charCount': len(text)
-                        })
-                    current_paragraph = []
-            else:
-                current_paragraph.append(line)
-        
-        # Don't forget the last paragraph
-        if current_paragraph:
-            text = ' '.join(current_paragraph).strip()
-            if text:
-                paragraphs.append({
-                    'text': text,
-                    'type': 'paragraph',
-                    'wordCount': len(text.split()),
-                    'charCount': len(text)
-                })
-        
-        # Create final formatted output
-        formatted = '\n\n'.join(p['text'] for p in paragraphs)
-        
-        # Apply URL/email fixes one more time
-        formatted = fix_urls_and_emails(formatted)
-        
-        # Final cleanup
-        formatted = re.sub(r'\s+([,.!?;:])', r'\1', formatted)  # Remove space before punctuation
-        formatted = re.sub(r'([,.!?;:])(?!\s|$)', r'\1 ', formatted)  # Ensure space after punctuation
-        formatted = re.sub(r' {2,}', ' ', formatted)  # Remove multiple spaces
-        formatted = formatted.strip()
-        
-        # Calculate statistics
-        sentences = re.findall(r'[.!?]+', formatted)
+        # Calculate basic stats
         original_len = len(raw_text)
-        formatted_len = len(formatted)
+        formatted_len = len(formatted_text)
         
-        stats = {
-            'paragraphCount': len(paragraphs),
-            'sentenceCount': len(sentences),
-            'cleanedChars': formatted_len,
-            'originalChars': original_len,
-            'reductionPercent': round((1 - formatted_len / original_len) * 100) if original_len > 0 else 0
-        }
+        # Count sentences and paragraphs (basic estimation)
+        sentence_count = len([s for s in formatted_text.split('.') if s.strip()])
+        paragraph_count = max(1, len([p for p in raw_text.split('\n\n') if p.strip()]))
         
         return {
-            'formatted': formatted,
-            'paragraphs': paragraphs,
-            'stats': stats
+            'formatted': formatted_text,
+            'paragraphs': [{'text': formatted_text, 'type': 'paragraph', 'wordCount': len(formatted_text.split()), 'charCount': formatted_len}],
+            'stats': {
+                'paragraphCount': paragraph_count,
+                'sentenceCount': sentence_count,
+                'cleanedChars': formatted_len,
+                'originalChars': original_len,
+                'reductionPercent': 0  # No reduction, just newline removal
+            }
         }
         
     except Exception as error:
         log('ERROR', 'Text formatting error', {'error': str(error)})
-        word_count = len(raw_text.split()) if raw_text else 0
-        original_len = len(raw_text) if raw_text else 0
         return {
-            'formatted': raw_text,
-            'paragraphs': [{'text': raw_text, 'type': 'paragraph', 'wordCount': word_count, 'charCount': original_len}],
-            'stats': {'paragraphCount': 1, 'sentenceCount': 0, 'cleanedChars': original_len, 'originalChars': original_len, 'reductionPercent': 0}
+            'formatted': raw_text or '',
+            'paragraphs': [{'text': raw_text or '', 'type': 'paragraph', 'wordCount': len((raw_text or '').split()), 'charCount': len(raw_text or '')}],
+            'stats': {'paragraphCount': 1, 'sentenceCount': 0, 'cleanedChars': len(raw_text or ''), 'originalChars': len(raw_text or ''), 'reductionPercent': 0}
         }
 
 
