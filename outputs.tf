@@ -154,15 +154,28 @@ output "test_upload_command" {
 output "test_processed_command" {
   description = "Example curl command to check processed files"
   value       = <<-EOT
-    # Get all processed files
+    # Get all processed files (public rate limit)
     curl "${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
     
-    # Get files by status
-    curl "${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?status=processing"
+    # Get files by status with API key (higher rate limit)
+    curl -H "X-API-Key: YOUR_API_KEY" \
+      "${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?status=processing"
     
     # Get specific file
     curl "${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?fileId=YOUR_FILE_ID"
   EOT
+}
+
+# Rate Limiting Test Commands
+output "rate_limiting_test_commands" {
+  description = "Commands to test rate limiting functionality"
+  value = var.enable_rate_limiting ? "Rate limiting test commands available - check terraform.tfvars.example for examples" : "Rate limiting is disabled"
+}
+
+# API Key Retrieval Commands  
+output "api_key_commands" {
+  description = "Commands to retrieve and manage API keys"
+  value = var.enable_rate_limiting && var.create_default_api_keys ? "API key commands available - use 'terraform output demo_api_keys' to get keys" : "No demo API keys created"
 }
 
 # Cost Optimization Summary
@@ -188,6 +201,35 @@ output "cost_optimization_summary" {
   EOT
 }
 
+# Rate Limiting Information
+output "rate_limiting_summary" {
+  description = "Summary of API Gateway rate limiting configuration"
+  value = var.enable_rate_limiting ? "Rate limiting enabled with public (${var.public_rate_limit}/sec), registered (${var.registered_rate_limit}/sec), and premium (${var.premium_rate_limit}/sec) tiers" : "Rate limiting is disabled"
+}
+
+output "demo_api_keys" {
+  description = "Demo API keys for testing (sensitive output)"
+  value = var.enable_rate_limiting && var.create_default_api_keys ? {
+    for idx, key in aws_api_gateway_api_key.demo_keys : 
+    var.api_key_names[idx] => {
+      id    = key.id
+      value = key.value
+      name  = key.name
+      plan  = strcontains(var.api_key_names[idx], "premium") ? "premium" : "registered"
+    }
+  } : {}
+  sensitive = true
+}
+
+output "usage_plan_ids" {
+  description = "Usage plan IDs for API management"
+  value = var.enable_rate_limiting ? {
+    public     = var.enable_rate_limiting ? aws_api_gateway_usage_plan.public[0].id : null
+    registered = var.enable_rate_limiting ? aws_api_gateway_usage_plan.registered[0].id : null
+    premium    = var.enable_rate_limiting ? aws_api_gateway_usage_plan.premium[0].id : null
+  } : {}
+}
+
 # Architecture Summary
 output "architecture_summary" {
   description = "Summary of the deployed architecture"
@@ -209,11 +251,15 @@ output "architecture_summary" {
     5. Access:
        Users access files via CloudFront URLs in browser
     
+    6. Rate Limiting:
+       ${var.enable_rate_limiting ? "Multi-tier rate limiting with public, registered, and premium plans" : "Rate limiting disabled"}
+    
     Key Features:
     - Serverless and cost-optimized
     - Automatic retry and error handling
     - Scalable processing with AWS Batch
     - Secure file access via CloudFront
     - Comprehensive monitoring and logging
+    - ${var.enable_rate_limiting ? "Advanced rate limiting protection" : "No rate limiting"}
   EOT
 }

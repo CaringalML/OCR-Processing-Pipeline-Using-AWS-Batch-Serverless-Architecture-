@@ -24,11 +24,12 @@ Internet → API Gateway → Lambda Function → AWS Batch → Docker Container 
 ## Key Components
 
 ### Core Infrastructure
-- **API Gateway**: REST endpoint that triggers OCR processing jobs via GET requests
+- **API Gateway**: REST endpoint with advanced rate limiting and multi-tier usage plans
 - **Lambda Function**: Serverless trigger that submits jobs to AWS Batch
 - **AWS Batch**: Managed container orchestration using Fargate
 - **ECR Repository**: Secure Docker image storage with lifecycle policies
 - **VPC with VPC Endpoints**: Cost-optimized private networking
+- **Rate Limiting**: Multi-tier protection with public, registered, and premium plans
 
 ### Monitoring & Operations
 - **CloudWatch**: Comprehensive logging and monitoring dashboards
@@ -150,20 +151,109 @@ docker push $(terraform output -raw ecr_repository_url):latest
 
 ```bash
 # Get API Gateway URL
-terraform output api_gateway_invoke_url
+terraform output api_upload_url
 
-# Trigger an OCR processing job
-curl $(terraform output -raw api_gateway_invoke_url)
+# Test file upload (no API key - public rate limits)
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"fileName": "test.txt", "fileContent": "SGVsbG8gV29ybGQ=", "contentType": "text/plain"}' \
+  $(terraform output -raw api_upload_url)
+
+# Test with API key for higher rate limits
+API_KEY=$(terraform output -json demo_api_keys | jq -r '.["demo-registered-user"].value')
+curl -X POST -H "Content-Type: application/json" -H "X-API-Key: $API_KEY" \
+  -d '{"fileName": "test.txt", "fileContent": "SGVsbG8gV29ybGQ=", "contentType": "text/plain"}' \
+  $(terraform output -raw api_upload_url)
+
+# Check processed files
+curl $(terraform output -raw api_processed_url)
 
 # Expected response:
 {
   "success": true,
-  "message": "OCR processing job submitted successfully",
-  "jobId": "12345678-1234-1234-1234-123456789012",
-  "jobName": "ocr-processor-job-20250717-123456-abcd1234",
+  "message": "File uploaded successfully",
+  "fileId": "12345678-1234-1234-1234-123456789012",
+  "fileName": "test.txt",
   "timestamp": "2025-07-17T12:34:56.789Z"
 }
 ```
+
+## Rate Limiting & API Protection
+
+### Multi-Tier Rate Limiting Strategy
+
+This system implements intelligent rate limiting that **protects against abuse while not disturbing real users**:
+
+#### **Three-Tier Usage Plans**
+
+| Plan | API Key Required | Rate Limit | Burst Limit | Daily Quota | Use Case |
+|------|:----------------:|------------|-------------|-------------|----------|
+| **Public** | ❌ No | 10/sec | 20 | 1,000/day | Testing, light usage |
+| **Registered** | ✅ Yes | 50/sec | 100 | 10,000/day | Small businesses, developers |
+| **Premium** | ✅ Yes | 200/sec | 400 | 100,000/day | Enterprise, high-volume |
+
+#### **Method-Specific Limits**
+
+- **Upload Endpoint** (`/upload`): Conservative limits due to processing costs
+  - Public: 5/sec burst 10 
+  - Registered: 25/sec burst 50
+  - Premium: 50/sec burst 100
+
+- **Processed Endpoint** (`/processed`): Higher limits for reading results
+  - Public: 20/sec burst 40
+  - Registered: 60/sec burst 120  
+  - Premium: 100/sec burst 200
+
+### **How to Use API Keys**
+
+```bash
+# Get your API keys (sensitive - store securely)
+terraform output demo_api_keys
+
+# Use API key in requests for higher limits
+curl -H "X-API-Key: YOUR_API_KEY" \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"fileName": "doc.pdf", "fileContent": "BASE64_CONTENT"}' \
+  https://your-api-id.execute-api.region.amazonaws.com/dev/upload
+```
+
+### **Rate Limiting Benefits**
+
+✅ **Protects Real Users**: Legitimate users get predictable performance  
+✅ **Prevents Abuse**: Automatic throttling of excessive requests  
+✅ **Cost Control**: Prevents runaway processing costs  
+✅ **Fair Access**: Higher limits for registered/premium users  
+✅ **Self-Service**: Users can increase limits by getting API keys  
+✅ **Monitoring**: Real-time dashboards and alerts  
+
+### **Testing Rate Limits**
+
+```bash
+# Test rate limiting
+terraform output rate_limiting_test_commands
+
+# Monitor in CloudWatch Dashboard
+echo "Visit: https://console.aws.amazon.com/cloudwatch/home?region=YOUR_REGION#dashboards"
+```
+
+### **Rate Limiting Configuration**
+
+Enable/disable and customize all rate limiting settings:
+
+```hcl
+# Enable rate limiting (recommended)
+enable_rate_limiting = true
+
+# Customize limits for your use case
+public_rate_limit = 10      # Anonymous users
+registered_rate_limit = 50  # API key users  
+premium_rate_limit = 200    # Premium API key users
+
+# Method-specific overrides
+upload_method_rate_limit = 5     # Upload is expensive
+processed_method_rate_limit = 20 # Reading is cheaper
+```
+
+See `terraform.tfvars.example` for complete configuration options.
 
 ## Configuration Options
 

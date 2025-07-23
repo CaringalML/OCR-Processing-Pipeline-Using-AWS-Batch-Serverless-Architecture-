@@ -238,3 +238,186 @@ variable "eventbridge_max_age_seconds" {
     error_message = "EventBridge max age must be between 60 seconds and 24 hours."
   }
 }
+
+# ========================================
+# API GATEWAY RATE LIMITING CONFIGURATION
+# ========================================
+
+# Enable/disable rate limiting
+variable "enable_rate_limiting" {
+  description = "Enable rate limiting for API Gateway"
+  type        = bool
+  default     = true
+}
+
+# Stage-level throttling (affects all methods)
+variable "api_throttling_rate_limit" {
+  description = "API Gateway stage-level throttling rate limit (requests per second)"
+  type        = number
+  default     = 1000
+  validation {
+    condition     = var.api_throttling_rate_limit >= 1 && var.api_throttling_rate_limit <= 10000
+    error_message = "API throttling rate limit must be between 1 and 10,000 requests per second."
+  }
+}
+
+variable "api_throttling_burst_limit" {
+  description = "API Gateway stage-level throttling burst limit"
+  type        = number
+  default     = 2000
+  validation {
+    condition     = var.api_throttling_burst_limit >= var.api_throttling_rate_limit && var.api_throttling_burst_limit <= 20000
+    error_message = "API throttling burst limit must be >= rate limit and <= 20,000."
+  }
+}
+
+# Public usage plan (no API key required)
+variable "public_rate_limit" {
+  description = "Public usage plan rate limit (requests per second)"
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.public_rate_limit >= 1 && var.public_rate_limit <= 100
+    error_message = "Public rate limit must be between 1 and 100 requests per second."
+  }
+}
+
+variable "public_burst_limit" {
+  description = "Public usage plan burst limit"
+  type        = number
+  default     = 20
+  validation {
+    condition     = var.public_burst_limit >= var.public_rate_limit && var.public_burst_limit <= 200
+    error_message = "Public burst limit must be >= public rate limit and <= 200."
+  }
+}
+
+variable "public_quota_limit" {
+  description = "Public usage plan quota limit (requests per day)"
+  type        = number
+  default     = 1000
+  validation {
+    condition     = var.public_quota_limit >= 100 && var.public_quota_limit <= 100000
+    error_message = "Public quota limit must be between 100 and 100,000 requests per day."
+  }
+}
+
+# Registered user usage plan (with API key)
+variable "registered_rate_limit" {
+  description = "Registered user rate limit (requests per second)"
+  type        = number
+  default     = 50
+  validation {
+    condition     = var.registered_rate_limit >= 10 && var.registered_rate_limit <= 500
+    error_message = "Registered user rate limit must be between 10 and 500 requests per second."
+  }
+}
+
+variable "registered_burst_limit" {
+  description = "Registered user burst limit"
+  type        = number
+  default     = 100
+  validation {
+    condition     = var.registered_burst_limit >= var.registered_rate_limit && var.registered_burst_limit <= 1000
+    error_message = "Registered user burst limit must be >= registered rate limit and <= 1,000."
+  }
+}
+
+variable "registered_quota_limit" {
+  description = "Registered user quota limit (requests per day)"
+  type        = number
+  default     = 10000
+  validation {
+    condition     = var.registered_quota_limit >= 1000 && var.registered_quota_limit <= 1000000
+    error_message = "Registered user quota limit must be between 1,000 and 1,000,000 requests per day."
+  }
+}
+
+# Premium usage plan (highest limits)
+variable "premium_rate_limit" {
+  description = "Premium user rate limit (requests per second)"
+  type        = number
+  default     = 200
+  validation {
+    condition     = var.premium_rate_limit >= 50 && var.premium_rate_limit <= 1000
+    error_message = "Premium user rate limit must be between 50 and 1,000 requests per second."
+  }
+}
+
+variable "premium_burst_limit" {
+  description = "Premium user burst limit"
+  type        = number
+  default     = 400
+  validation {
+    condition     = var.premium_burst_limit >= var.premium_rate_limit && var.premium_burst_limit <= 2000
+    error_message = "Premium user burst limit must be >= premium rate limit and <= 2,000."
+  }
+}
+
+variable "premium_quota_limit" {
+  description = "Premium user quota limit (requests per day)"
+  type        = number
+  default     = 100000
+  validation {
+    condition     = var.premium_quota_limit >= 10000 && var.premium_quota_limit <= 10000000
+    error_message = "Premium user quota limit must be between 10,000 and 10,000,000 requests per day."
+  }
+}
+
+# Method-level throttling overrides
+variable "upload_method_rate_limit" {
+  description = "Upload method specific rate limit (requests per second) - 0 to use stage default"
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.upload_method_rate_limit >= 0 && var.upload_method_rate_limit <= 100
+    error_message = "Upload method rate limit must be between 0 and 100 requests per second."
+  }
+}
+
+variable "upload_method_burst_limit" {
+  description = "Upload method specific burst limit - 0 to use stage default"
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.upload_method_burst_limit >= 0 && var.upload_method_burst_limit <= 200
+    error_message = "Upload method burst limit must be between 0 and 200."
+  }
+}
+
+variable "processed_method_rate_limit" {
+  description = "Processed method specific rate limit (requests per second) - 0 to use stage default"
+  type        = number
+  default     = 20
+  validation {
+    condition     = var.processed_method_rate_limit >= 0 && var.processed_method_rate_limit <= 200
+    error_message = "Processed method rate limit must be between 0 and 200 requests per second."
+  }
+}
+
+variable "processed_method_burst_limit" {
+  description = "Processed method specific burst limit - 0 to use stage default"
+  type        = number
+  default     = 40
+  validation {
+    condition     = var.processed_method_burst_limit >= 0 && var.processed_method_burst_limit <= 400
+    error_message = "Processed method burst limit must be between 0 and 400."
+  }
+}
+
+# API Key management
+variable "create_default_api_keys" {
+  description = "Create default API keys for testing and demo purposes"
+  type        = bool
+  default     = true
+}
+
+variable "api_key_names" {
+  description = "Names for default API keys to create"
+  type        = list(string)
+  default     = ["demo-registered-user", "demo-premium-user"]
+  validation {
+    condition     = length(var.api_key_names) <= 10
+    error_message = "Maximum 10 API keys can be created by default."
+  }
+}

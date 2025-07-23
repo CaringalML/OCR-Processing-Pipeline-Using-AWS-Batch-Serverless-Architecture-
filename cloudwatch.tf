@@ -117,3 +117,177 @@ resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
     JobQueue = aws_batch_job_queue.main.name
   }
 }
+
+# ========================================
+# RATE LIMITING MONITORING
+# ========================================
+
+# CloudWatch Alarm for 4XX errors (includes rate limiting)
+resource "aws_cloudwatch_metric_alarm" "api_4xx_errors" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment}-api-4xx-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "4XXError"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "20"
+  alarm_description   = "This metric monitors API Gateway 4XX errors (including rate limiting)"
+  alarm_actions       = []
+
+  dimensions = {
+    ApiName = aws_api_gateway_rest_api.main.name
+    Stage   = aws_api_gateway_stage.main.stage_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "RateLimiting"
+    Severity  = "Medium"
+  })
+}
+
+# CloudWatch Alarm for high API Gateway latency
+resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment}-api-high-latency"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Latency"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5000"  # 5 seconds
+  alarm_description   = "This metric monitors API Gateway latency"
+  alarm_actions       = []
+
+  dimensions = {
+    ApiName = aws_api_gateway_rest_api.main.name
+    Stage   = aws_api_gateway_stage.main.stage_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "Performance"
+    Severity  = "Low"
+  })
+}
+
+# CloudWatch Alarm for unusual request spikes
+resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment}-api-request-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Count"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = var.api_throttling_rate_limit * 300 * 0.8  # 80% of max capacity
+  alarm_description   = "This metric monitors unusual request spikes that may indicate abuse"
+  alarm_actions       = []
+
+  dimensions = {
+    ApiName = aws_api_gateway_rest_api.main.name
+    Stage   = aws_api_gateway_stage.main.stage_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "Security"
+    Severity  = "Medium"
+  })
+}
+
+# CloudWatch Dashboard for Rate Limiting Monitoring
+resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  dashboard_name = "${var.project_name}-${var.environment}-rate-limiting"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ApiGateway", "Count", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name],
+            [".", "4XXError", ".", ".", ".", "."],
+            [".", "5XXError", ".", ".", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          title   = "API Gateway Request Metrics"
+          period  = 300
+          stat    = "Sum"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ApiGateway", "Latency", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name],
+            [".", "IntegrationLatency", ".", ".", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          title   = "API Gateway Latency Metrics"
+          period  = 300
+          stat    = "Average"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ApiGateway", "Count", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name, "Method", "POST", "Resource", "/upload"],
+            [".", ".", ".", ".", ".", ".", ".", "GET", ".", "/processed"]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          title   = "Method-specific Request Counts"
+          period  = 300
+          stat    = "Sum"
+        }
+      },
+      {
+        type   = "number"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ApiGateway", "4XXError", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name]
+          ]
+          view    = "singleValue"
+          region  = var.aws_region
+          title   = "Rate Limiting Events (4XX Errors)"
+          period  = 300
+          stat    = "Sum"
+        }
+      }
+    ]
+  })
+
+}
