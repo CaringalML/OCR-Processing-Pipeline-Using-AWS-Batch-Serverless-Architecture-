@@ -298,7 +298,8 @@ def process_s3_file() -> Dict[str, Any]:
             
             log('INFO', 'Comprehend analysis completed', {
                 'processingTimeSeconds': comprehend_time,
-                'language': comprehend_data.get('language'),
+                'language': comprehend_data.get('languageName', comprehend_data.get('language', 'Unknown')),
+                'languageCode': comprehend_data.get('language'),
                 'sentiment': comprehend_data.get('sentiment', {}).get('Sentiment'),
                 'entitiesCount': len(comprehend_data.get('entities', [])),
                 'keyPhrasesCount': len(comprehend_data.get('keyPhrases', []))
@@ -1124,6 +1125,61 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
         }
 
 
+def get_language_name(language_code: str) -> str:
+    """Convert AWS Comprehend language codes to full language names"""
+    language_map = {
+        'en': 'English',
+        'es': 'Spanish',
+        'fr': 'French',
+        'de': 'German',
+        'it': 'Italian',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'zh': 'Chinese (Simplified)',
+        'zh-TW': 'Chinese (Traditional)',
+        'ar': 'Arabic',
+        'hi': 'Hindi',
+        'tr': 'Turkish',
+        'pl': 'Polish',
+        'nl': 'Dutch',
+        'sv': 'Swedish',
+        'da': 'Danish',
+        'no': 'Norwegian',
+        'fi': 'Finnish',
+        'cs': 'Czech',
+        'hu': 'Hungarian',
+        'ro': 'Romanian',
+        'bg': 'Bulgarian',
+        'hr': 'Croatian',
+        'sk': 'Slovak',
+        'sl': 'Slovenian',
+        'et': 'Estonian',
+        'lv': 'Latvian',
+        'lt': 'Lithuanian',
+        'uk': 'Ukrainian',
+        'he': 'Hebrew',
+        'th': 'Thai',
+        'vi': 'Vietnamese',
+        'id': 'Indonesian',
+        'ms': 'Malay',
+        'tl': 'Filipino',
+        'ta': 'Tamil',
+        'te': 'Telugu',
+        'bn': 'Bengali',
+        'ur': 'Urdu',
+        'fa': 'Persian',
+        'sw': 'Swahili',
+        'am': 'Amharic',
+        'so': 'Somali',
+        'yo': 'Yoruba',
+        'ig': 'Igbo',
+        'ha': 'Hausa'
+    }
+    return language_map.get(language_code.lower(), f"Unknown ({language_code})")
+
+
 def process_text_with_comprehend(text: str) -> Dict[str, Any]:
     """Process text with AWS Comprehend - synchronous version"""
     try:
@@ -1144,16 +1200,22 @@ def process_text_with_comprehend(text: str) -> Dict[str, Any]:
         try:
             language_result = comprehend_client.detect_dominant_language(Text=text_to_analyze)
             
-            results['language'] = language_result['Languages'][0]['LanguageCode'] if language_result['Languages'] else 'unknown'
-            results['languageScore'] = safe_decimal_conversion(language_result['Languages'][0]['Score'] if language_result['Languages'] else 0)
+            language_code = language_result['Languages'][0]['LanguageCode'] if language_result['Languages'] else 'unknown'
+            language_score = safe_decimal_conversion(language_result['Languages'][0]['Score'] if language_result['Languages'] else 0)
+            
+            results['language'] = language_code
+            results['languageName'] = get_language_name(language_code)
+            results['languageScore'] = language_score
             
             log('DEBUG', 'Language detection completed', {
-                'language': results['language'],
-                'score': float(results['languageScore'])
+                'languageCode': language_code,
+                'languageName': results['languageName'],
+                'score': float(language_score)
             })
         except Exception as error:
             log('WARN', 'Language detection failed', {'error': str(error)})
             results['language'] = 'unknown'
+            results['languageName'] = 'Unknown'
             results['languageScore'] = Decimal('0')
         
         # Sentiment analysis
