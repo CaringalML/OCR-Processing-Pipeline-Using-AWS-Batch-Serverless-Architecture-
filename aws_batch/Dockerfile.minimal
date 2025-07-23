@@ -1,0 +1,47 @@
+# Minimal Dockerfile without spaCy for fast builds
+FROM python:3.12-alpine3.20
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for text processing
+RUN apk add --no-cache gcc musl-dev libffi-dev
+
+# Copy requirements file first
+COPY requirements.txt ./
+
+# Install only essential Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    boto3>=1.34.0 \
+    botocore>=1.34.0 \
+    requests>=2.31.0 \
+    textblob==0.17.1 \
+    pyspellchecker==0.7.2
+
+# Download TextBlob corpora
+RUN python -m textblob.download_corpora lite
+
+# Copy application code
+COPY . .
+
+# Create non-root user
+RUN addgroup -g 1001 -S python && \
+    adduser -S python -u 1001 -G python && \
+    chown -R python:python /app
+
+# Remove build dependencies
+RUN apk del gcc musl-dev
+
+# Switch to non-root user
+USER python
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
+
+# Note: spaCy will not be available with this build
+ENV DISABLE_SPACY=1
+
+CMD ["python", "index.py"]
