@@ -1077,6 +1077,14 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
         preprocessed = re.sub(r'\r', '', preprocessed)  # Remove carriage returns
         preprocessed = re.sub(r'\t', ' ', preprocessed)  # Replace tabs with spaces
         
+        # Fix common OCR number/letter artifacts in formatting stage
+        preprocessed = re.sub(r'\blane1\b', 'lane', preprocessed)  # lane1 -> lane
+        preprocessed = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', preprocessed)  # word1 he -> word he
+        
+        # Remove incomplete words at the end (like "pi-" at end of text)
+        preprocessed = re.sub(r'\s+\w{1,3}-\s*$', '', preprocessed)  # Remove short words ending with dash at end
+        preprocessed = re.sub(r'\s+\w{1,2}\s*$', '', preprocessed)   # Remove very short orphaned words at end
+        
         # Smart line joining
         lines = preprocessed.split('\n')
         processed_lines = []
