@@ -105,9 +105,23 @@ def lambda_handler(event, context):
             if processing_result:
                 response_data['extractedText'] = processing_result.get('extracted_text', '')
                 response_data['formattedText'] = processing_result.get('formatted_text', '')
-                response_data['textFormatting'] = processing_result.get('text_formatting', {})
-                response_data['analysis'] = processing_result.get('analysis', {})
                 response_data['processingDuration'] = processing_result.get('processing_duration', '')
+                
+                # Add Textract analysis with text correction details
+                summary_analysis = processing_result.get('summary_analysis', {})
+                text_correction_details = processing_result.get('text_correction_details', {})
+                
+                response_data['textract_analysis'] = {
+                    'total_words': summary_analysis.get('word_count', 0),
+                    'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                    'total_sentences': summary_analysis.get('sentence_count', 0),
+                    'corrections_made': text_correction_details.get('corrections_made', 0),
+                    'correction_method': text_correction_details.get('method_used', 'none'),
+                    'corrected_words': text_correction_details.get('sample_corrections', []),
+                    'confidence_score': summary_analysis.get('confidence', '0'),
+                    'character_count': summary_analysis.get('character_count', 0),
+                    'line_count': summary_analysis.get('line_count', 0)
+                }
                 
                 # Add Comprehend analysis if available
                 comprehend_analysis = processing_result.get('comprehend_analysis', {})
@@ -162,8 +176,22 @@ def lambda_handler(event, context):
                 if processing_result and item.get('processing_status') == 'processed':
                     item_data['extractedText'] = processing_result.get('extracted_text', '')
                     item_data['formattedText'] = processing_result.get('formatted_text', '')
-                    item_data['textFormatting'] = processing_result.get('text_formatting', {})
-                    item_data['analysis'] = processing_result.get('analysis', {})
+                    
+                    # Add Textract analysis with text correction details
+                    summary_analysis = processing_result.get('summary_analysis', {})
+                    text_correction_details = processing_result.get('text_correction_details', {})
+                    
+                    item_data['textract_analysis'] = {
+                        'total_words': summary_analysis.get('word_count', 0),
+                        'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                        'total_sentences': summary_analysis.get('sentence_count', 0),
+                        'corrections_made': text_correction_details.get('corrections_made', 0),
+                        'correction_method': text_correction_details.get('method_used', 'none'),
+                        'corrected_words': text_correction_details.get('sample_corrections', []),
+                        'confidence_score': summary_analysis.get('confidence', '0'),
+                        'character_count': summary_analysis.get('character_count', 0),
+                        'line_count': summary_analysis.get('line_count', 0)
+                    }
                     
                     # Add Comprehend analysis if available
                     comprehend_analysis = processing_result.get('comprehend_analysis', {})

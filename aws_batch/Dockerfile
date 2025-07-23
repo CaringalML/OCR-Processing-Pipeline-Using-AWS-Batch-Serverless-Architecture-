@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir \
 # Download TextBlob corpora for better text correction
 RUN python -m textblob.download_corpora lite
 
+# Download spaCy language model
+RUN python -m spacy download en_core_web_sm
+
 # Copy the rest of the application code
 COPY . .
 

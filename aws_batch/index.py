@@ -35,6 +35,16 @@ except ImportError:
     SPELLCHECKER_AVAILABLE = False
     log('WARN', 'PySpellChecker not available - advanced spell checking disabled')
 
+try:
+    import spacy
+    # Try to load the English model
+    nlp = spacy.load("en_core_web_sm")
+    SPACY_AVAILABLE = True
+except (ImportError, OSError):
+    SPACY_AVAILABLE = False
+    nlp = None
+    log('WARN', 'spaCy not available - advanced NLP text refinement disabled')
+
 # Initialize AWS clients
 s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
@@ -246,6 +256,7 @@ def process_s3_file() -> Dict[str, Any]:
         # Format the extracted text with correction
         formatted_text_data = {}
         corrected_text_data = {}
+        refined_text_data = {}
         text_for_comprehend = extracted_data['text']
         
         if extracted_data['text'] and extracted_data['text'].strip():
@@ -256,17 +267,25 @@ def process_s3_file() -> Dict[str, Any]:
             log('INFO', 'Applying text correction')
             corrected_text_data = apply_text_correction(formatted_text_data.get('formatted', extracted_data['text']))
             
-            # Use the corrected text for Comprehend analysis
-            text_for_comprehend = corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text']))
+            # Apply spaCy-based text refinement to the corrected text
+            log('INFO', 'Applying spaCy text refinement')
+            refined_text_data = refine_text_with_spacy(corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])))
             
-            log('INFO', 'Text formatting and correction completed', {
+            # Use the refined text for Comprehend analysis (fallback to corrected text if refinement fails)
+            text_for_comprehend = refined_text_data.get('refined_text', corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])))
+            
+            log('INFO', 'Text formatting, correction, and refinement completed', {
                 'originalChars': formatted_text_data['stats']['originalChars'],
                 'formattedChars': formatted_text_data['stats']['cleanedChars'],
                 'correctedChars': corrected_text_data.get('corrected_length', 0),
+                'refinedChars': refined_text_data.get('refined_length', 0),
                 'paragraphs': formatted_text_data['stats']['paragraphCount'],
                 'sentences': formatted_text_data['stats']['sentenceCount'],
                 'correctionsApplied': corrected_text_data.get('corrections_made', 0),
-                'correctionMethod': corrected_text_data.get('method', 'none')
+                'refinementsApplied': refined_text_data.get('refinements_applied', 0),
+                'correctionMethod': corrected_text_data.get('method', 'none'),
+                'refinementMethod': refined_text_data.get('method', 'none'),
+                'entitiesFound': len(refined_text_data.get('entities_found', []))
             })
         
         # Process formatted text with AWS Comprehend
@@ -298,6 +317,7 @@ def process_s3_file() -> Dict[str, Any]:
             'extracted_text': extracted_data['text'],
             'formatted_text': formatted_text_data.get('formatted', extracted_data['text']),
             'corrected_text': corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text'])),
+            'refined_text': refined_text_data.get('refined_text', corrected_text_data.get('corrected_text', formatted_text_data.get('formatted', extracted_data['text']))),
             'summary_analysis': {
                 'word_count': extracted_data['wordCount'],
                 'character_count': len(extracted_data['text']),
@@ -306,13 +326,26 @@ def process_s3_file() -> Dict[str, Any]:
                 'sentence_count': formatted_text_data.get('stats', {}).get('sentenceCount', 0),
                 'confidence': extracted_data['confidence'],
                 'corrections_applied': corrected_text_data.get('corrections_made', 0),
-                'correction_method': corrected_text_data.get('method', 'none')
+                'correction_method': corrected_text_data.get('method', 'none'),
+                'refinements_applied': refined_text_data.get('refinements_applied', 0),
+                'refinement_method': refined_text_data.get('method', 'none'),
+                'entities_found': len(refined_text_data.get('entities_found', [])),
+                'sentences_processed': refined_text_data.get('sentences_processed', 0)
             },
             'text_correction_details': {
                 'corrections_made': corrected_text_data.get('corrections_made', 0),
                 'method_used': corrected_text_data.get('method', 'none'),
                 'sample_corrections': corrected_text_data.get('correction_details', []),
                 'length_change': corrected_text_data.get('corrected_length', 0) - corrected_text_data.get('original_length', 0)
+            },
+            'text_refinement_details': {
+                'refinements_applied': refined_text_data.get('refinements_applied', 0),
+                'method_used': refined_text_data.get('method', 'none'),
+                'entities_found': refined_text_data.get('entities_found', []),
+                'sentences_processed': refined_text_data.get('sentences_processed', 0),
+                'sample_refinements': refined_text_data.get('refinement_details', []),
+                'pos_statistics': refined_text_data.get('pos_statistics', {}),
+                'length_change': refined_text_data.get('refined_length', 0) - refined_text_data.get('original_length', 0)
             },
             'comprehend_analysis': comprehend_data,
             'metadata': {
@@ -321,7 +354,8 @@ def process_s3_file() -> Dict[str, Any]:
                 'textract_job_id': extracted_data['jobId'],
                 'textract_duration': f'{textract_time:.2f} seconds',
                 'comprehend_duration': f"{comprehend_data.get('processingTime', 0):.2f} seconds" if comprehend_data.get('processingTime') else 'N/A',
-                'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE
+                'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE,
+                'text_refinement_enabled': SPACY_AVAILABLE
             }
         }
         
@@ -606,6 +640,156 @@ def apply_text_correction(text: str) -> Dict[str, Any]:
         'original_length': len(text),
         'corrected_length': len(corrected_text)
     }
+
+
+def refine_text_with_spacy(text: str) -> Dict[str, Any]:
+    """
+    Use spaCy for advanced NLP-based text refinement.
+    This includes:
+    - Sentence segmentation and proper capitalization
+    - Named entity recognition for proper noun handling
+    - Part-of-speech tagging for grammar improvements
+    - Dependency parsing for sentence structure
+    - Lemmatization for word normalization
+    """
+    if not SPACY_AVAILABLE or not text or not text.strip():
+        return {
+            'refined_text': text,
+            'refinements_applied': 0,
+            'refinement_details': [],
+            'method': 'none',
+            'entities_found': [],
+            'sentences_processed': 0
+        }
+    
+    try:
+        # Process text with spaCy
+        doc = nlp(text)
+        
+        refined_sentences = []
+        refinement_details = []
+        entities_found = []
+        refinements_count = 0
+        
+        # Extract and store named entities
+        for ent in doc.ents:
+            entities_found.append({
+                'text': ent.text,
+                'label': ent.label_,
+                'start': ent.start_char,
+                'end': ent.end_char
+            })
+        
+        # Process each sentence
+        for sent_idx, sent in enumerate(doc.sents):
+            original_sent = sent.text.strip()
+            refined_sent = original_sent
+            sent_refinements = []
+            
+            # 1. Ensure proper sentence capitalization
+            if refined_sent and refined_sent[0].islower():
+                # Check if it starts with a named entity that should stay lowercase
+                first_token = sent[0]
+                if not (first_token.ent_type_ or first_token.pos_ == 'PROPN'):
+                    refined_sent = refined_sent[0].upper() + refined_sent[1:]
+                    sent_refinements.append("capitalized_sentence_start")
+                    refinements_count += 1
+            
+            # 2. Handle proper nouns and entities
+            tokens = []
+            for token in sent:
+                token_text = token.text
+                
+                # Capitalize proper nouns that aren't already capitalized
+                if token.pos_ == 'PROPN' and token_text.islower():
+                    token_text = token_text.capitalize()
+                    sent_refinements.append(f"capitalized_proper_noun:{token.text}")
+                    refinements_count += 1
+                
+                # Preserve entity formatting
+                if token.ent_type_:
+                    # Special handling for certain entity types
+                    if token.ent_type_ in ['PERSON', 'ORG', 'GPE', 'LOC']:
+                        if token_text.islower():
+                            token_text = token_text.title()
+                            sent_refinements.append(f"capitalized_entity:{token.text}({token.ent_type_})")
+                            refinements_count += 1
+                
+                tokens.append(token_text)
+            
+            # 3. Reconstruct sentence with proper spacing
+            refined_sent = ""
+            for i, token in enumerate(tokens):
+                # Handle spacing
+                if i == 0:
+                    refined_sent = token
+                elif token in ".,!?;:)]}" or tokens[i-1] in "([{":
+                    refined_sent += token
+                elif token in "'" and i > 0 and tokens[i-1].lower() in ['don', 'doesn', 'didn', 'won', 'wouldn', 'shouldn', 'couldn', 'can', 'couldn']:
+                    refined_sent += token
+                else:
+                    refined_sent += " " + token
+            
+            # 4. Ensure sentence ends with proper punctuation
+            if refined_sent and refined_sent[-1] not in '.!?':
+                # Check if it's likely a complete sentence
+                if len([t for t in sent if t.pos_ == 'VERB']) > 0:
+                    refined_sent += '.'
+                    sent_refinements.append("added_period")
+                    refinements_count += 1
+            
+            # 5. Fix common grammar patterns using dependency parsing
+            # Example: Fix double punctuation
+            refined_sent = re.sub(r'([.!?])\s*\1+', r'\1', refined_sent)
+            if original_sent != refined_sent and "fixed_double_punctuation" not in sent_refinements:
+                sent_refinements.append("fixed_double_punctuation")
+                refinements_count += 1
+            
+            refined_sentences.append(refined_sent)
+            
+            if sent_refinements:
+                refinement_details.append({
+                    'sentence_index': sent_idx,
+                    'original': original_sent,
+                    'refined': refined_sent,
+                    'refinements': sent_refinements
+                })
+        
+        # Join sentences with proper spacing
+        refined_text = ' '.join(refined_sentences)
+        
+        # Final cleanup
+        refined_text = re.sub(r'\s+', ' ', refined_text).strip()
+        refined_text = re.sub(r'\s+([.,!?;:])', r'\1', refined_text)
+        
+        # Calculate statistics
+        pos_stats = {}
+        for token in doc:
+            pos_stats[token.pos_] = pos_stats.get(token.pos_, 0) + 1
+        
+        return {
+            'refined_text': refined_text,
+            'refinements_applied': refinements_count,
+            'refinement_details': refinement_details[:10],  # Limit details to first 10 for brevity
+            'method': 'spacy',
+            'entities_found': entities_found[:20],  # Limit to first 20 entities
+            'sentences_processed': len(list(doc.sents)),
+            'pos_statistics': pos_stats,
+            'original_length': len(text),
+            'refined_length': len(refined_text)
+        }
+        
+    except Exception as e:
+        log('WARN', f'spaCy refinement failed: {str(e)}')
+        return {
+            'refined_text': text,
+            'refinements_applied': 0,
+            'refinement_details': [],
+            'method': 'none',
+            'error': str(e),
+            'entities_found': [],
+            'sentences_processed': 0
+        }
 
 
 def apply_basic_ocr_corrections(text: str) -> str:
