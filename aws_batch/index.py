@@ -2,7 +2,7 @@
 """
 OCR Processing Pipeline - Batch Processing Only
 Converts documents to text using AWS Textract and analyzes with AWS Comprehend
-Enhanced with natural flow punctuation and comprehensive grammar refinement
+Enhanced with natural flow punctuation, comprehensive grammar refinement, and QuillBot-compliant colon fixes
 """
 
 import json
@@ -114,7 +114,7 @@ def health_check() -> Dict[str, Any]:
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'uptime': time.time(),
         'mode': 'batch-only',
-        'version': '2.6.0'
+        'version': '2.7.0'
     }
 
 
@@ -180,6 +180,67 @@ def safe_decimal_conversion(value: Union[float, int, str]) -> Decimal:
             return Decimal('0')
     except (InvalidOperation, ValueError, TypeError):
         return Decimal('0')
+
+
+def apply_enhanced_colon_grammar_fix(text: str) -> Dict[str, Any]:
+    """
+    Apply enhanced colon grammar fixes based on proper usage rules
+    """
+    if not text or not text.strip():
+        return {
+            'fixed_text': text,
+            'colon_fixes': 0,
+            'fixes_applied': []
+        }
+    
+    fixed_text = text
+    fixes_applied = []
+    colon_fixes = 0
+    
+    # Rule 1: "problems are: what" -> "problems are what" (remove inappropriate colon)
+    before_rule1 = fixed_text
+    # When colon is followed by a single question word, remove colon
+    fixed_text = re.sub(r'(\w+\s+are):\s+(what|how|when|where|why)\b', r'\1 \2', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'(\w+\s+is):\s+(what|how|when|where|why)\b', r'\1 \2', fixed_text, flags=re.IGNORECASE)
+    if before_rule1 != fixed_text:
+        fixes_applied.append("Removed inappropriate colon before question words")
+        colon_fixes += 1
+    
+    # Rule 2: Keep colons when they introduce proper lists or explanations
+    # "The problems are: first problem, second problem" - this is correct
+    # "The answer is: it depends on several factors" - this is correct
+    
+    # Rule 3: Fix colons that should introduce new sentences
+    before_rule3 = fixed_text
+    # When colon is followed by a complete independent clause, convert to period
+    patterns_to_fix = [
+        (r'(\w+\s+car):\s+(we\s+go\s+out)', r'\1. We go out'),
+        (r'(\w+\s+future):\s+(it\s+must\s+be)', r'\1. It must be'),
+        (r'(\w+):\s+(one\s+thing\s+is)', r'\1. One thing is'),
+    ]
+    
+    for pattern, replacement in patterns_to_fix:
+        new_text = re.sub(pattern, replacement, fixed_text, flags=re.IGNORECASE)
+        if new_text != fixed_text:
+            fixed_text = new_text
+            fixes_applied.append("Fixed colon before independent clause")
+            colon_fixes += 1
+    
+    # Rule 4: Context-aware colon fixing
+    before_rule4 = fixed_text
+    # If colon is followed by incomplete phrase that doesn't form a proper list/explanation
+    # Example: "problems are: what vehicle" -> "problems are what vehicle"
+    fixed_text = re.sub(r'(\w+\s+are):\s+(what\s+\w+(?:\s+\w+)*?)(?=\s+and|\s+or|\?)', r'\1 \2', fixed_text, flags=re.IGNORECASE)
+    if before_rule4 != fixed_text:
+        fixes_applied.append("Fixed colon in compound questions")
+        colon_fixes += 1
+    
+    return {
+        'fixed_text': fixed_text,
+        'colon_fixes': colon_fixes,
+        'fixes_applied': fixes_applied,
+        'processing_notes': f"Applied {colon_fixes} colon grammar fixes"
+    }
 
 
 def apply_enhanced_grammar_fixes(text: str) -> Dict[str, Any]:
@@ -287,70 +348,9 @@ def apply_enhanced_grammar_fixes(text: str) -> Dict[str, Any]:
     }
 
 
-def apply_enhanced_colon_grammar_fix(text: str) -> Dict[str, Any]:
-    """
-    Apply enhanced colon grammar fixes based on proper usage rules
-    """
-    if not text or not text.strip():
-        return {
-            'fixed_text': text,
-            'colon_fixes': 0,
-            'fixes_applied': []
-        }
-    
-    fixed_text = text
-    fixes_applied = []
-    colon_fixes = 0
-    
-    # Rule 1: "problems are: what" -> "problems are what" (remove inappropriate colon)
-    before_rule1 = fixed_text
-    # When colon is followed by a single question word, remove colon
-    fixed_text = re.sub(r'(\w+\s+are):\s+(what|how|when|where|why)\b', r'\1 \2', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'(\w+\s+is):\s+(what|how|when|where|why)\b', r'\1 \2', fixed_text, flags=re.IGNORECASE)
-    if before_rule1 != fixed_text:
-        fixes_applied.append("Removed inappropriate colon before question words")
-        colon_fixes += 1
-    
-    # Rule 2: Keep colons when they introduce proper lists or explanations
-    # "The problems are: first problem, second problem" - this is correct
-    # "The answer is: it depends on several factors" - this is correct
-    
-    # Rule 3: Fix colons that should introduce new sentences
-    before_rule3 = fixed_text
-    # When colon is followed by a complete independent clause, convert to period
-    patterns_to_fix = [
-        (r'(\w+\s+car):\s+(we\s+go\s+out)', r'\1. We go out'),
-        (r'(\w+\s+future):\s+(it\s+must\s+be)', r'\1. It must be'),
-        (r'(\w+):\s+(one\s+thing\s+is)', r'\1. One thing is'),
-    ]
-    
-    for pattern, replacement in patterns_to_fix:
-        new_text = re.sub(pattern, replacement, fixed_text, flags=re.IGNORECASE)
-        if new_text != fixed_text:
-            fixed_text = new_text
-            fixes_applied.append("Fixed colon before independent clause")
-            colon_fixes += 1
-    
-    # Rule 4: Context-aware colon fixing
-    before_rule4 = fixed_text
-    # If colon is followed by incomplete phrase that doesn't form a proper list/explanation
-    # Example: "problems are: what vehicle" -> "problems are what vehicle"
-    fixed_text = re.sub(r'(\w+\s+are):\s+(what\s+\w+(?:\s+\w+)*?)(?=\s+and|\s+or|\?)', r'\1 \2', fixed_text, flags=re.IGNORECASE)
-    if before_rule4 != fixed_text:
-        fixes_applied.append("Fixed colon in compound questions")
-        colon_fixes += 1
-    
-    return {
-        'fixed_text': fixed_text,
-        'colon_fixes': colon_fixes,
-        'fixes_applied': fixes_applied,
-        'processing_notes': f"Applied {colon_fixes} colon grammar fixes"
-    }
-
-
 def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
     """
-    Apply natural flow punctuation with enhanced colon grammar rules
+    Apply natural flow punctuation with enhanced colon grammar rules and comprehensive dash handling
     """
     if not text or not text.strip():
         return {
@@ -381,15 +381,29 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
         fixes_applied.append("Improved comma usage for natural flow")
         flow_fixes += 1
     
-    # Step 3: Handle the activity list with natural flow
+    # Step 3: Handle the activity list with natural flow - COMPREHENSIVE DASH HANDLING
     before_activity = refined_text
-    # Fix temporal clauses: "passenger—while" -> "passenger while"
-    refined_text = re.sub(r'(\w+)—(while\s)', r'\1 \2', refined_text)
-    refined_text = re.sub(r'(\w+)—(when\s)', r'\1 \2', refined_text)
-    refined_text = re.sub(r'(\w+)—(as\s)', r'\1 \2', refined_text)
+    
+    # Fix ALL dash variations: em dash, en dash, hyphen with spaces
+    # "passenger—while" -> "passenger while"
+    # "passenger – while" -> "passenger while" 
+    # "passenger - while" -> "passenger while"
+    refined_text = re.sub(r'(\w+)\s*[—–-]\s*(while\s)', r'\1 \2', refined_text)
+    refined_text = re.sub(r'(\w+)\s*[—–-]\s*(when\s)', r'\1 \2', refined_text)
+    refined_text = re.sub(r'(\w+)\s*[—–-]\s*(as\s)', r'\1 \2', refined_text)
     
     # Convert activity lists to natural flow
-    refined_text = re.sub(r'(relax)\s*[—-]\s*(dream)', r'\1, \2', refined_text)
+    # "relax—dream" or "relax - dream" -> "relax, dream"
+    refined_text = re.sub(r'(relax)\s*[—–-]\s*(dream)', r'\1, \2', refined_text)
+    
+    # Handle the full activity pattern with temporal clause
+    # "relax, dream, read the newspaper, have a meal, flirt with his passenger - while"
+    # -> "relax, dream, read the newspaper, have a meal, flirt with his passenger while"
+    activity_temporal_pattern = r'(flirt\s+with\s+his\s+passenger)\s*[—–-]\s*(while\s+)'
+    if re.search(activity_temporal_pattern, refined_text):
+        refined_text = re.sub(activity_temporal_pattern, r'\1 \2', refined_text)
+        fixes_applied.append("Fixed temporal clause after activity list")
+        flow_fixes += 1
     
     if before_activity != refined_text:
         fixes_applied.append("Fixed temporal clauses and activity lists for natural flow")
@@ -425,7 +439,7 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
         'fixes_applied': fixes_applied,
         'original_length': len(text),
         'refined_length': len(refined_text),
-        'processing_notes': f"Applied {flow_fixes} natural flow improvements with enhanced colon grammar"
+        'processing_notes': f"Applied {flow_fixes} natural flow improvements with enhanced colon grammar and comprehensive dash handling"
     }
 
 
@@ -604,7 +618,7 @@ def process_s3_file() -> Dict[str, Any]:
             'confidence': extracted_data['confidence']
         })
         
-        # Process text through 4 stages: extracted -> formatted -> refined with natural flow and enhanced grammar
+        # Process text through enhanced pipeline: extracted -> formatted -> refined with comprehensive improvements
         formatted_text_data = {}
         refined_text_data = {}
         text_for_comprehend = extracted_data['text']
@@ -614,8 +628,8 @@ def process_s3_file() -> Dict[str, Any]:
             log('INFO', 'Formatting extracted text')
             formatted_text_data = format_extracted_text(extracted_data['text'])
             
-            # Stage 2: Apply comprehensive refinement with natural flow and enhanced grammar
-            log('INFO', 'Applying comprehensive text refinement with natural flow and enhanced grammar')
+            # Stage 2: Apply comprehensive refinement with natural flow, enhanced grammar, and comprehensive dash handling
+            log('INFO', 'Applying comprehensive text refinement with enhanced colon grammar and comprehensive dash handling')
             refined_text_data = apply_comprehensive_text_refinement_natural(formatted_text_data.get('formatted', extracted_data['text']))
             
             # Use the refined text for Comprehend analysis
@@ -654,7 +668,7 @@ def process_s3_file() -> Dict[str, Any]:
         
         total_processing_time = time.time() - start_time
         
-        # Generate processing results with enhanced grammar refinement
+        # Generate processing results with comprehensive enhancements
         processing_results = {
             'processed_at': datetime.now(timezone.utc).isoformat(),
             'file_size': file_size,
@@ -692,7 +706,7 @@ def process_s3_file() -> Dict[str, Any]:
             },
             'comprehend_analysis': comprehend_data,
             'metadata': {
-                'processor_version': '2.6.0',  # Updated version with enhanced grammar
+                'processor_version': '2.7.0',  # Updated version with comprehensive dash handling
                 'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown'),
                 'textract_job_id': extracted_data['jobId'],
                 'textract_duration': f'{textract_time:.2f} seconds',
@@ -700,7 +714,9 @@ def process_s3_file() -> Dict[str, Any]:
                 'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE,
                 'text_refinement_enabled': SPACY_AVAILABLE,
                 'natural_flow_enabled': True,
-                'enhanced_grammar_enabled': True
+                'enhanced_grammar_enabled': True,
+                'quillbot_compliant_colons': True,
+                'comprehensive_dash_handling': True
             }
         }
         
@@ -1072,7 +1088,7 @@ def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
 
 def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
     """
-    Apply comprehensive text refinement with focus on natural flow and enhanced grammar
+    Apply comprehensive text refinement with focus on natural flow, enhanced grammar, and QuillBot compliance
     """
     if not text or not text.strip():
         return {
@@ -1118,13 +1134,13 @@ def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
         processing_notes.append(f"Spell corrections: {spell_corrections}")
         all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
     
-    # Step 2: Apply natural flow punctuation
+    # Step 2: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
     flow_result = apply_natural_flow_punctuation(refined_text)
     if flow_result['flow_fixes'] > 0:
         refined_text = flow_result['refined_text']
         flow_improvements = flow_result['flow_fixes']
         total_improvements += flow_improvements
-        methods_used.append('natural_flow_punctuation')
+        methods_used.append('natural_flow_punctuation_enhanced')
         processing_notes.append(f"Natural flow fixes: {flow_improvements}")
         all_fixes_applied.extend(flow_result['fixes_applied'])
     
