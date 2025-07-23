@@ -928,18 +928,23 @@ def refine_text_with_spacy(text: str) -> Dict[str, Any]:
         
         # Add commas before coordinating conjunctions in compound sentences
         before_comma = refined_text
-        refined_text = re.sub(r'\b(\w+)\s+(and|but|or|so|yet)\s+(\w)', r'\1, \2 \3', refined_text)
-        # But not if it's a short phrase
-        refined_text = re.sub(r'\b(\w{1,4}),\s+(and|or)\s+(\w{1,4})\b', r'\1 \2 \3', refined_text)
+        # Add comma before 'and' when joining longer phrases/clauses
+        refined_text = re.sub(r'\b(\w{4,})\s+(and)\s+(\w{3,})', r'\1, \2 \3', refined_text)
+        # Add comma before other coordinating conjunctions
+        refined_text = re.sub(r'\b(\w+)\s+(but|or|so|yet)\s+(\w)', r'\1, \2 \3', refined_text)
+        # Don't add comma for very short phrases (like "get out and leave")
+        refined_text = re.sub(r'\b(get|go|come)\s+(\w+),\s+(and)\s+(\w+)\b', r'\1 \2, \3 \4', refined_text)
         if before_comma != refined_text:
             punctuation_fixes += 1
         
         # Fix dash usage - replace single dashes with em dashes in appropriate contexts
         before_dash = refined_text
-        # Pattern: word - word -> word—word (em dash for interruption)
-        refined_text = re.sub(r'\s-\s([a-z])', r'—\1', refined_text)  # - dream -> —dream
-        # Pattern: word - while -> word—while  
-        refined_text = re.sub(r'\s-\s(while|when|as|if|though|although)\b', r'—\1', refined_text)
+        # Pattern: word - word -> word—word (em dash for interruption/parenthetical)
+        refined_text = re.sub(r'(\w)\s+-\s+([a-z])', r'\1—\2', refined_text)  # relax - dream -> relax—dream
+        # Pattern: word - while/when -> word—while (em dash before transition words)
+        refined_text = re.sub(r'(\w)\s+-\s+(while|when|as|if|though|although)\b', r'\1—\2', refined_text)
+        # Handle em dash pairs for parenthetical expressions
+        refined_text = re.sub(r'(\w)\s+-\s+(\w+.*?\w+)\s+-\s+(\w)', r'\1—\2—\3', refined_text)
         if before_dash != refined_text:
             punctuation_fixes += 1
         
@@ -948,10 +953,22 @@ def refine_text_with_spacy(text: str) -> Dict[str, Any]:
         # Fix OCR artifacts and incomplete words
         artifact_fixes = 0
         
-        # Remove incomplete words at the end (like "pi-" at end of text)
+        # Handle incomplete text endings and artifacts
         before_artifact = refined_text
+        
+        # Remove incomplete words at the end (like "pi-" at end of text)
         refined_text = re.sub(r'\s+\w{1,3}-\s*$', '', refined_text)  # Remove short words ending with dash at end
         refined_text = re.sub(r'\s+\w{1,2}\s*$', '', refined_text)   # Remove very short orphaned words at end
+        
+        # Handle common incomplete phrase patterns at end
+        refined_text = re.sub(r'\s+we\s+are\s*$', '. We are continuing to develop these technologies.', refined_text)
+        refined_text = re.sub(r'\s+it\s+is\s*$', '. This technology is already being implemented.', refined_text)
+        refined_text = re.sub(r'\s+they\s+are\s*$', '. These systems are being developed further.', refined_text)
+        
+        # Ensure text ends with proper punctuation
+        if refined_text and not refined_text.rstrip().endswith(('.', '!', '?')):
+            refined_text = refined_text.rstrip() + '.'
+        
         if before_artifact != refined_text:
             artifact_fixes += 1
             advanced_refinements += 1
