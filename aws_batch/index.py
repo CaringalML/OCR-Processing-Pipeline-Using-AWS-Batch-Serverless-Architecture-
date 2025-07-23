@@ -886,7 +886,92 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
         # Apply URL/email fixes first
         preprocessed = fix_urls_and_emails(raw_text)
         
-        # Fix hyphenated words at line breaks FIRST (most important fix)
+        def fix_ocr_character_errors(text: str) -> str:
+            """
+            Fix common OCR character recognition errors while preserving legitimate usage.
+            Only applies fixes when characters are clearly misplaced in word contexts.
+            """
+            # First, protect legitimate patterns by temporarily replacing them
+            protected_patterns = []
+            
+            # Protect email addresses
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            def protect_email(match):
+                placeholder = f"__EMAIL_{len(protected_patterns)}__"
+                protected_patterns.append(match.group(0))
+                return placeholder
+            text = re.sub(email_pattern, protect_email, text)
+            
+            # Protect URLs
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            def protect_url(match):
+                placeholder = f"__URL_{len(protected_patterns)}__"
+                protected_patterns.append(match.group(0))
+                return placeholder
+            text = re.sub(url_pattern, protect_url, text)
+            
+            # Protect www patterns
+            www_pattern = r'www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}[^\s]*'
+            def protect_www(match):
+                placeholder = f"__WWW_{len(protected_patterns)}__"
+                protected_patterns.append(match.group(0))
+                return placeholder
+            text = re.sub(www_pattern, protect_www, text)
+            
+            # Protect file paths
+            filepath_pattern = r'[A-Za-z]:\\[^\s<>"*|?]+|/[^\s<>"*|?]+'
+            def protect_filepath(match):
+                placeholder = f"__PATH_{len(protected_patterns)}__"
+                protected_patterns.append(match.group(0))
+                return placeholder
+            text = re.sub(filepath_pattern, protect_filepath, text)
+            
+            # Protect currency and measurements
+            money_pattern = r'\$\d+(?:\.\d{2})?|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:kg|lb|cm|inch|ft|meter|mile)'
+            def protect_money(match):
+                placeholder = f"__MEASURE_{len(protected_patterns)}__"
+                protected_patterns.append(match.group(0))
+                return placeholder
+            text = re.sub(money_pattern, protect_money, text, flags=re.IGNORECASE)
+            
+            # Now apply OCR character fixes to unprotected text
+            
+            # Common OCR character substitutions in words (not at word boundaries near protected content)
+            # Fix > and / when they appear mid-word (likely OCR errors)
+            text = re.sub(r'\b(\w+)[>\/\|\\](\w+)\b', lambda m: f"{m.group(1)}{m.group(2)}", text)
+            
+            # Fix common letter-to-symbol OCR errors in word contexts
+            text = re.sub(r'\b(\w*)[@&](\w+)\b', lambda m: f"{m.group(1)}a{m.group(2)}", text)  # @ -> a
+            text = re.sub(r'\b(\w+)[€£\$](\w+)\b', lambda m: f"{m.group(1)}e{m.group(2)}", text)  # €/£/$ -> e (in words)
+            text = re.sub(r'\b(\w+)0(\w+)\b', lambda m: f"{m.group(1)}o{m.group(2)}" if 'o' in m.group(1).lower() or 'o' in m.group(2).lower() else m.group(0), text)  # 0 -> o
+            text = re.sub(r'\b(\w+)1(\w+)\b', lambda m: f"{m.group(1)}l{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 1 -> l
+            text = re.sub(r'\b(\w+)5(\w+)\b', lambda m: f"{m.group(1)}s{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 5 -> s
+            text = re.sub(r'\b(\w+)8(\w+)\b', lambda m: f"{m.group(1)}b{m.group(2)}" if any(c in 'aeiou' for c in m.group(1).lower()) else m.group(0), text)  # 8 -> b
+            
+            # Fix specific word patterns that are commonly mis-OCR'd
+            text = re.sub(r'\bgui[>\/\|\\]dan[\/\\]ce\b', 'guidance', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bsel[€£\$]ct\b', 'select', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bp[@&]ssenger\b', 'passenger', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bauto[>\/\|]matic\b', 'automatic', text, flags=re.IGNORECASE)
+            text = re.sub(r'\btrans[>\/\|]port\b', 'transport', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bdevel[0o]pment\b', 'development', text, flags=re.IGNORECASE)
+            text = re.sub(r'\beff[1l]cient\b', 'efficient', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bveh[1l]cle\b', 'vehicle', text, flags=re.IGNORECASE)
+            
+            # Restore protected patterns
+            for i, pattern in enumerate(protected_patterns):
+                text = text.replace(f"__EMAIL_{i}__", pattern)
+                text = text.replace(f"__URL_{i}__", pattern)
+                text = text.replace(f"__WWW_{i}__", pattern)
+                text = text.replace(f"__PATH_{i}__", pattern)
+                text = text.replace(f"__MEASURE_{i}__", pattern)
+            
+            return text
+        
+        # Apply OCR character error fixes (after URL/email protection)
+        preprocessed = fix_ocr_character_errors(preprocessed)
+        
+        # Fix hyphenated words at line breaks AFTER OCR character fixes
         # Pattern: word- \n next_part -> word next_part
         preprocessed = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', preprocessed)
         
