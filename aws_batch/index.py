@@ -218,10 +218,8 @@ def apply_url_email_fixes(text: str) -> Dict[str, Any]:
         fixes_applied.append("Fixed email addresses with spaces")
         url_email_fixes += 1
     
-    # 2. Fix website URLs with spaces
+    # 2. Fix website URLs with spaces - ENHANCED PATTERNS
     before_urls = fixed_text
-    # Pattern: "www. travelgalore. nz" -> "www.travelgalore.nz"
-    # Pattern: "www. seasia. co. nz" -> "www.seasia.co.nz"
     
     # Fix www. pattern
     fixed_text = re.sub(r'\bwww\.\s+([a-zA-Z0-9.-]+(?:\.\s*[a-zA-Z0-9.-]*)*)\b', 
@@ -236,6 +234,21 @@ def apply_url_email_fixes(text: str) -> Dict[str, Any]:
     fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+nz\b', r'\1.nz', fixed_text)
     fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+com\b', r'\1.com', fixed_text)
     fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+org\b', r'\1.org', fixed_text)
+    
+    # NEW: Fix standalone domain patterns that got missed
+    # "travelgalore. nz." -> "travelgalore.nz."
+    # "Halohalo. nz," -> "Halohalo.nz,"
+    # "migrantnews. nz" -> "migrantnews.nz"
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+nz([.,;:])', r'\1.nz\2', fixed_text)
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+com([.,;:])', r'\1.com\2', fixed_text)
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+org([.,;:])', r'\1.org\2', fixed_text)
+    
+    # NEW: Fix patterns like "www. travelga" where it's split across lines
+    # "www. travelgaSoutheast" -> "www.travelgaSoutheast" (then handle the word split separately)
+    fixed_text = re.sub(r'\bwww\.\s+([a-zA-Z0-9-]+)', r'www.\1', fixed_text)
+    
+    # NEW: Fix the specific "lore. nz" pattern
+    fixed_text = re.sub(r'\blore\.\s+nz\b', 'lore.nz', fixed_text)
     
     if before_urls != fixed_text:
         fixes_applied.append("Fixed website URLs with spaces")
