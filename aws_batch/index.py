@@ -25,7 +25,7 @@ try:
     TEXTBLOB_AVAILABLE = True
 except ImportError:
     TEXTBLOB_AVAILABLE = False
-    log('WARN', 'TextBlob not available - text correction disabled')
+    print('WARN: TextBlob not available - text correction disabled')
 
 try:
     import spellchecker
@@ -33,7 +33,7 @@ try:
     SPELLCHECKER_AVAILABLE = True
 except ImportError:
     SPELLCHECKER_AVAILABLE = False
-    log('WARN', 'PySpellChecker not available - advanced spell checking disabled')
+    print('WARN: PySpellChecker not available - advanced spell checking disabled')
 
 try:
     import spacy
@@ -43,7 +43,7 @@ try:
 except (ImportError, OSError):
     SPACY_AVAILABLE = False
     nlp = None
-    log('WARN', 'spaCy not available - advanced NLP text refinement disabled')
+    print('WARN: spaCy not available - advanced NLP text refinement disabled')
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
