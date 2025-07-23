@@ -182,6 +182,94 @@ def safe_decimal_conversion(value: Union[float, int, str]) -> Decimal:
         return Decimal('0')
 
 
+def apply_url_email_fixes(text: str) -> Dict[str, Any]:
+    """
+    Fix URLs and email addresses by removing inappropriate spaces
+    """
+    if not text or not text.strip():
+        return {
+            'fixed_text': text,
+            'url_email_fixes': 0,
+            'fixes_applied': []
+        }
+    
+    fixed_text = text
+    fixes_applied = []
+    url_email_fixes = 0
+    
+    # 1. Fix email addresses with spaces
+    before_emails = fixed_text
+    # Pattern: "melfernandez@xtra. co. nz" -> "melfernandez@xtra.co.nz"
+    email_pattern = r'\b([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+(?:\.\s+[a-zA-Z]{2,})+)\b'
+    def fix_email(match):
+        username = match.group(1)
+        domain = match.group(2).replace(' ', '')  # Remove all spaces from domain
+        return f"{username}@{domain}"
+    
+    fixed_text = re.sub(email_pattern, fix_email, fixed_text)
+    
+    # More specific email patterns
+    # "email@domain. com" -> "email@domain.com"
+    fixed_text = re.sub(r'([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+)\.\s+([a-zA-Z]{2,4})', r'\1.\2', fixed_text)
+    # "email@domain. co. nz" -> "email@domain.co.nz"
+    fixed_text = re.sub(r'([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+)\.\s+co\.\s+([a-zA-Z]{2,4})', r'\1.co.\2', fixed_text)
+    
+    if before_emails != fixed_text:
+        fixes_applied.append("Fixed email addresses with spaces")
+        url_email_fixes += 1
+    
+    # 2. Fix website URLs with spaces
+    before_urls = fixed_text
+    # Pattern: "www. travelgalore. nz" -> "www.travelgalore.nz"
+    # Pattern: "www. seasia. co. nz" -> "www.seasia.co.nz"
+    
+    # Fix www. pattern
+    fixed_text = re.sub(r'\bwww\.\s+([a-zA-Z0-9.-]+(?:\.\s*[a-zA-Z0-9.-]*)*)\b', 
+                       lambda m: 'www.' + m.group(1).replace(' ', ''), fixed_text)
+    
+    # Fix general domain patterns with spaces
+    # "domain. com" or "domain. co. nz"
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+([a-zA-Z0-9-]+)\.\s+([a-zA-Z]{2,4})\b', r'\1.\2.\3', fixed_text)
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+([a-zA-Z]{2,4})\b', r'\1.\2', fixed_text)
+    
+    # Fix specific patterns like "travelgalore. nz"
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+nz\b', r'\1.nz', fixed_text)
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+com\b', r'\1.com', fixed_text)
+    fixed_text = re.sub(r'\b([a-zA-Z0-9-]+)\.\s+org\b', r'\1.org', fixed_text)
+    
+    if before_urls != fixed_text:
+        fixes_applied.append("Fixed website URLs with spaces")
+        url_email_fixes += 1
+    
+    # 3. Fix https/http URLs with spaces
+    before_https = fixed_text
+    # Pattern: "https: //seasia. co. nz/" -> "https://seasia.co.nz/"
+    fixed_text = re.sub(r'\bhttps?\s*:\s*//\s*([a-zA-Z0-9.-]+(?:\.\s*[a-zA-Z0-9.-]*)*)', 
+                       lambda m: 'https://' + m.group(1).replace(' ', ''), fixed_text)
+    
+    if before_https != fixed_text:
+        fixes_applied.append("Fixed https/http URLs with spaces")
+        url_email_fixes += 1
+    
+    # 4. Fix domain extensions that got separated
+    before_extensions = fixed_text
+    # Pattern: "co. nz" -> "co.nz"
+    fixed_text = re.sub(r'\bco\.\s+nz\b', 'co.nz', fixed_text)
+    fixed_text = re.sub(r'\bco\.\s+uk\b', 'co.uk', fixed_text)
+    fixed_text = re.sub(r'\bcom\.\s+au\b', 'com.au', fixed_text)
+    
+    if before_extensions != fixed_text:
+        fixes_applied.append("Fixed domain extensions with spaces")
+        url_email_fixes += 1
+    
+    return {
+        'fixed_text': fixed_text,
+        'url_email_fixes': url_email_fixes,
+        'fixes_applied': fixes_applied,
+        'processing_notes': f"Applied {url_email_fixes} URL/email fixes"
+    }
+
+
 def apply_enhanced_colon_grammar_fix(text: str) -> Dict[str, Any]:
     """
     Apply enhanced colon grammar fixes based on proper usage rules
@@ -547,6 +635,198 @@ def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
         }
 
 
+def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
+    """
+    Apply comprehensive OCR fixes including:
+    - URL/email preservation and fixing
+    - Hyphenated word rejoining
+    - OCR character error corrections
+    - Artifact removal
+    """
+    if not text or not text.strip():
+        return {'fixed_text': text, 'fixes_applied': 0}
+    
+    fixed_text = text
+    fixes_applied = 0
+    
+    # Step 1: Apply URL and email fixes first (before other processing)
+    url_email_result = apply_url_email_fixes(fixed_text)
+    if url_email_result['url_email_fixes'] > 0:
+        fixed_text = url_email_result['fixed_text']
+        fixes_applied += url_email_result['url_email_fixes']
+    
+    # Step 2: Fix hyphenated words (both with \n and spaces after \n removal)
+    before_hyphen = fixed_text
+    # Original patterns with \n
+    fixed_text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', fixed_text)
+    # New patterns for space-separated fragments (after \n removal) - but protect URLs/emails
+    
+    # Protect URLs and emails during hyphen processing
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    domain_pattern = r'\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    
+    protected_patterns = []
+    def protect_pattern(match):
+        placeholder = f"__PROTECTED_{len(protected_patterns)}__"
+        protected_patterns.append(match.group(0))
+        return placeholder
+    
+    # Protect URLs and emails
+    fixed_text = re.sub(email_pattern, protect_pattern, fixed_text)
+    fixed_text = re.sub(url_pattern, protect_pattern, fixed_text)
+    fixed_text = re.sub(domain_pattern, protect_pattern, fixed_text)
+    
+    # Now apply hyphen fixes
+    fixed_text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', fixed_text)
+    
+    # Specific word patterns
+    fixed_text = re.sub(r'\bguide-\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bse-\s*let\b', 'select', fixed_text, flags=re.IGNORECASE)  
+    fixed_text = re.sub(r'\bpas-\s*singer\b', 'passenger', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bauto-\s*matic\b', 'automatic', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\btrans-\s*port\b', 'transport', fixed_text, flags=re.IGNORECASE)
+    
+    # General patterns with common splits
+    fixed_text = re.sub(r'\b(guid|ance)\s+(ance|system)\b', lambda m: 
+                        'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
+                        else 'guidance system' if m.group(1).lower() == 'guid' 
+                        else m.group(0), fixed_text, flags=re.IGNORECASE)
+    
+    # Restore protected patterns
+    for i, pattern in enumerate(protected_patterns):
+        fixed_text = fixed_text.replace(f"__PROTECTED_{i}__", pattern)
+    
+    if before_hyphen != fixed_text:
+        fixes_applied += 1
+    
+    # Step 3: Fix OCR character errors (after URL protection)
+    before_ocr = fixed_text
+    
+    # Re-protect for OCR fixes
+    protected_patterns = []
+    fixed_text = re.sub(email_pattern, protect_pattern, fixed_text)
+    fixed_text = re.sub(url_pattern, protect_pattern, fixed_text)
+    fixed_text = re.sub(domain_pattern, protect_pattern, fixed_text)
+    
+    # Apply OCR fixes
+    fixed_text = re.sub(r'\bgui[>\/\|\\]dan[\/\\]ce\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bsel[€£\$]ct\b', 'select', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bp[@&]ssenger\b', 'passenger', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\blane1\b', 'lane', fixed_text)
+    fixed_text = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', fixed_text)
+    
+    # Fix common spell-checker mistakes from split words
+    fixed_text = re.sub(r'\bguide\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\blet\b(?=\s+our\s+destination)', 'select', fixed_text, flags=re.IGNORECASE) 
+    fixed_text = re.sub(r'\bsinger\b(?=\s*-?\s*while)', 'passenger', fixed_text, flags=re.IGNORECASE)
+    
+    # Restore protected patterns again
+    for i, pattern in enumerate(protected_patterns):
+        fixed_text = fixed_text.replace(f"__PROTECTED_{i}__", pattern)
+    
+    if before_ocr != fixed_text:
+        fixes_applied += 1
+    
+    # Step 4: Remove trailing artifacts
+    before_artifact = fixed_text
+    fixed_text = re.sub(r'\s+\w{1,3}-\s*$', '', fixed_text)  # Remove "pi-" at end
+    fixed_text = re.sub(r'\s+\w{1,2}\s*$', '', fixed_text)   # Remove short orphaned words
+    if before_artifact != fixed_text:
+        fixes_applied += 1
+    
+    return {'fixed_text': fixed_text, 'fixes_applied': fixes_applied}
+
+
+def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
+    """
+    Apply comprehensive text refinement with focus on natural flow, enhanced grammar, and QuillBot compliance
+    """
+    if not text or not text.strip():
+        return {
+            'refined_text': text,
+            'total_improvements': 0,
+            'spell_corrections': 0,
+            'grammar_refinements': 0,
+            'flow_improvements': 0,
+            'methods_used': [],
+            'entities_found': [],
+            'processing_notes': 'Empty text'
+        }
+    
+    refined_text = text
+    total_improvements = 0
+    spell_corrections = 0
+    grammar_refinements = 0
+    flow_improvements = 0
+    ocr_fixes = 0
+    methods_used = []
+    entities_found = []
+    processing_notes = []
+    all_fixes_applied = []
+    grammar_fixes_applied = []
+    
+    # Step 0: Apply comprehensive OCR and formatting fixes first
+    ocr_result = apply_comprehensive_ocr_fixes(refined_text)
+    if ocr_result['fixes_applied'] > 0:
+        refined_text = ocr_result['fixed_text']
+        ocr_fixes = ocr_result['fixes_applied']
+        total_improvements += ocr_fixes
+        methods_used.append('ocr_fixes')
+        processing_notes.append(f"OCR fixes: {ocr_fixes}")
+        all_fixes_applied.append(f"Applied {ocr_fixes} OCR fixes")
+    
+    # Step 1: Apply spell correction
+    spell_result = apply_text_correction(refined_text)
+    if spell_result['corrections_made'] > 0:
+        refined_text = spell_result['corrected_text']
+        spell_corrections = spell_result['corrections_made']
+        total_improvements += spell_corrections
+        methods_used.append(spell_result['method'])
+        processing_notes.append(f"Spell corrections: {spell_corrections}")
+        all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
+    
+    # Step 2: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
+    flow_result = apply_natural_flow_punctuation(refined_text)
+    if flow_result['flow_fixes'] > 0:
+        refined_text = flow_result['refined_text']
+        flow_improvements = flow_result['flow_fixes']
+        total_improvements += flow_improvements
+        methods_used.append('natural_flow_punctuation_enhanced')
+        processing_notes.append(f"Natural flow fixes: {flow_improvements}")
+        all_fixes_applied.extend(flow_result['fixes_applied'])
+    
+    # Step 3: Apply spaCy NLP refinement with enhanced grammar (if available)
+    if SPACY_AVAILABLE:
+        spacy_result = refine_text_with_spacy_natural(refined_text)
+        if spacy_result['refinements_applied'] > 0:
+            refined_text = spacy_result['refined_text']
+            grammar_refinements = spacy_result['refinements_applied']
+            total_improvements += grammar_refinements
+            entities_found = spacy_result.get('entities_found', [])
+            grammar_fixes_applied = spacy_result.get('grammar_fixes_applied', [])
+            methods_used.append('spacy_enhanced_grammar')
+            processing_notes.append(f"Grammar refinements: {grammar_refinements}")
+            all_fixes_applied.append(f"Applied {grammar_refinements} grammar refinements")
+    
+    return {
+        'refined_text': refined_text,
+        'total_improvements': total_improvements,
+        'ocr_fixes': ocr_fixes,
+        'spell_corrections': spell_corrections,
+        'grammar_refinements': grammar_refinements,
+        'flow_improvements': flow_improvements,
+        'methods_used': methods_used,
+        'entities_found': entities_found,
+        'processing_notes': '; '.join(processing_notes) if processing_notes else 'No improvements needed',
+        'natural_flow_notes': flow_result.get('processing_notes', ''),
+        'grammar_fixes_applied': grammar_fixes_applied,
+        'original_length': len(text),
+        'refined_length': len(refined_text),
+        'all_fixes_applied': all_fixes_applied
+    }
+
+
 def process_s3_file() -> Dict[str, Any]:
     """Main S3 file processing function - synchronous version"""
     bucket_name = os.getenv('S3_BUCKET')
@@ -716,7 +996,8 @@ def process_s3_file() -> Dict[str, Any]:
                 'natural_flow_enabled': True,
                 'enhanced_grammar_enabled': True,
                 'quillbot_compliant_colons': True,
-                'comprehensive_dash_handling': True
+                'comprehensive_dash_handling': True,
+                'url_email_fixes_enabled': True
             }
         }
         
@@ -1003,175 +1284,6 @@ def apply_text_correction(text: str) -> Dict[str, Any]:
         'method': method_used,
         'original_length': len(text),
         'corrected_length': len(corrected_text)
-    }
-
-
-def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
-    """
-    Apply comprehensive OCR fixes including:
-    - Hyphenated word rejoining
-    - OCR character error corrections
-    - URL/email preservation
-    - Artifact removal
-    """
-    if not text or not text.strip():
-        return {'fixed_text': text, 'fixes_applied': 0}
-    
-    fixed_text = text
-    fixes_applied = 0
-    
-    # Fix hyphenated words (both with \n and spaces after \n removal)
-    before_hyphen = fixed_text
-    # Original patterns with \n
-    fixed_text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', fixed_text)
-    # New patterns for space-separated fragments (after \n removal)
-    fixed_text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', fixed_text)
-    
-    # Specific word patterns
-    fixed_text = re.sub(r'\bguide-\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\bse-\s*let\b', 'select', fixed_text, flags=re.IGNORECASE)  
-    fixed_text = re.sub(r'\bpas-\s*singer\b', 'passenger', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\bauto-\s*matic\b', 'automatic', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\btrans-\s*port\b', 'transport', fixed_text, flags=re.IGNORECASE)
-    
-    # General patterns with common splits
-    fixed_text = re.sub(r'\b(guid|ance)\s+(ance|system)\b', lambda m: 
-                        'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
-                        else 'guidance system' if m.group(1).lower() == 'guid' 
-                        else m.group(0), fixed_text, flags=re.IGNORECASE)
-    if before_hyphen != fixed_text:
-        fixes_applied += 1
-    
-    # Fix OCR character errors
-    before_ocr = fixed_text
-    # Protect emails and URLs first
-    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-    
-    protected_patterns = []
-    def protect_pattern(match):
-        placeholder = f"__PROTECTED_{len(protected_patterns)}__"
-        protected_patterns.append(match.group(0))
-        return placeholder
-    
-    fixed_text = re.sub(email_pattern, protect_pattern, fixed_text)
-    fixed_text = re.sub(url_pattern, protect_pattern, fixed_text)
-    
-    # Apply OCR fixes
-    fixed_text = re.sub(r'\bgui[>\/\|\\]dan[\/\\]ce\b', 'guidance', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\bsel[€£\$]ct\b', 'select', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\bp[@&]ssenger\b', 'passenger', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\blane1\b', 'lane', fixed_text)
-    fixed_text = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', fixed_text)
-    
-    # Fix common spell-checker mistakes from split words
-    fixed_text = re.sub(r'\bguide\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\blet\b(?=\s+our\s+destination)', 'select', fixed_text, flags=re.IGNORECASE) 
-    fixed_text = re.sub(r'\bsinger\b(?=\s*-?\s*while)', 'passenger', fixed_text, flags=re.IGNORECASE)
-    
-    # Restore protected patterns
-    for i, pattern in enumerate(protected_patterns):
-        fixed_text = fixed_text.replace(f"__PROTECTED_{i}__", pattern)
-    
-    if before_ocr != fixed_text:
-        fixes_applied += 1
-    
-    # Remove trailing artifacts
-    before_artifact = fixed_text
-    fixed_text = re.sub(r'\s+\w{1,3}-\s*$', '', fixed_text)  # Remove "pi-" at end
-    fixed_text = re.sub(r'\s+\w{1,2}\s*$', '', fixed_text)   # Remove short orphaned words
-    if before_artifact != fixed_text:
-        fixes_applied += 1
-    
-    return {'fixed_text': fixed_text, 'fixes_applied': fixes_applied}
-
-
-def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
-    """
-    Apply comprehensive text refinement with focus on natural flow, enhanced grammar, and QuillBot compliance
-    """
-    if not text or not text.strip():
-        return {
-            'refined_text': text,
-            'total_improvements': 0,
-            'spell_corrections': 0,
-            'grammar_refinements': 0,
-            'flow_improvements': 0,
-            'methods_used': [],
-            'entities_found': [],
-            'processing_notes': 'Empty text'
-        }
-    
-    refined_text = text
-    total_improvements = 0
-    spell_corrections = 0
-    grammar_refinements = 0
-    flow_improvements = 0
-    ocr_fixes = 0
-    methods_used = []
-    entities_found = []
-    processing_notes = []
-    all_fixes_applied = []
-    grammar_fixes_applied = []
-    
-    # Step 0: Apply comprehensive OCR and formatting fixes first
-    ocr_result = apply_comprehensive_ocr_fixes(refined_text)
-    if ocr_result['fixes_applied'] > 0:
-        refined_text = ocr_result['fixed_text']
-        ocr_fixes = ocr_result['fixes_applied']
-        total_improvements += ocr_fixes
-        methods_used.append('ocr_fixes')
-        processing_notes.append(f"OCR fixes: {ocr_fixes}")
-        all_fixes_applied.append(f"Applied {ocr_fixes} OCR fixes")
-    
-    # Step 1: Apply spell correction
-    spell_result = apply_text_correction(refined_text)
-    if spell_result['corrections_made'] > 0:
-        refined_text = spell_result['corrected_text']
-        spell_corrections = spell_result['corrections_made']
-        total_improvements += spell_corrections
-        methods_used.append(spell_result['method'])
-        processing_notes.append(f"Spell corrections: {spell_corrections}")
-        all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
-    
-    # Step 2: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
-    flow_result = apply_natural_flow_punctuation(refined_text)
-    if flow_result['flow_fixes'] > 0:
-        refined_text = flow_result['refined_text']
-        flow_improvements = flow_result['flow_fixes']
-        total_improvements += flow_improvements
-        methods_used.append('natural_flow_punctuation_enhanced')
-        processing_notes.append(f"Natural flow fixes: {flow_improvements}")
-        all_fixes_applied.extend(flow_result['fixes_applied'])
-    
-    # Step 3: Apply spaCy NLP refinement with enhanced grammar (if available)
-    if SPACY_AVAILABLE:
-        spacy_result = refine_text_with_spacy_natural(refined_text)
-        if spacy_result['refinements_applied'] > 0:
-            refined_text = spacy_result['refined_text']
-            grammar_refinements = spacy_result['refinements_applied']
-            total_improvements += grammar_refinements
-            entities_found = spacy_result.get('entities_found', [])
-            grammar_fixes_applied = spacy_result.get('grammar_fixes_applied', [])
-            methods_used.append('spacy_enhanced_grammar')
-            processing_notes.append(f"Grammar refinements: {grammar_refinements}")
-            all_fixes_applied.append(f"Applied {grammar_refinements} grammar refinements")
-    
-    return {
-        'refined_text': refined_text,
-        'total_improvements': total_improvements,
-        'ocr_fixes': ocr_fixes,
-        'spell_corrections': spell_corrections,
-        'grammar_refinements': grammar_refinements,
-        'flow_improvements': flow_improvements,
-        'methods_used': methods_used,
-        'entities_found': entities_found,
-        'processing_notes': '; '.join(processing_notes) if processing_notes else 'No improvements needed',
-        'natural_flow_notes': flow_result.get('processing_notes', ''),
-        'grammar_fixes_applied': grammar_fixes_applied,
-        'original_length': len(text),
-        'refined_length': len(refined_text),
-        'all_fixes_applied': all_fixes_applied
     }
 
 
