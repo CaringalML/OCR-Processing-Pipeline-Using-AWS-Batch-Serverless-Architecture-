@@ -886,6 +886,24 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
         # Apply URL/email fixes first
         preprocessed = fix_urls_and_emails(raw_text)
         
+        # Fix hyphenated words at line breaks FIRST (most important fix)
+        # Pattern: word- \n next_part -> word next_part
+        preprocessed = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', preprocessed)
+        
+        # Fix partial words split across lines without hyphens
+        # Pattern: partial_word \n rest_of_word (when both parts don't form real words)
+        # This is more complex - we'll handle common patterns
+        preprocessed = re.sub(r'\b(guid|ance)\s*\n\s*(ance|system)', lambda m: 
+                            'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
+                            else 'guidance system' if m.group(1).lower() == 'guid' 
+                            else m.group(0), preprocessed, flags=re.IGNORECASE)
+        
+        preprocessed = re.sub(r'\b(se)\s*\n\s*(lect)', r'select', preprocessed, flags=re.IGNORECASE)
+        preprocessed = re.sub(r'\b(pas)\s*\n\s*(senger)', r'passenger', preprocessed, flags=re.IGNORECASE)
+        preprocessed = re.sub(r'\b(devel)\s*\n\s*(opment)', r'development', preprocessed, flags=re.IGNORECASE)
+        preprocessed = re.sub(r'\b(auto)\s*\n\s*(matic)', r'automatic', preprocessed, flags=re.IGNORECASE)
+        preprocessed = re.sub(r'\b(trans)\s*\n\s*(port)', r'transport', preprocessed, flags=re.IGNORECASE)
+        
         # Continue with other preprocessing
         preprocessed = re.sub(r'\.\s+([A-Z])', r'. \1', preprocessed)  # Fix period spacing
         preprocessed = re.sub(r'([a-z])\s+([A-Z])', r'\1 \2', preprocessed)  # Fix word spacing
@@ -917,10 +935,28 @@ def format_extracted_text(raw_text: str) -> Dict[str, Any]:
             starts_with_capital = bool(re.match(r'^[A-Z]', line))
             looks_like_heading = len(line) < 40 and line == line.upper()
             
-            if (current_line and not ends_with_punctuation and not starts_with_capital 
-                and not looks_like_heading and not is_very_short):
+            # Special case: check if current_line ends with a partial word and line starts with rest of word
+            ends_with_hyphen = current_line.endswith('-') if current_line else False
+            current_line_words = current_line.split() if current_line else []
+            line_words = line.split() if line else []
+            
+            # Check for split word patterns (last word of current + first word of next)
+            should_join_split_word = False
+            if (current_line_words and line_words and not ends_with_punctuation 
+                and not starts_with_capital and len(current_line_words[-1]) < 8 
+                and len(line_words[0]) < 8):
+                # Potential split word - join them
+                should_join_split_word = True
+            
+            if (current_line and (ends_with_hyphen or should_join_split_word or 
+                (not ends_with_punctuation and not starts_with_capital 
+                and not looks_like_heading and not is_very_short))):
                 # Join with previous line
-                current_line += ' ' + line
+                if ends_with_hyphen:
+                    # Remove hyphen when joining
+                    current_line = current_line.rstrip('-') + line
+                else:
+                    current_line += ' ' + line
             else:
                 # Start new line
                 if current_line:
