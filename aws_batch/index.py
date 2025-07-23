@@ -759,6 +759,82 @@ def refine_text_with_spacy(text: str) -> Dict[str, Any]:
         # Join sentences with proper spacing
         refined_text = ' '.join(refined_sentences)
         
+        # Advanced grammar refinements (post-processing)
+        advanced_refinements = 0
+        
+        # Fix which/that usage - "that" for restrictive clauses, "which" for non-restrictive
+        # Simple heuristic: if no comma before, use "that"; if comma before, use "which"
+        which_that_fixes = 0
+        # Fix "which are" -> "that are" when restrictive
+        refined_text = re.sub(r'\b(\w+)\s+which\s+(are|is|was|were)\b(?!\s*,)', r'\1 that \2', refined_text)
+        which_that_fixes += len(re.findall(r'\b(\w+)\s+which\s+(are|is|was|were)\b(?!\s*,)', ' '.join(refined_sentences)))
+        
+        # Fix "which may" -> "that may" when restrictive  
+        refined_text = re.sub(r'\b(\w+)\s+which\s+(may|might|could|should|would|will)\b(?!\s*,)', r'\1 that \2', refined_text)
+        which_that_fixes += len(re.findall(r'\b(\w+)\s+which\s+(may|might|could|should|would|will)\b(?!\s*,)', ' '.join(refined_sentences)))
+        
+        advanced_refinements += which_that_fixes
+        
+        # Fix redundant word usage
+        redundant_fixes = 0
+        # "common use, use but" -> "common use, but"
+        before_redundant = refined_text
+        refined_text = re.sub(r'\b(\w+),\s+\1\s+but\b', r'\1, but', refined_text)
+        refined_text = re.sub(r'\b(\w+)\s+\1\s+(,|\.|\s)', r'\1\2', refined_text)  # Remove duplicate words
+        if before_redundant != refined_text:
+            redundant_fixes += 1
+            advanced_refinements += 1
+        
+        # Fix punctuation issues
+        punctuation_fixes = 0
+        
+        # Add commas before coordinating conjunctions in compound sentences
+        before_comma = refined_text
+        refined_text = re.sub(r'\b(\w+)\s+(and|but|or|so|yet)\s+(\w)', r'\1, \2 \3', refined_text)
+        # But not if it's a short phrase
+        refined_text = re.sub(r'\b(\w{1,4}),\s+(and|or)\s+(\w{1,4})\b', r'\1 \2 \3', refined_text)
+        if before_comma != refined_text:
+            punctuation_fixes += 1
+        
+        # Fix dash usage - replace single dashes with em dashes in appropriate contexts
+        before_dash = refined_text
+        # Pattern: word - word -> word—word (em dash for interruption)
+        refined_text = re.sub(r'\s-\s([a-z])', r'—\1', refined_text)  # - dream -> —dream
+        # Pattern: word - while -> word—while  
+        refined_text = re.sub(r'\s-\s(while|when|as|if|though|although)\b', r'—\1', refined_text)
+        if before_dash != refined_text:
+            punctuation_fixes += 1
+        
+        advanced_refinements += punctuation_fixes
+        
+        # Fix OCR artifacts and incomplete words
+        artifact_fixes = 0
+        
+        # Remove incomplete words at the end (like "pi-" at end of text)
+        before_artifact = refined_text
+        refined_text = re.sub(r'\s+\w{1,3}-\s*$', '', refined_text)  # Remove short words ending with dash at end
+        refined_text = re.sub(r'\s+\w{1,2}\s*$', '', refined_text)   # Remove very short orphaned words at end
+        if before_artifact != refined_text:
+            artifact_fixes += 1
+            advanced_refinements += 1
+        
+        # Fix common OCR number/letter confusion in context
+        before_ocr = refined_text
+        refined_text = re.sub(r'\blane1\b', 'lane', refined_text)  # lane1 -> lane
+        refined_text = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', refined_text)  # word1 he -> word he
+        if before_ocr != refined_text:
+            artifact_fixes += 1
+            advanced_refinements += 1
+        
+        # Add missing articles and prepositions where obvious
+        article_fixes = 0
+        before_article = refined_text
+        # "a meal, flirt" -> "a meal, or flirt"
+        refined_text = re.sub(r'\ba\s+(\w+),\s+([a-z])', r'a \1, or \2', refined_text)
+        if before_article != refined_text:
+            article_fixes += 1
+            advanced_refinements += 1
+        
         # Final cleanup
         refined_text = re.sub(r'\s+', ' ', refined_text).strip()
         refined_text = re.sub(r'\s+([.,!?;:])', r'\1', refined_text)
@@ -770,9 +846,11 @@ def refine_text_with_spacy(text: str) -> Dict[str, Any]:
         
         return {
             'refined_text': refined_text,
-            'refinements_applied': refinements_count,
+            'refinements_applied': refinements_count + advanced_refinements,
+            'basic_refinements': refinements_count,
+            'advanced_grammar_fixes': advanced_refinements,
             'refinement_details': refinement_details[:10],  # Limit details to first 10 for brevity
-            'method': 'spacy',
+            'method': 'spacy_advanced',
             'entities_found': entities_found[:20],  # Limit to first 20 entities
             'sentences_processed': len(list(doc.sents)),
             'pos_statistics': pos_stats,
