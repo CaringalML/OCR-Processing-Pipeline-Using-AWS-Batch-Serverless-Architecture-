@@ -452,6 +452,26 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
     fixes_applied = []
     flow_fixes = 0
     
+    # PROTECT URLs and emails during all processing
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    domain_pattern = r'\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    spaced_email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+    spaced_domain_pattern = r'\bwww\.\s*[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+    
+    protected_patterns = []
+    def protect_pattern(match):
+        placeholder = f"__URL_PROTECTED_{len(protected_patterns)}__"
+        protected_patterns.append(match.group(0))
+        return placeholder
+    
+    # Protect all URL/email patterns (including spaced ones)
+    refined_text = re.sub(spaced_email_pattern, protect_pattern, refined_text)
+    refined_text = re.sub(spaced_domain_pattern, protect_pattern, refined_text)
+    refined_text = re.sub(email_pattern, protect_pattern, refined_text)
+    refined_text = re.sub(url_pattern, protect_pattern, refined_text)
+    refined_text = re.sub(domain_pattern, protect_pattern, refined_text)
+    
     # Step 1: Apply enhanced colon grammar fixes first
     colon_result = apply_enhanced_colon_grammar_fix(refined_text)
     if colon_result['colon_fixes'] > 0:
@@ -512,7 +532,7 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
             fixes_applied.append("Completed sentence naturally")
             flow_fixes += 1
     
-    # Step 6: Clean spacing for natural flow
+    # Step 6: Clean spacing for natural flow (but avoid URL/email patterns)
     before_spacing = refined_text
     refined_text = re.sub(r'\s+([,.!?;:])', r'\1', refined_text)
     refined_text = re.sub(r'([,.!?;:])\s*', r'\1 ', refined_text)
@@ -520,6 +540,16 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
     if before_spacing != refined_text:
         fixes_applied.append("Cleaned spacing for natural flow")
         flow_fixes += 1
+    
+    # RESTORE protected patterns and apply URL/email fixes
+    for i, pattern in enumerate(protected_patterns):
+        placeholder = f"__URL_PROTECTED_{i}__"
+        # Apply URL/email fixes to the protected pattern before restoring
+        fixed_pattern = apply_url_email_fixes(pattern)['fixed_text']
+        refined_text = refined_text.replace(placeholder, fixed_pattern)
+        if fixed_pattern != pattern:
+            fixes_applied.append("Fixed URL/email spacing in protected pattern")
+            flow_fixes += 1
     
     return {
         'refined_text': refined_text,
@@ -544,8 +574,29 @@ def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
         }
     
     try:
-        doc = nlp(text)
-        refined_text = text
+        # PROTECT URLs and emails during spaCy processing
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        domain_pattern = r'\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+        spaced_email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+        spaced_domain_pattern = r'\bwww\.\s*[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+        
+        protected_patterns = []
+        def protect_pattern(match):
+            placeholder = f"__SPACY_PROTECTED_{len(protected_patterns)}__"
+            protected_patterns.append(match.group(0))
+            return placeholder
+        
+        # Protect all URL/email patterns
+        protected_text = text
+        protected_text = re.sub(spaced_email_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(spaced_domain_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(email_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(url_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(domain_pattern, protect_pattern, protected_text)
+        
+        doc = nlp(protected_text)
+        refined_text = protected_text
         refinements_count = 0
         entities_found = []
         
@@ -616,10 +667,19 @@ def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
         # 7. Final natural cleanup
         refined_text = re.sub(r'\s+', ' ', refined_text).strip()
         
+        # RESTORE protected patterns and apply URL/email fixes
+        for i, pattern in enumerate(protected_patterns):
+            placeholder = f"__SPACY_PROTECTED_{i}__"
+            # Apply URL/email fixes to the protected pattern before restoring
+            fixed_pattern = apply_url_email_fixes(pattern)['fixed_text']
+            refined_text = refined_text.replace(placeholder, fixed_pattern)
+            if fixed_pattern != pattern:
+                refinements_count += 1
+        
         return {
             'refined_text': refined_text,
             'refinements_applied': refinements_count,
-            'method': 'spacy_enhanced_grammar',
+            'method': 'spacy_enhanced_grammar_with_url_protection',
             'entities_found': entities_found[:20],
             'sentences_processed': len(sentences),
             'grammar_fixes_applied': grammar_result.get('fixes_applied', [])
