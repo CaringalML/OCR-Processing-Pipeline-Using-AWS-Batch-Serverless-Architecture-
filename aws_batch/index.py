@@ -642,15 +642,25 @@ def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
     fixed_text = text
     fixes_applied = 0
     
-    # Fix hyphenated words at line breaks
+    # Fix hyphenated words (both with \n and spaces after \n removal)
     before_hyphen = fixed_text
+    # Original patterns with \n
     fixed_text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', fixed_text)
-    fixed_text = re.sub(r'\b(guid|ance)\s*\n\s*(ance|system)', lambda m: 
+    # New patterns for space-separated fragments (after \n removal)
+    fixed_text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', fixed_text)
+    
+    # Specific word patterns
+    fixed_text = re.sub(r'\bguide-\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bse-\s*let\b', 'select', fixed_text, flags=re.IGNORECASE)  
+    fixed_text = re.sub(r'\bpas-\s*singer\b', 'passenger', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\bauto-\s*matic\b', 'automatic', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\btrans-\s*port\b', 'transport', fixed_text, flags=re.IGNORECASE)
+    
+    # General patterns with common splits
+    fixed_text = re.sub(r'\b(guid|ance)\s+(ance|system)\b', lambda m: 
                         'guidance' if m.group(1).lower() == 'guid' and m.group(2).lower().startswith('ance') 
                         else 'guidance system' if m.group(1).lower() == 'guid' 
                         else m.group(0), fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\b(se)\s*\n\s*(lect)', r'select', fixed_text, flags=re.IGNORECASE)
-    fixed_text = re.sub(r'\b(pas)\s*\n\s*(senger)', r'passenger', fixed_text, flags=re.IGNORECASE)
     if before_hyphen != fixed_text:
         fixes_applied += 1
     
@@ -675,6 +685,11 @@ def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
     fixed_text = re.sub(r'\bp[@&]ssenger\b', 'passenger', fixed_text, flags=re.IGNORECASE)
     fixed_text = re.sub(r'\blane1\b', 'lane', fixed_text)
     fixed_text = re.sub(r'\b(\w+)1\s+(he|she|it|they)\b', r'\1 \2', fixed_text)
+    
+    # Fix common spell-checker mistakes from split words
+    fixed_text = re.sub(r'\bguide\s*once\b', 'guidance', fixed_text, flags=re.IGNORECASE)
+    fixed_text = re.sub(r'\blet\b(?=\s+our\s+destination)', 'select', fixed_text, flags=re.IGNORECASE) 
+    fixed_text = re.sub(r'\bsinger\b(?=\s*-?\s*while)', 'passenger', fixed_text, flags=re.IGNORECASE)
     
     # Restore protected patterns
     for i, pattern in enumerate(protected_patterns):
@@ -883,13 +898,18 @@ def refine_text_with_spacy(text: str) -> Dict[str, Any]:
         # Fix which/that usage - "that" for restrictive clauses, "which" for non-restrictive
         # Simple heuristic: if no comma before, use "that"; if comma before, use "which"
         which_that_fixes = 0
-        # Fix "which are" -> "that are" when restrictive
-        refined_text = re.sub(r'\b(\w+)\s+which\s+(are|is|was|were)\b(?!\s*,)', r'\1 that \2', refined_text)
-        which_that_fixes += len(re.findall(r'\b(\w+)\s+which\s+(are|is|was|were)\b(?!\s*,)', ' '.join(refined_sentences)))
         
-        # Fix "which may" -> "that may" when restrictive  
+        # Fix "which are" -> "that are" when restrictive (no comma before)
+        before_which1 = refined_text
+        refined_text = re.sub(r'\b(\w+)\s+which\s+(are|is|was|were)\b(?!\s*,)', r'\1 that \2', refined_text)
+        if before_which1 != refined_text:
+            which_that_fixes += 1
+        
+        # Fix "which may" -> "that may" when restrictive (no comma before)
+        before_which2 = refined_text  
         refined_text = re.sub(r'\b(\w+)\s+which\s+(may|might|could|should|would|will)\b(?!\s*,)', r'\1 that \2', refined_text)
-        which_that_fixes += len(re.findall(r'\b(\w+)\s+which\s+(may|might|could|should|would|will)\b(?!\s*,)', ' '.join(refined_sentences)))
+        if before_which2 != refined_text:
+            which_that_fixes += 1
         
         advanced_refinements += which_that_fixes
         
