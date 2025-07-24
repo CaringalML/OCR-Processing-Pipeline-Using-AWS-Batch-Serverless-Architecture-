@@ -266,8 +266,8 @@ variable "api_throttling_burst_limit" {
   type        = number
   default     = 2000
   validation {
-    condition     = var.api_throttling_burst_limit >= var.api_throttling_rate_limit && var.api_throttling_burst_limit <= 20000
-    error_message = "API throttling burst limit must be >= rate limit and <= 20,000."
+    condition     = var.api_throttling_burst_limit >= 1 && var.api_throttling_burst_limit <= 20000
+    error_message = "API throttling burst limit must be between 1 and 20,000. Note: burst limit should be >= rate limit."
   }
 }
 
@@ -287,8 +287,8 @@ variable "public_burst_limit" {
   type        = number
   default     = 20
   validation {
-    condition     = var.public_burst_limit >= var.public_rate_limit && var.public_burst_limit <= 200
-    error_message = "Public burst limit must be >= public rate limit and <= 200."
+    condition     = var.public_burst_limit >= 1 && var.public_burst_limit <= 200
+    error_message = "Public burst limit must be between 1 and 200. Note: burst limit should be >= rate limit (default: 10)."
   }
 }
 
@@ -318,8 +318,8 @@ variable "registered_burst_limit" {
   type        = number
   default     = 100
   validation {
-    condition     = var.registered_burst_limit >= var.registered_rate_limit && var.registered_burst_limit <= 1000
-    error_message = "Registered user burst limit must be >= registered rate limit and <= 1,000."
+    condition     = var.registered_burst_limit >= 1 && var.registered_burst_limit <= 1000
+    error_message = "Registered user burst limit must be between 1 and 1,000. Note: burst limit should be >= rate limit (default: 50)."
   }
 }
 
@@ -349,8 +349,8 @@ variable "premium_burst_limit" {
   type        = number
   default     = 400
   validation {
-    condition     = var.premium_burst_limit >= var.premium_rate_limit && var.premium_burst_limit <= 2000
-    error_message = "Premium user burst limit must be >= premium rate limit and <= 2,000."
+    condition     = var.premium_burst_limit >= 1 && var.premium_burst_limit <= 2000
+    error_message = "Premium user burst limit must be between 1 and 2,000. Note: burst limit should be >= rate limit (default: 200)."
   }
 }
 
