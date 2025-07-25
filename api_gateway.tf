@@ -32,6 +32,13 @@ resource "aws_api_gateway_resource" "processed" {
   path_part   = "processed"
 }
 
+# API Gateway Resource - OpenSearch
+resource "aws_api_gateway_resource" "opensearch" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "opensearch"
+}
+
 # Upload endpoint - POST method
 resource "aws_api_gateway_method" "upload_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -87,6 +94,32 @@ resource "aws_api_gateway_method" "processed_options" {
   authorization = "NONE"
 }
 
+# OpenSearch endpoint - POST method (for search queries)
+resource "aws_api_gateway_method" "opensearch_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.opensearch.id
+  http_method   = "POST"
+  authorization = "NONE"
+  
+  # API key is optional - users can use public plan or provide key for higher limits
+  api_key_required = false
+  
+  # Request validation when rate limiting is enabled
+  request_validator_id = var.enable_rate_limiting ? aws_api_gateway_request_validator.opensearch_validator[0].id : null
+  
+  request_parameters = var.enable_rate_limiting ? {
+    "method.request.header.X-API-Key" = false  # Optional API key
+  } : {}
+}
+
+# OpenSearch endpoint - OPTIONS method (CORS)
+resource "aws_api_gateway_method" "opensearch_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.opensearch.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
 # Upload Integration with Lambda
 resource "aws_api_gateway_integration" "upload_integration" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -137,6 +170,31 @@ resource "aws_api_gateway_integration" "processed_options_integration" {
   }
 }
 
+# OpenSearch Integration with Lambda
+resource "aws_api_gateway_integration" "opensearch_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.opensearch_function.invoke_arn
+}
+
+# CORS Integration for OpenSearch OPTIONS
+resource "aws_api_gateway_integration" "opensearch_options_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
 # Method Responses
 resource "aws_api_gateway_method_response" "upload_200" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -178,6 +236,32 @@ resource "aws_api_gateway_method_response" "processed_options_200" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.processed.id
   http_method = aws_api_gateway_method.processed_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# OpenSearch Method Response
+resource "aws_api_gateway_method_response" "opensearch_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_post.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# CORS Method Response for OpenSearch OPTIONS
+resource "aws_api_gateway_method_response" "opensearch_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_options.http_method
   status_code = "200"
 
   response_parameters = {
@@ -245,6 +329,36 @@ resource "aws_api_gateway_integration_response" "processed_options_response" {
   depends_on = [aws_api_gateway_integration.processed_options_integration]
 }
 
+# OpenSearch Integration Response
+resource "aws_api_gateway_integration_response" "opensearch_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_post.http_method
+  status_code = aws_api_gateway_method_response.opensearch_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.opensearch_integration]
+}
+
+# CORS Integration Response for OpenSearch
+resource "aws_api_gateway_integration_response" "opensearch_options_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.opensearch.id
+  http_method = aws_api_gateway_method.opensearch_options.http_method
+  status_code = aws_api_gateway_method_response.opensearch_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-API-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.opensearch_options_integration]
+}
+
 # Lambda Permissions for API Gateway
 resource "aws_lambda_permission" "api_gateway_uploader" {
   statement_id  = "AllowExecutionFromAPIGatewayUploader"
@@ -271,10 +385,14 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.upload_options,
     aws_api_gateway_method.processed_get,
     aws_api_gateway_method.processed_options,
+    aws_api_gateway_method.opensearch_post,
+    aws_api_gateway_method.opensearch_options,
     aws_api_gateway_integration.upload_integration,
     aws_api_gateway_integration.processed_integration,
     aws_api_gateway_integration.upload_options_integration,
-    aws_api_gateway_integration.processed_options_integration
+    aws_api_gateway_integration.processed_options_integration,
+    aws_api_gateway_integration.opensearch_integration,
+    aws_api_gateway_integration.opensearch_options_integration
   ]
 
   lifecycle {
@@ -551,6 +669,31 @@ resource "aws_api_gateway_method_settings" "processed_settings" {
   }
 }
 
+# Method settings for opensearch endpoint
+resource "aws_api_gateway_method_settings" "opensearch_settings" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.main.stage_name
+  method_path = "${aws_api_gateway_resource.opensearch.path_part}/${aws_api_gateway_method.opensearch_post.http_method}"
+
+  settings {
+    # Enable detailed CloudWatch metrics
+    metrics_enabled = true
+    logging_level   = "INFO"
+    
+    # No caching for search operations (dynamic results)
+    caching_enabled = false
+    
+    # Method-specific throttling
+    throttling_rate_limit  = var.api_throttling_rate_limit
+    throttling_burst_limit = var.api_throttling_burst_limit
+    
+    # Data trace settings
+    data_trace_enabled = var.environment != "production"
+  }
+}
+
 # ========================================
 # RATE LIMITING: REQUEST VALIDATORS
 # ========================================
@@ -571,5 +714,14 @@ resource "aws_api_gateway_request_validator" "processed_validator" {
   name                        = "${var.project_name}-${var.environment}-processed-validator"
   rest_api_id                 = aws_api_gateway_rest_api.main.id
   validate_request_body       = false
+  validate_request_parameters = true
+}
+
+resource "aws_api_gateway_request_validator" "opensearch_validator" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  name                        = "${var.project_name}-${var.environment}-opensearch-validator"
+  rest_api_id                 = aws_api_gateway_rest_api.main.id
+  validate_request_body       = true
   validate_request_parameters = true
 }

@@ -59,6 +59,9 @@ dist/
 build/
 out/
 
+# Lambda function zip files
+lambda_functions/**/*.zip
+
 # OS files
 Thumbs.db
 .DS_Store

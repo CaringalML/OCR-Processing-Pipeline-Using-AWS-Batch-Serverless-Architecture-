@@ -421,3 +421,7 @@ variable "api_key_names" {
     error_message = "Maximum 10 API keys can be created by default."
   }
 }
+
+# OpenSearch Serverless Configuration
+# Note: OpenSearch Serverless doesn't require instance types, storage, or master user credentials
+# Authentication is handled through IAM roles and policies

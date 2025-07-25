@@ -42,17 +42,17 @@ resource "aws_cloudwatch_event_rule" "sqs_to_batch_rule" {
 # Lambda function is defined in lambda.tf
 
 # EventBridge Target - Lambda for SQS processing
-resource "aws_cloudwatch_event_target" "lambda_sqs_processor" {
+resource "aws_cloudwatch_event_target" "lambda_batch_job_submitter" {
   rule      = aws_cloudwatch_event_rule.sqs_to_batch_rule.name
   target_id = "ProcessSQSMessages"
-  arn       = aws_lambda_function.sqs_batch_processor.arn
+  arn       = aws_lambda_function.batch_job_submitter.arn
 }
 
 # Lambda permission for EventBridge
-resource "aws_lambda_permission" "allow_eventbridge_sqs_processor" {
+resource "aws_lambda_permission" "allow_eventbridge_batch_job_submitter" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.sqs_batch_processor.function_name
+  function_name = aws_lambda_function.batch_job_submitter.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.sqs_to_batch_rule.arn
 }

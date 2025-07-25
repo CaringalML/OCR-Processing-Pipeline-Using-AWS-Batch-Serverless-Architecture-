@@ -52,9 +52,9 @@ output "reader_lambda_name" {
   value       = aws_lambda_function.reader.function_name
 }
 
-output "sqs_processor_lambda_name" {
-  description = "Name of the SQS processor Lambda function"
-  value       = aws_lambda_function.sqs_batch_processor.function_name
+output "batch_job_submitter_lambda_name" {
+  description = "Name of the batch job submitter Lambda function"
+  value       = aws_lambda_function.batch_job_submitter.function_name
 }
 
 output "batch_status_reconciliation_lambda_name" {

@@ -30,7 +30,7 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.reader.function_name],
             [".", "Errors", ".", "."],
             [".", "Invocations", ".", "."],
-            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.sqs_batch_processor.function_name],
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.batch_job_submitter.function_name],
             [".", "Errors", ".", "."],
             [".", "Invocations", ".", "."]
           ]

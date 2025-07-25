@@ -102,6 +102,12 @@ cloudfront_price_class = "PriceClass_100"  # Cost-optimized
 # DynamoDB settings
 dynamodb_billing_mode = "PAY_PER_REQUEST"  # Cost-optimized
 
+# ========================================
+# OPENSEARCH SERVERLESS CONFIGURATION
+# ========================================
+# OpenSearch Serverless automatically scales and manages infrastructure
+# No instance types, storage, or credentials needed - all handled by IAM
+
 # Common tags for all resources
 common_tags = {
   Project     = "ocr-processor"
