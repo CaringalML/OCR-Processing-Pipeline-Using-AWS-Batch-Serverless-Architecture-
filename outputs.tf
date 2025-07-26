@@ -14,6 +14,11 @@ output "api_processed_url" {
   value       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
 }
 
+output "api_search_url" {
+  description = "Search endpoint URL"
+  value       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
+}
+
 # S3 and CloudFront Outputs
 output "upload_bucket_name" {
   description = "Name of the S3 upload bucket"

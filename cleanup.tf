@@ -62,9 +62,14 @@ resource "aws_iam_role_policy" "cleanup_lambda_policy" {
 }
 
 # CloudWatch Log Group for Cleanup Lambda
-resource "aws_cloudwatch_log_group" "cleanup_lambda_logs" {
-  name              = "/aws/lambda/${var.project_name}-auto-cleanup"
-  retention_in_days = 14
+# CloudWatch Log Groups - Cleanup Processor (automated resource cleanup)
+resource "aws_cloudwatch_log_group" "cleanup_processor_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-cleanup-processor"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "Automated resource cleanup logging"
+    Function = "cleanup_processor"
+  })
 }
 
 # Cleanup Lambda Function Code
@@ -316,7 +321,7 @@ resource "aws_lambda_function" "cleanup_function" {
 
   depends_on = [
     aws_iam_role_policy.cleanup_lambda_policy,
-    aws_cloudwatch_log_group.cleanup_lambda_logs,
+    aws_cloudwatch_log_group.cleanup_processor_logs,
     data.archive_file.cleanup_lambda_zip
   ]
 

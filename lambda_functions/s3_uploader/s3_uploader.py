@@ -55,12 +55,12 @@ def parse_multipart_form_data(body, content_type):
                         })
                 else:
                     # This is a form field
-                    form_data[name] = content.decode()
+                    form_data[name] = content.decode() if isinstance(content, bytes) else content
     
     return form_data, files
 
-def process_single_file_upload(s3_client, dynamodb, bucket_name, dynamodb_table, file_name, file_bytes, file_content_type):
-    """Process upload of a single file"""
+def process_single_file_upload(s3_client, dynamodb, bucket_name, dynamodb_table, file_name, file_bytes, file_content_type, metadata=None):
+    """Process upload of a single file with optional metadata"""
     try:
         # Generate unique file ID and S3 key
         file_id = uuid.uuid4().hex
@@ -82,21 +82,36 @@ def process_single_file_upload(s3_client, dynamodb, bucket_name, dynamodb_table,
         
         # Store metadata in DynamoDB
         table = dynamodb.Table(dynamodb_table)
-        table.put_item(
-            Item={
-                'file_id': file_id,
-                'upload_timestamp': timestamp.isoformat(),
-                'bucket_name': bucket_name,
-                's3_key': s3_key,
-                'file_name': file_name,
-                'file_size': len(file_bytes),
-                'content_type': file_content_type,
-                'processing_status': 'uploaded',
-                'etag': s3_response['ETag'].strip('"'),
-                'upload_date': timestamp.strftime('%Y-%m-%d'),
-                'expiration_time': int((timestamp.timestamp() + 365 * 24 * 60 * 60))  # 1 year TTL
-            }
-        )
+        item = {
+            'file_id': file_id,
+            'upload_timestamp': timestamp.isoformat(),
+            'bucket_name': bucket_name,
+            's3_key': s3_key,
+            'file_name': file_name,
+            'file_size': len(file_bytes),
+            'content_type': file_content_type,
+            'processing_status': 'uploaded',
+            'etag': s3_response['ETag'].strip('"'),
+            'upload_date': timestamp.strftime('%Y-%m-%d'),
+            'expiration_time': int((timestamp.timestamp() + 365 * 24 * 60 * 60))  # 1 year TTL
+        }
+        
+        # Add document metadata if provided
+        if metadata:
+            if metadata.get('publication'):
+                item['publication'] = metadata['publication']
+            if metadata.get('year'):
+                item['year'] = str(metadata['year'])
+            if metadata.get('title'):
+                item['title'] = metadata['title']
+            if metadata.get('author'):
+                item['author'] = metadata['author']
+            if metadata.get('description'):
+                item['description'] = metadata['description']
+            if metadata.get('tags'):
+                item['tags'] = metadata['tags'] if isinstance(metadata['tags'], list) else [metadata['tags']]
+        
+        table.put_item(Item=item)
         
         print(f"Successfully uploaded file: {file_id} to S3: {s3_key}")
         
@@ -196,10 +211,20 @@ def lambda_handler(event, context):
                         })
                         continue
                     
-                    # Process single file upload
+                    # Extract metadata from form data
+                    metadata = {
+                        'publication': form_data.get('publication', ''),
+                        'year': form_data.get('year', ''),
+                        'title': form_data.get('title', ''),
+                        'author': form_data.get('author', ''),
+                        'description': form_data.get('description', ''),
+                        'tags': form_data.get('tags', '')
+                    }
+                    
+                    # Process single file upload with metadata
                     result = process_single_file_upload(
                         s3_client, dynamodb, bucket_name, dynamodb_table,
-                        file_name, file_bytes, file_content_type
+                        file_name, file_bytes, file_content_type, metadata
                     )
                     
                     if result['success']:
@@ -240,6 +265,16 @@ def lambda_handler(event, context):
             file_content = body.get('fileContent')  # Base64 encoded
             file_content_type = body.get('contentType', 'application/octet-stream')
             
+            # Extract metadata from JSON body
+            metadata = {
+                'publication': body.get('publication', ''),
+                'year': body.get('year', ''),
+                'title': body.get('title', ''),
+                'author': body.get('author', ''),
+                'description': body.get('description', ''),
+                'tags': body.get('tags', [])
+            }
+            
             if not file_content:
                 return {
                     'statusCode': 400,
@@ -274,10 +309,10 @@ def lambda_handler(event, context):
                     })
                 }
             
-            # Process single file upload
+            # Process single file upload with metadata
             result = process_single_file_upload(
                 s3_client, dynamodb, bucket_name, dynamodb_table,
-                file_name, file_bytes, file_content_type
+                file_name, file_bytes, file_content_type, metadata
             )
             
             if result['success']:

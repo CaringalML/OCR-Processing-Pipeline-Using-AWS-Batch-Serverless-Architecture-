@@ -63,7 +63,7 @@ resource "aws_batch_job_definition" "main" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.batch_logs.name
+        "awslogs-group"         = aws_cloudwatch_log_group.aws_batch_ocr_logs.name
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "batch"
       }
@@ -80,7 +80,7 @@ resource "aws_batch_job_definition" "main" {
 
   depends_on = [
     aws_iam_role_policy_attachment.batch_task_execution_role_policy,
-    aws_cloudwatch_log_group.batch_logs
+    aws_cloudwatch_log_group.aws_batch_ocr_logs
   ]
 
   lifecycle {

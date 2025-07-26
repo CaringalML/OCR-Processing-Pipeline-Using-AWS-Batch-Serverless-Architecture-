@@ -1,13 +1,21 @@
-resource "aws_cloudwatch_log_group" "batch_logs" {
-  name              = "/aws/batch/${var.project_name}-${var.environment}-job-def"
-  retention_in_days = 14
-  tags              = var.common_tags
+# CloudWatch Log Groups - AWS Batch Jobs (OCR processing container logs)
+resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
+  name              = "/aws/batch/${var.project_name}-${var.environment}-ocr-job-definition"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "AWS Batch OCR processing container logs"
+    Function = "aws_batch_ocr"
+  })
 }
 
-resource "aws_cloudwatch_log_group" "api_gateway" {
-  name              = "/aws/apigateway/${var.project_name}-${var.environment}-api"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+# CloudWatch Log Groups - API Gateway (REST API access logs)
+resource "aws_cloudwatch_log_group" "api_gateway_access_logs" {
+  name              = "/aws/apigateway/${var.project_name}-${var.environment}-api-access"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "API Gateway access and error logging"
+    Function = "api_gateway"
+  })
 }
 
 # CloudWatch Dashboard for monitoring

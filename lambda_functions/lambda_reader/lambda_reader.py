@@ -98,7 +98,15 @@ def lambda_handler(event, context):
                 'processingStatus': file_metadata.get('processing_status', ''),
                 'fileSize': file_metadata.get('file_size', 0),
                 'contentType': file_metadata.get('content_type', ''),
-                'cloudFrontUrl': cloudfront_url
+                'cloudFrontUrl': cloudfront_url,
+                'metadata': {
+                    'publication': file_metadata.get('publication', ''),
+                    'year': file_metadata.get('year', ''),
+                    'title': file_metadata.get('title', ''),
+                    'author': file_metadata.get('author', ''),
+                    'description': file_metadata.get('description', ''),
+                    'tags': file_metadata.get('tags', [])
+                }
             }
             
             # Add processing results if available
@@ -173,7 +181,15 @@ def lambda_handler(event, context):
                     'processingStatus': item.get('processing_status', ''),
                     'fileSize': item.get('file_size', 0),
                     'contentType': item.get('content_type', ''),
-                    'cloudFrontUrl': cloudfront_url
+                    'cloudFrontUrl': cloudfront_url,
+                    'metadata': {
+                        'publication': item.get('publication', ''),
+                        'year': item.get('year', ''),
+                        'title': item.get('title', ''),
+                        'author': item.get('author', ''),
+                        'description': item.get('description', ''),
+                        'tags': item.get('tags', [])
+                    }
                 }
                 
                 # Add processing results if available

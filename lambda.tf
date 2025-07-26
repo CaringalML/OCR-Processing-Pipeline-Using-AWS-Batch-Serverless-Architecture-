@@ -35,6 +35,13 @@ data "archive_file" "dead_job_detector_zip" {
   source_file = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.py"
 }
 
+data "archive_file" "search_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/document_search/document_search.zip"
+  source_dir  = "${path.module}/lambda_functions/document_search"
+  excludes    = ["requirements.txt", "package", "__pycache__"]
+}
+
 # Uploader Lambda Function (S3 file uploader)
 resource "aws_lambda_function" "uploader" {
   filename         = data.archive_file.uploader_zip.output_path
@@ -57,7 +64,7 @@ resource "aws_lambda_function" "uploader" {
 
   depends_on = [
     aws_iam_role_policy_attachment.uploader_policy,
-    aws_cloudwatch_log_group.uploader_logs
+    aws_cloudwatch_log_group.s3_uploader_logs
   ]
 
   tags = merge(var.common_tags, {
@@ -88,11 +95,42 @@ resource "aws_lambda_function" "reader" {
 
   depends_on = [
     aws_iam_role_policy_attachment.reader_policy,
-    aws_cloudwatch_log_group.reader_logs
+    aws_cloudwatch_log_group.lambda_reader_logs
   ]
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-reader"
+  })
+}
+
+# Search Lambda Function (Document search)
+resource "aws_lambda_function" "search" {
+  filename         = data.archive_file.search_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-search"
+  role             = aws_iam_role.search_role.arn
+  handler          = "document_search.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 512
+  source_code_hash = data.archive_file.search_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
+      LOG_LEVEL         = "INFO"
+      ENVIRONMENT       = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.search_policy,
+    aws_cloudwatch_log_group.document_search_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-search"
   })
 }
 
@@ -120,7 +158,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
 
   depends_on = [
     aws_iam_role_policy_attachment.sqs_processor_policy,
-    aws_cloudwatch_log_group.sqs_processor_logs
+    aws_cloudwatch_log_group.sqs_to_batch_submitter_logs
   ]
 
   tags = merge(var.common_tags, {
@@ -128,23 +166,44 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   })
 }
 
-# CloudWatch Log Groups
-resource "aws_cloudwatch_log_group" "uploader_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-uploader"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+# CloudWatch Log Groups - S3 Uploader (handles file uploads with metadata)
+resource "aws_cloudwatch_log_group" "s3_uploader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-s3-uploader"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "S3 file upload with metadata logging"
+    Function = "s3_uploader"
+  })
 }
 
-resource "aws_cloudwatch_log_group" "reader_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-reader"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+# CloudWatch Log Groups - Lambda Reader (retrieves processed files with metadata)
+resource "aws_cloudwatch_log_group" "lambda_reader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-lambda-reader"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "File retrieval and metadata display logging"
+    Function = "lambda_reader"
+  })
 }
 
-resource "aws_cloudwatch_log_group" "sqs_processor_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-sqs-batch-processor"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+# CloudWatch Log Groups - Document Search (fuzzy search functionality)
+resource "aws_cloudwatch_log_group" "document_search_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-document-search"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "Document fuzzy search logging"
+    Function = "document_search"
+  })
+}
+
+# CloudWatch Log Groups - SQS to Batch Submitter (processes queue messages)
+resource "aws_cloudwatch_log_group" "sqs_to_batch_submitter_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-sqs-to-batch-submitter"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "SQS to AWS Batch job submission logging"
+    Function = "sqs_to_batch_submitter"
+  })
 }
 
 # Batch Status Reconciliation Lambda Function
@@ -168,7 +227,7 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
 
   depends_on = [
     aws_iam_role_policy_attachment.batch_reconciliation_policy,
-    aws_cloudwatch_log_group.batch_reconciliation_logs
+    aws_cloudwatch_log_group.batch_status_reconciliation_logs
   ]
 
   tags = merge(var.common_tags, {
@@ -176,10 +235,14 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
   })
 }
 
-resource "aws_cloudwatch_log_group" "batch_reconciliation_logs" {
+# CloudWatch Log Groups - Batch Status Reconciliation (updates job status)
+resource "aws_cloudwatch_log_group" "batch_status_reconciliation_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-batch-status-reconciliation"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "AWS Batch job status reconciliation logging"
+    Function = "batch_status_reconciliation"
+  })
 }
 
 # Dead Job Detector Lambda Function
@@ -212,8 +275,12 @@ resource "aws_lambda_function" "dead_job_detector" {
   })
 }
 
+# CloudWatch Log Groups - Dead Job Detector (detects stuck jobs)
 resource "aws_cloudwatch_log_group" "dead_job_detector_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-dead-job-detector"
-  retention_in_days = var.cleanup_log_retention_days
-  tags              = var.common_tags
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "Dead job detection and cleanup logging"
+    Function = "dead_job_detector"
+  })
 }

@@ -1,72 +1,225 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.npm
-.yarn-integrity
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environments
 venv/
+ENV/
 env/
 .venv
 .env
-*.egg-info/
-dist/
-build/
+virtualenv/
+pyenv/
+.python-version
+pipenv-install
+
+# Python testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Lambda function builds
+lambda_functions/**/*.zip
+lambda_functions/**/package/
+lambda_functions/**/bin/
+lambda_functions/**/*.dist-info/
+lambda_functions/**/boto3/
+lambda_functions/**/botocore/
+lambda_functions/**/dateutil/
+lambda_functions/**/jmespath/
+lambda_functions/**/rapidfuzz/
+lambda_functions/**/s3transfer/
+lambda_functions/**/urllib3/
+lambda_functions/**/six.py
+lambda_functions/**/__pycache__/
 
 # Terraform
-.terraform/
-.terraform.lock.hcl
-terraform.tfstate
-terraform.tfstate.backup
-*.tfvars
-*.tfvars.json
-*.tfplan
+**/.terraform/
+**/.terraform.lock.hcl
 *.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!terraform.tfvars.example
 .terraform/
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
 
 # AWS
 .aws/
 aws-exports.js
+samconfig.toml
 
-# Environment files
+# Environment variables
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
+!.env.*.example
 
-# IDE/Editor
+# IDEs and Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.history/
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.lnk
 
 # Logs
-*.log
 logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Docker
+docker-compose.override.yml
+.dockerignore.local
+
+# Temporary files
 tmp/
 temp/
-
-# Build outputs
-dist/
-build/
-out/
-
-# OS files
-Thumbs.db
-.DS_Store
-
-# Backup files
+*.tmp
+*.temp
 *.bak
 *.backup
+*.old
+*.orig
 
-# Lambda function zip files
-lambda_functions/**/*.zip
-*.zip
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.secrets/
+secrets/
+
+# Node.js (if used for frontend)
+node_modules/
+.npm
+.yarn-integrity
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Build outputs
+build/
+dist/
+out/
+target/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation builds
+docs/_build/
+site/
+
+# Misc
+.sass-cache/
+.grunt
+.bower_cache
+.bower_registry
+.bower_tmp
+*.pid
+*.seed
+*.pid.lock
+
+# Local development
+.local/
+local/
+scratch/
+
+# CI/CD
+.github/workflows/local/
+.gitlab-ci-local/
+.circleci/local/
+
+# AWS Batch
+aws_batch/*.zip
+aws_batch/package/
+
+# Testing
+test-results/
+test-reports/
+htmlcov/
+.benchmarks/
+
+# Monitoring
+.terraform-compliance/
+tflint_report.json
+checkov_report.json
