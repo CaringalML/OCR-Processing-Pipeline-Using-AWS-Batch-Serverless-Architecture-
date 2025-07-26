@@ -66,3 +66,7 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
+
+# Lambda function zip files
+lambda_functions/**/*.zip
+*.zip

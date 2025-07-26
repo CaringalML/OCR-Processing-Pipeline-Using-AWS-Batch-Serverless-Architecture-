@@ -68,7 +68,7 @@ resource "aws_cloudwatch_log_group" "cleanup_lambda_logs" {
 }
 
 # Cleanup Lambda Function Code
-resource "local_file" "cleanup_lambda_function" {
+resource "local_file" "cleanup_processor" {
   content = <<EOF
 import json
 import boto3
@@ -258,14 +258,14 @@ def cleanup_ecs_tasks(ecs_client: Any, age_hours: int) -> int:
     return cleanup_count
 EOF
 
-  filename = "${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.py"
+  filename = "${path.module}/lambda_functions/cleanup_processor/cleanup_processor.py"
 }
 
 # Automatic cleanup of old Cleanup Lambda files when content changes
 resource "null_resource" "cleanup_lambda_cleanup" {
   triggers = {
     # Trigger cleanup when Cleanup Lambda function content changes
-    cleanup_content_hash = sha256(local_file.cleanup_lambda_function.content)
+    cleanup_content_hash = sha256(local_file.cleanup_processor.content)
     function_name        = "${var.project_name}-auto-cleanup"
     timestamp            = timestamp()
   }
@@ -273,23 +273,23 @@ resource "null_resource" "cleanup_lambda_cleanup" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Cleaning up old Cleanup Lambda files..."
-      rm -f ${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.zip
-      rm -f ${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.py.backup
+      rm -f ${path.module}/lambda_functions/cleanup_processor/cleanup_processor.zip
+      rm -f ${path.module}/lambda_functions/cleanup_processor/cleanup_processor.py.backup
       echo "Cleanup Lambda cleanup completed"
     EOT
   }
 
-  depends_on = [local_file.cleanup_lambda_function]
+  depends_on = [local_file.cleanup_processor]
 }
 
 # Create ZIP file for Cleanup Lambda
 data "archive_file" "cleanup_lambda_zip" {
   type        = "zip"
-  output_path = "${path.module}/lambda_functions/cleanup_lambda_function/cleanup_lambda_function.zip"
-  source_file = local_file.cleanup_lambda_function.filename
+  output_path = "${path.module}/lambda_functions/cleanup_processor/cleanup_processor.zip"
+  source_file = local_file.cleanup_processor.filename
 
   depends_on = [
-    local_file.cleanup_lambda_function,
+    local_file.cleanup_processor,
     null_resource.cleanup_lambda_cleanup
   ]
 }
@@ -299,7 +299,7 @@ resource "aws_lambda_function" "cleanup_function" {
   filename         = data.archive_file.cleanup_lambda_zip.output_path
   function_name    = "${var.project_name}-auto-cleanup"
   role             = aws_iam_role.cleanup_lambda_execution.arn
-  handler          = "cleanup_lambda_function.lambda_handler"
+  handler          = "cleanup_processor.lambda_handler"
   runtime          = "python3.9"
   timeout          = 300 # 5 minutes
   memory_size      = 256

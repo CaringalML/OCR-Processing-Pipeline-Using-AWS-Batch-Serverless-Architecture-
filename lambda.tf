@@ -7,31 +7,31 @@ resource "aws_sns_topic" "alerts" {
 # Archive files for Lambda functions
 data "archive_file" "uploader_zip" {
   type        = "zip"
-  output_path = "${path.module}/lambda_function.zip"
-  source_file = "${path.module}/lambda_functions/lambda_function/lambda_function.py"
+  output_path = "${path.module}/lambda_functions/s3_uploader/s3_uploader.zip"
+  source_file = "${path.module}/lambda_functions/s3_uploader/s3_uploader.py"
 }
 
 data "archive_file" "reader_zip" {
   type        = "zip"
-  output_path = "${path.module}/lambda_reader.zip"
+  output_path = "${path.module}/lambda_functions/lambda_reader/lambda_reader.zip"
   source_file = "${path.module}/lambda_functions/lambda_reader/lambda_reader.py"
 }
 
 data "archive_file" "sqs_processor_zip" {
   type        = "zip"
-  output_path = "${path.module}/sqs_batch_processor.zip"
-  source_file = "${path.module}/lambda_functions/sqs_batch_processor/sqs_batch_processor.py"
+  output_path = "${path.module}/lambda_functions/sqs_to_batch_submitter/sqs_to_batch_submitter.zip"
+  source_file = "${path.module}/lambda_functions/sqs_to_batch_submitter/sqs_to_batch_submitter.py"
 }
 
 data "archive_file" "batch_reconciliation_zip" {
   type        = "zip"
-  output_path = "${path.module}/batch_status_reconciliation.zip"
+  output_path = "${path.module}/lambda_functions/batch_status_reconciliation/batch_status_reconciliation.zip"
   source_file = "${path.module}/lambda_functions/batch_status_reconciliation/batch_status_reconciliation.py"
 }
 
 data "archive_file" "dead_job_detector_zip" {
   type        = "zip"
-  output_path = "${path.module}/dead_job_detector.zip"
+  output_path = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.zip"
   source_file = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.py"
 }
 
@@ -40,7 +40,7 @@ resource "aws_lambda_function" "uploader" {
   filename         = data.archive_file.uploader_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-uploader"
   role             = aws_iam_role.uploader_role.arn
-  handler          = "lambda_function.lambda_handler"
+  handler          = "s3_uploader.lambda_handler"
   runtime          = "python3.9"
   timeout          = 300
   memory_size      = 256
@@ -101,7 +101,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   filename         = data.archive_file.sqs_processor_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-sqs-batch-processor"
   role             = aws_iam_role.sqs_processor_role.arn
-  handler          = "sqs_batch_processor.lambda_handler"
+  handler          = "sqs_to_batch_submitter.lambda_handler"
   runtime          = "python3.9"
   timeout          = 60
   memory_size      = 256
