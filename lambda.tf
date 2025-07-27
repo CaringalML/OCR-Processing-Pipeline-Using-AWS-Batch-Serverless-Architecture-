@@ -42,6 +42,12 @@ data "archive_file" "search_zip" {
   excludes    = ["requirements.txt", "package", "__pycache__"]
 }
 
+data "archive_file" "editor_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/ocr_editor/ocr_editor.zip"
+  source_file = "${path.module}/lambda_functions/ocr_editor/ocr_editor.py"
+}
+
 # Uploader Lambda Function (S3 file uploader)
 resource "aws_lambda_function" "uploader" {
   filename         = data.archive_file.uploader_zip.output_path
@@ -134,6 +140,36 @@ resource "aws_lambda_function" "search" {
   })
 }
 
+# Editor Lambda Function (OCR results editor)
+resource "aws_lambda_function" "editor" {
+  filename         = data.archive_file.editor_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-editor"
+  role             = aws_iam_role.editor_role.arn
+  handler          = "ocr_editor.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 256
+  source_code_hash = data.archive_file.editor_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
+      LOG_LEVEL      = "INFO"
+      ENVIRONMENT    = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.editor_policy,
+    aws_cloudwatch_log_group.ocr_editor_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-editor"
+  })
+}
+
 # SQS to Batch Processor Lambda Function
 resource "aws_lambda_function" "sqs_batch_processor" {
   filename         = data.archive_file.sqs_processor_zip.output_path
@@ -193,6 +229,16 @@ resource "aws_cloudwatch_log_group" "document_search_logs" {
   tags              = merge(var.common_tags, {
     Purpose = "Document fuzzy search logging"
     Function = "document_search"
+  })
+}
+
+# CloudWatch Log Groups - OCR Editor (edits refined and formatted text)
+resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-editor"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "OCR result editing logging"
+    Function = "ocr_editor"
   })
 }
 

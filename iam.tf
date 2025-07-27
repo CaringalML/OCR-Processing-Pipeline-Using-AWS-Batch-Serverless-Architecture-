@@ -259,6 +259,26 @@ resource "aws_iam_role" "search_role" {
   tags = var.common_tags
 }
 
+# Editor Lambda Role
+resource "aws_iam_role" "editor_role" {
+  name = "${var.project_name}-${var.environment}-editor-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
 # SQS Processor Lambda Role
 resource "aws_iam_role" "sqs_processor_role" {
   name = "${var.project_name}-${var.environment}-sqs-processor-role"
@@ -383,6 +403,39 @@ resource "aws_iam_policy" "search_policy" {
   })
 }
 
+# Editor Lambda Policy
+resource "aws_iam_policy" "editor_policy" {
+  name = "${var.project_name}-${var.environment}-editor-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn
+        ]
+      }
+    ]
+  })
+}
+
 # SQS Processor Lambda Policy
 resource "aws_iam_policy" "sqs_processor_policy" {
   name = "${var.project_name}-${var.environment}-sqs-processor-policy"
@@ -443,6 +496,11 @@ resource "aws_iam_role_policy_attachment" "reader_policy" {
 resource "aws_iam_role_policy_attachment" "search_policy" {
   role       = aws_iam_role.search_role.name
   policy_arn = aws_iam_policy.search_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "editor_policy" {
+  role       = aws_iam_role.editor_role.name
+  policy_arn = aws_iam_policy.editor_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "sqs_processor_policy" {

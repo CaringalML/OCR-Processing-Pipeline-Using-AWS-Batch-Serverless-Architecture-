@@ -1,595 +1,542 @@
-# AWS Batch OCR Processor with Terraform
+# Serverless OCR Document Processing & Search System
 
-A complete serverless OCR processing system built with Terraform that demonstrates modern AWS infrastructure best practices. This project creates a cost-optimized AWS Batch environment triggered by API Gateway requests.
+A production-ready serverless OCR document processing pipeline with advanced fuzzy search capabilities, built with AWS services and Terraform. This system provides intelligent document analysis, semantic text processing, and enterprise-grade search functionality.
 
-## Architecture Overview
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=flat&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
+[![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://terraform.io/)
+[![Python](https://img.shields.io/badge/python-3670A0?style=flat&logo=python&logoColor=ffdd54)](https://python.org/)
 
+## 🏗️ Architecture Overview
+
+```mermaid
+graph TD
+    A[Client] --> B[API Gateway]
+    B --> C[Uploader Lambda]
+    B --> D[Search Lambda]
+    B --> E[Reader Lambda]
+    
+    C --> F[S3 Bucket]
+    F --> G[EventBridge]
+    G --> H[SQS Queue]
+    H --> I[SQS Processor Lambda]
+    I --> J[AWS Batch]
+    J --> K[OCR Processing Container]
+    
+    C --> L[DynamoDB Metadata]
+    K --> M[DynamoDB Results]
+    D --> L
+    D --> M
+    E --> L
+    E --> M
+    
+    F --> N[CloudFront CDN]
+    
+    O[Dead Letter Queue] --> H
+    P[SNS Alerts] --> O
+    Q[CloudWatch Monitoring] --> R[All Components]
 ```
-Internet → API Gateway → Lambda Function → AWS Batch → Docker Container (ECR)
-                            ↓
-                     CloudWatch Logs & Monitoring
-                            ↓
-                     Auto-Cleanup System
-```
 
-## What This Project Demonstrates
+## ✨ Key Features
 
-- **Serverless Batch Processing**: AWS Batch with Fargate for container orchestration
-- **Cost Optimization**: VPC Endpoints instead of expensive NAT Gateways
-- **Infrastructure as Code**: Complete Terraform automation with embedded Lambda code
-- **Security Best Practices**: Private subnets, least privilege IAM, and VPC endpoints
-- **Auto-Cleanup**: Automated job cleanup to prevent resource accumulation
-- **Production Ready**: Comprehensive monitoring, logging, and error handling
+### 🔍 **Advanced Search Capabilities**
+- **Fuzzy Search**: RapidFuzz-powered approximate matching with configurable similarity thresholds
+- **Semantic Text Processing**: Searches refined, processed text for better relevance
+- **Multi-field Search**: Search across metadata (title, author, publication) and full OCR content
+- **Context Snippets**: Intelligent excerpt extraction with relevance scoring
+- **Flexible Queries**: Exact matching, partial matching, and topic-based discovery
 
-## Key Components
+### 📄 **Document Processing Pipeline**
+- **Intelligent OCR**: AWS Textract integration with confidence scoring
+- **Text Refinement**: Semantic processing for improved searchability
+- **Metadata Extraction**: Automatic publication, author, and subject detection
+- **Multi-format Support**: Images (JPEG, PNG), PDFs, and document formats
+- **Scalable Processing**: AWS Batch with auto-scaling containers
 
-### Core Infrastructure
-- **API Gateway**: REST endpoint with advanced rate limiting and multi-tier usage plans
-- **Lambda Function**: Serverless trigger that submits jobs to AWS Batch
-- **AWS Batch**: Managed container orchestration using Fargate
-- **ECR Repository**: Secure Docker image storage with lifecycle policies
-- **VPC with VPC Endpoints**: Cost-optimized private networking
-- **Rate Limiting**: Multi-tier protection with public, registered, and premium plans
+### 🚀 **Production-Ready Architecture**
+- **Serverless First**: Lambda, DynamoDB, and managed services
+- **Cost Optimized**: VPC Endpoints, pay-per-use pricing, lifecycle policies
+- **Auto-scaling**: Elastic compute resources based on demand
+- **Global CDN**: CloudFront for fast file delivery worldwide
+- **Comprehensive Monitoring**: CloudWatch, SNS alerts, and operational dashboards
 
-### Monitoring & Operations
-- **CloudWatch**: Comprehensive logging and monitoring dashboards
-- **Auto-Cleanup Lambda**: Automated cleanup of old jobs and tasks
-- **EventBridge**: Scheduled triggers for maintenance operations
-- **CloudWatch Alarms**: Proactive monitoring of system health
+### 🔒 **Enterprise Security**
+- **Multi-tier Rate Limiting**: Public, registered, and premium access tiers
+- **API Key Management**: Secure authentication for higher usage limits
+- **Network Isolation**: Private subnets with VPC endpoints
+- **Encryption**: At-rest and in-transit encryption for all data
+- **IAM Best Practices**: Least privilege access with service-specific roles
 
-## Cost Optimization Strategy
+## 🎯 Business Value
 
-This infrastructure prioritizes cost efficiency through smart architectural choices:
+This system demonstrates modern cloud architecture principles and provides:
 
-### VPC Endpoints vs NAT Gateways
+- **Historical Document Digitization**: Convert physical documents to searchable digital archives
+- **Research Platform**: Academic and institutional document discovery
+- **Enterprise Knowledge Management**: Corporate document processing and search
+- **Document Compliance**: Automated processing for regulatory requirements
+- **Data Discovery**: Topic-based content exploration and analysis
 
-**Why VPC Endpoints?**
-Traditional AWS Batch setups use NAT Gateways for internet access, but this project uses VPC Endpoints for significant cost savings while maintaining security and functionality.
-
-## Cost Optimization Strategy
-
-This infrastructure prioritizes cost efficiency through smart architectural choices:
-
-### VPC Endpoints vs NAT Gateways
-
-**Why VPC Endpoints?**
-Traditional AWS Batch setups use NAT Gateways for internet access, but this project uses VPC Endpoints for significant cost savings while maintaining security and functionality.
-
-### All VPC Endpoints (Active + Non-Active)
-
-| VPC Endpoint | Type | Category | Monthly Cost | Purpose | Status |
-|--------------|------|----------|--------------|---------|--------|
-| ECR Docker Registry | Interface | Container Registry | $7.20 | Pull Docker images | ✅ Active |
-| ECR API | Interface | Container Registry | $7.20 | ECR authentication & metadata | ✅ Active |
-| CloudWatch Logs | Interface | Monitoring | $7.20 | Application logging | ✅ Active |
-| ECS | Interface | Compute Service | $7.20 | Batch job orchestration | ✅ Active |
-| ECS Agent | Interface | Compute Service | $7.20 | Container agent communication | ✅ Active |
-| ECS Telemetry | Interface | Monitoring | $7.20 | ECS metrics and monitoring | ✅ Active |
-| S3 Gateway | Gateway | Storage | FREE | ECR image layer storage | ✅ Active |
-| SSM | Interface | Management | $7.20 | Systems Manager access | ❌ Disabled |
-| SSM Messages | Interface | Management | $7.20 | Session Manager communication | ❌ Disabled |
-| EC2 Messages | Interface | Management | $7.20 | EC2 Systems Manager | ❌ Disabled |
-
-### Active VPC Endpoints Only
-
-| VPC Endpoint | Type | Category | Monthly Cost | Purpose |
-|--------------|------|----------|--------------|---------|
-| ECR Docker Registry | Interface | Container Registry | $7.20 | Pull Docker images |
-| ECR API | Interface | Container Registry | $7.20 | ECR authentication & metadata |
-| CloudWatch Logs | Interface | Monitoring | $7.20 | Application logging |
-| ECS | Interface | Compute Service | $7.20 | Batch job orchestration |
-| ECS Agent | Interface | Compute Service | $7.20 | Container agent communication |
-| ECS Telemetry | Interface | Monitoring | $7.20 | ECS metrics and monitoring |
-| S3 Gateway | Gateway | Storage | FREE | ECR image layer storage |
-| **TOTAL** | **6 Interface + 1 Gateway** | **All Categories** | **$43.20** | **Complete functionality** |
-
-### Non-Active VPC Endpoints Only
-
-| VPC Endpoint | Type | Category | Monthly Cost | Purpose |
-|--------------|------|----------|--------------|---------|
-| SSM | Interface | Management | $7.20 | Systems Manager access |
-| SSM Messages | Interface | Management | $7.20 | Session Manager communication |
-| EC2 Messages | Interface | Management | $7.20 | EC2 Systems Manager |
-| **TOTAL** | **3 Interface** | **Management** | **$21.60** | **Debugging and troubleshooting** |
-
-### Cost Summary
-
-| Configuration | Monthly Cost | Annual Cost | Description |
-|---------------|--------------|-------------|-------------|
-| Current Active Endpoints | $43.20 | $518.40 | Complete AWS Batch functionality |
-| If All Endpoints Enabled | $64.80 | $777.60 | Includes SSM debugging capabilities |
-| Traditional NAT Gateway Setup | $90-120 | $1,080-1,440 | Legacy expensive approach |
-| **Annual Savings** | **$561-922** | - | **Cost optimization achieved** |
-
-*Note: To enable SSM endpoints for debugging, set `enable_ssm_endpoints = true` in your configuration.*
-
-## Quick Start Guide
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- AWS CLI configured with appropriate credentials
+- AWS CLI configured with appropriate permissions
 - Terraform >= 1.0 installed
 - Docker installed and running
-- Basic understanding of AWS services
+- Python 3.9+ for local development
 
 ### 1. Deploy Infrastructure
 
 ```bash
-# Clone repository and navigate to project directory
+# Clone repository
 git clone <repository-url>
-cd aws-batch-terraform
+cd OCR-AWS-Batch-Serverless-Python
 
 # Initialize Terraform
 terraform init
 
-# Review planned changes
-terraform plan
+# Review and customize configuration
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your settings
 
 # Deploy infrastructure
+terraform plan
 terraform apply
 ```
 
-### 2. Build and Deploy Application
+### 2. Build and Deploy Dependencies
 
 ```bash
-# Get ECR commands from Terraform output
-terraform output manual_docker_commands
+# Build Lambda dependencies
+./build_search_lambda.sh
 
-# Build Docker image
-docker build -t hello-world-batch .
-
-# Login to ECR
-aws ecr get-login-password --region ap-southeast-2 | \
-  docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
-
-# Tag and push image
-docker tag hello-world-batch:latest $(terraform output -raw ecr_repository_url):latest
-docker push $(terraform output -raw ecr_repository_url):latest
+# Build and deploy Docker container
+terraform output deployment_commands
+# Follow the ECR login and Docker build commands
 ```
 
 ### 3. Test the System
 
 ```bash
-# Get API Gateway URL
-terraform output api_upload_url
+# Get API endpoints
+terraform output api_endpoints
 
-# Test file upload (no API key - public rate limits)
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"fileName": "test.txt", "fileContent": "SGVsbG8gV29ybGQ=", "contentType": "text/plain"}' \
-  $(terraform output -raw api_upload_url)
+# Test document upload
+curl -X POST "$(terraform output -json api_endpoints | jq -r '.upload')" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@sample-document.pdf" \
+  -F "metadata={\"publication\":\"Nature\",\"year\":\"2024\",\"title\":\"AI Research\"}"
 
-# Test with API key for higher rate limits
-API_KEY=$(terraform output -json demo_api_keys | jq -r '.["demo-registered-user"].value')
-curl -X POST -H "Content-Type: application/json" -H "X-API-Key: $API_KEY" \
-  -d '{"fileName": "test.txt", "fileContent": "SGVsbG8gV29ybGQ=", "contentType": "text/plain"}' \
-  $(terraform output -raw api_upload_url)
+# Search documents with fuzzy matching
+curl "$(terraform output -json api_endpoints | jq -r '.search')?q=artificial+intelligence&fuzzy=true&fuzzyThreshold=80"
 
-# Check processed files
-curl $(terraform output -raw api_processed_url)
+# Get processed document by ID
+curl "$(terraform output -json api_endpoints | jq -r '.processed')?fileId=YOUR_FILE_ID"
+```
 
-# Expected response:
-{
-  "success": true,
-  "message": "File uploaded successfully",
-  "fileId": "12345678-1234-1234-1234-123456789012",
-  "fileName": "test.txt",
-  "timestamp": "2025-07-17T12:34:56.789Z"
+## 📊 API Reference
+
+### Upload Document
+```http
+POST /upload
+Content-Type: multipart/form-data
+
+file: <binary data>
+metadata: {
+  "publication": "The Scientific Journal",
+  "year": "1925",
+  "title": "Electric Cars of Tomorrow",
+  "author": "Dr. Emily Johnson",
+  "description": "Vision of electric transportation",
+  "tags": ["electric", "cars", "future"]
 }
 ```
 
-## Rate Limiting & API Protection
+### Search Documents
+```http
+GET /search?q={term}&fuzzy={true|false}&fuzzyThreshold={0-100}
+GET /search?publication={name}&year={year}&title={title}
+GET /search?q={term}&limit={10}&offset={0}
+```
 
-### Multi-Tier Rate Limiting Strategy
+**Search Parameters:**
+- `q`: Search term for full-text search
+- `fuzzy`: Enable fuzzy matching (default: false)
+- `fuzzyThreshold`: Similarity percentage for fuzzy search (default: 80)
+- `publication`: Filter by publication name
+- `year`: Filter by publication year
+- `title`: Filter by document title
+- `status`: Filter by processing status
+- `limit`: Number of results to return (max: 100)
 
-This system implements intelligent rate limiting that **protects against abuse while not disturbing real users**:
+**Response Format:**
+```json
+{
+  "success": true,
+  "message": "Found 15 results",
+  "query": {
+    "searchTerm": "electric vehicles",
+    "fuzzy": true,
+    "fuzzyThreshold": 80
+  },
+  "results": [
+    {
+      "fileId": "a73f480f-69f3-4b8c-84c9-724eb5dbce1a",
+      "fileName": "electric-cars-1925.pdf",
+      "status": "processed",
+      "fileUrl": "https://d18y62axs8f574.cloudfront.net/...",
+      "metadata": {
+        "publication": "The Morning Chronicle",
+        "year": "1925",
+        "title": "Electric Cars of Tomorrow",
+        "author": "Dr. Emily Johnson"
+      },
+      "ocrResults": {
+        "refinedText": "Transport for Tomorrow...",
+        "pageCount": 5
+      },
+      "snippet": "...electric cars will revolutionize transportation...",
+      "fuzzyScore": 92
+    }
+  ],
+  "totalResults": 15,
+  "hasMore": true
+}
+```
 
-#### **Three-Tier Usage Plans**
+### Get Processed Documents
+```http
+GET /processed?fileId={id}
+GET /processed?status={processing|completed|failed}
+GET /processed?limit={10}
+```
 
-| Plan | API Key Required | Rate Limit | Burst Limit | Daily Quota | Use Case |
-|------|:----------------:|------------|-------------|-------------|----------|
-| **Public** | ❌ No | 10/sec | 20 | 1,000/day | Testing, light usage |
-| **Registered** | ✅ Yes | 50/sec | 100 | 10,000/day | Small businesses, developers |
-| **Premium** | ✅ Yes | 200/sec | 400 | 100,000/day | Enterprise, high-volume |
+## 🔍 Search Capabilities
 
-#### **Method-Specific Limits**
+### Exact Search
+- **Publication Search**: Find documents by publication name
+- **Author Search**: Search by author names
+- **Title Search**: Match document titles
+- **Full-text Search**: Search within OCR-extracted content
+- **Year Filter**: Filter by publication year
+- **Status Filter**: Filter by processing status
 
-- **Upload Endpoint** (`/upload`): Conservative limits due to processing costs
-  - Public: 5/sec burst 10 
-  - Registered: 25/sec burst 50
-  - Premium: 50/sec burst 100
+### Fuzzy Search
+- **Typo Tolerance**: Handles misspellings and variations
+- **Similarity Scoring**: Configurable match thresholds (0-100%)
+- **Semantic Matching**: Searches processed, refined text
+- **Context Aware**: Provides relevant text snippets
+- **Ranking**: Results sorted by relevance score
 
-- **Processed Endpoint** (`/processed`): Higher limits for reading results
-  - Public: 20/sec burst 40
-  - Registered: 60/sec burst 120  
-  - Premium: 100/sec burst 200
-
-### **How to Use API Keys**
+### Search Examples
 
 ```bash
-# Get your API keys (sensitive - store securely)
-terraform output demo_api_keys
+# Exact search for electric vehicles
+curl "https://api.example.com/search?q=electric+vehicles"
 
-# Use API key in requests for higher limits
-curl -H "X-API-Key: YOUR_API_KEY" \
-  -X POST -H "Content-Type: application/json" \
-  -d '{"fileName": "doc.pdf", "fileContent": "BASE64_CONTENT"}' \
-  https://your-api-id.execute-api.region.amazonaws.com/dev/upload
+# Fuzzy search with typos
+curl "https://api.example.com/search?q=electrik+vehicals&fuzzy=true&fuzzyThreshold=75"
+
+# Search by publication and year
+curl "https://api.example.com/search?publication=Nature&year=2024"
+
+# Topic-based search
+curl "https://api.example.com/search?q=climate+change+renewable+energy&fuzzy=true"
+
+# Combined search with filters
+curl "https://api.example.com/search?q=transportation&year=1925&fuzzy=true&limit=20"
 ```
 
-### **Rate Limiting Benefits**
+## 🏗️ Infrastructure Components
 
-✅ **Protects Real Users**: Legitimate users get predictable performance  
-✅ **Prevents Abuse**: Automatic throttling of excessive requests  
-✅ **Cost Control**: Prevents runaway processing costs  
-✅ **Fair Access**: Higher limits for registered/premium users  
-✅ **Self-Service**: Users can increase limits by getting API keys  
-✅ **Monitoring**: Real-time dashboards and alerts  
+### Core Services
+| Component | Purpose | Technology |
+|-----------|---------|------------|
+| **API Gateway** | REST API endpoints with rate limiting | AWS API Gateway |
+| **Lambda Functions** | Serverless compute for processing | AWS Lambda (Python 3.9) |
+| **Document Storage** | Secure file storage with CDN | AWS S3 + CloudFront |
+| **Database** | Metadata and search indices | AWS DynamoDB |
+| **OCR Processing** | Document text extraction | AWS Batch + Textract |
+| **Search Engine** | Fuzzy search capabilities | RapidFuzz Library |
+| **Monitoring** | Observability and alerting | CloudWatch + SNS |
 
-### **Testing Rate Limits**
+### Lambda Functions
+| Function | Purpose | Memory | Timeout |
+|----------|---------|---------|----------|
+| **Uploader** | Handle file uploads and metadata | 256 MB | 5 min |
+| **Search** | Process search queries with fuzzy matching | 512 MB | 1 min |
+| **Reader** | Retrieve processed documents | 256 MB | 1 min |
+| **SQS Processor** | Submit batch jobs for OCR processing | 256 MB | 1 min |
+| **Batch Reconciliation** | Update processing status | 256 MB | 1 min |
+| **Dead Job Detector** | Clean up failed processing jobs | 256 MB | 5 min |
 
+### Storage & CDN
+- **S3 Bucket**: Encrypted document storage with lifecycle policies
+- **CloudFront**: Global content delivery network
+- **DynamoDB**: NoSQL database with auto-scaling
+- **ECR**: Private container registry for batch processing
+
+## 💰 Cost Optimization
+
+### Architecture Savings
+- **VPC Endpoints**: Save $75-105/month vs NAT Gateways
+- **Serverless**: Pay-per-use model, no idle costs
+- **Auto-scaling**: Resources scale with demand
+- **Lifecycle Policies**: Automatic cleanup of old data
+
+### Monthly Cost Estimate (ap-southeast-2)
+| Service | Estimated Cost | Description |
+|---------|----------------|-------------|
+| VPC Endpoints | $43.20 | Private AWS service access |
+| DynamoDB | $5-25 | Pay-per-request pricing |
+| Lambda | $2-10 | Execution-based billing |
+| S3 Storage | $1-20 | Document storage |
+| CloudFront | $1-10 | Global CDN |
+| Batch Processing | $5-50 | Fargate compute time |
+| **Total** | **$57-158** | **Scales with usage** |
+
+**Annual Savings**: $900-1,260 vs traditional EC2/RDS setup
+
+## 🔐 Security & Compliance
+
+### Network Security
+- **Private Subnets**: Compute resources isolated from internet
+- **VPC Endpoints**: Secure AWS service communication
+- **Security Groups**: Least privilege network access
+- **HTTPS Only**: TLS 1.2+ for all API communications
+
+### Data Protection
+- **Encryption at Rest**: S3 and DynamoDB encryption
+- **Encryption in Transit**: HTTPS/TLS for all data transfer
+- **Access Control**: IAM roles with minimal permissions
+- **API Authentication**: Multi-tier rate limiting with API keys
+
+### Rate Limiting Tiers
+| Tier | API Key | Rate Limit | Burst Limit | Daily Quota |
+|------|---------|------------|-------------|-------------|
+| **Public** | Not Required | 10/sec | 20 | 1,000 |
+| **Registered** | Required | 50/sec | 100 | 10,000 |
+| **Premium** | Required | 200/sec | 400 | 100,000 |
+
+## 📈 Monitoring & Operations
+
+### CloudWatch Integration
+- **Real-time Metrics**: API requests, processing times, error rates
+- **Custom Dashboards**: Business and technical KPIs
+- **Automated Alerts**: SNS notifications for failures
+- **Log Aggregation**: Centralized logging across all services
+
+### Operational Commands
 ```bash
-# Test rate limiting
-terraform output rate_limiting_test_commands
+# View all infrastructure outputs
+terraform output
 
-# Monitor in CloudWatch Dashboard
-echo "Visit: https://console.aws.amazon.com/cloudwatch/home?region=YOUR_REGION#dashboards"
+# Check system health
+terraform output troubleshooting
+
+# Monitor processing pipeline
+aws logs tail /aws/lambda/ocr-processor-* --follow
+
+# View cost optimization summary
+terraform output cost_summary
+
+# Check search performance
+curl "$(terraform output -json api_endpoints | jq -r '.search')?q=test"
 ```
 
-### **Rate Limiting Configuration**
+### Troubleshooting
 
-Enable/disable and customize all rate limiting settings:
+**Common Issues:**
+1. **Search not returning results**: Check document processing status
+2. **Rate limiting errors**: Use API keys for higher limits
+3. **Upload failures**: Verify file format and size limits
+4. **Processing delays**: Monitor AWS Batch queue status
 
-```hcl
-# Enable rate limiting (recommended)
-enable_rate_limiting = true
+**Debug Commands:**
+```bash
+# Check processing status
+curl "$(terraform output -json api_endpoints | jq -r '.processed')?status=processing"
 
-# Customize limits for your use case
-public_rate_limit = 10      # Anonymous users
-registered_rate_limit = 50  # API key users  
-premium_rate_limit = 200    # Premium API key users
+# View failed jobs
+aws batch list-jobs --job-queue $(terraform output -json batch | jq -r '.job_queue_name') --job-status FAILED
 
-# Method-specific overrides
-upload_method_rate_limit = 5     # Upload is expensive
-processed_method_rate_limit = 20 # Reading is cheaper
+# Check dead letter queue
+aws sqs receive-message --queue-url $(terraform output -json sqs | jq -r '.dead_letter_queue.url')
 ```
 
-See `terraform.tfvars.example` for complete configuration options.
+## 🛠️ Configuration
 
-## Configuration Options
-
-### Essential Variables
-
-Create a `terraform.tfvars` file to customize your deployment:
-
+### Essential Variables (terraform.tfvars)
 ```hcl
 # Basic Configuration
 aws_region = "ap-southeast-2"
-project_name = "my-ocr-processor"
-environment = "dev"
+project_name = "ocr-processor"
+environment = "production"
+
+# Rate Limiting
+enable_rate_limiting = true
+public_rate_limit = 10
+registered_rate_limit = 50
+premium_rate_limit = 200
 
 # Cost Optimization
-enable_ssm_endpoints = false  # Keep false to save $21.60/month
-
-# Auto-Cleanup Settings
-cleanup_age_hours = 24
-cleanup_schedule_expression = "rate(6 hours)"
-enable_auto_cleanup = true
-
-# Network Configuration
-vpc_cidr = "10.0.0.0/16"
-public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
-private_subnet_cidrs = ["10.0.10.0/24", "10.0.20.0/24"]
+enable_ssm_endpoints = false  # Save $21.60/month
 ```
 
 ### Advanced Configuration
-
 ```hcl
-# Lambda Function Settings
-cleanup_lambda_timeout = 300
-cleanup_lambda_memory = 256
-cleanup_log_retention_days = 14
-
-# Batch Job Settings
-batch_compute_environment_name = "my-ocr-compute-env"
-batch_job_queue_name = "my-ocr-job-queue"
-batch_job_definition_name = "my-ocr-job-def"
-```
-
-## Auto-Cleanup System
-
-The infrastructure includes an intelligent cleanup system that automatically removes old AWS Batch jobs and ECS tasks to prevent cost accumulation and maintain system hygiene.
-
-### How It Works
-
-- **Scheduled Execution**: Runs every 6 hours via EventBridge
-- **Age-Based Cleanup**: Removes jobs/tasks older than 24 hours (configurable)
-- **Safe Operation**: Only targets completed/stopped resources
-- **Comprehensive Logging**: All cleanup actions are logged for audit
-
-### Manual Cleanup
-
-```bash
-# Trigger cleanup immediately
-terraform output manual_cleanup_command
-# Then execute the provided command
-
-# View cleanup logs
-terraform output cleanup_logs_command
-# Then execute the provided command
-
-# Check cleanup configuration
-terraform output cleanup_configuration_summary
-```
-
-### Cleanup Schedule Options
-
-```hcl
-# Every 6 hours (default)
+# Auto-cleanup Settings
+cleanup_age_hours = 24
 cleanup_schedule_expression = "rate(6 hours)"
 
-# Daily at 2 AM UTC
-cleanup_schedule_expression = "cron(0 2 * * ? *)"
+# Processing Configuration
+batch_job_timeout = 3600
+max_concurrent_jobs = 100
 
-# Every 4 hours
-cleanup_schedule_expression = "rate(4 hours)"
+# Search Configuration
+default_fuzzy_threshold = 80
+max_search_results = 100
 ```
 
-## Monitoring and Observability
+## 🎯 Use Cases
 
-### CloudWatch Integration
+### Academic Research
+- **Historical Document Archives**: Digitize and search historical publications
+- **Literature Review**: Find relevant papers by topic and content
+- **Citation Analysis**: Extract and search academic references
 
-**Dashboards:**
-- Batch job metrics (submitted, running, succeeded, failed)
-- Lambda function performance (duration, errors, invocations)
-- API Gateway metrics (requests, latency, error rates)
+### Enterprise Applications
+- **Document Management**: Corporate knowledge base with search
+- **Compliance**: Regulatory document processing and discovery
+- **Research & Development**: Technical document analysis
 
-**Log Groups:**
-- `/aws/lambda/ocr-processor-batch-trigger` - Lambda execution logs
-- `/aws/batch/ocr-processor-job-def` - Batch job application logs
-- `/aws/lambda/ocr-processor-auto-cleanup` - Cleanup operation logs
+### Government & Libraries
+- **Digital Archives**: Public record digitization and access
+- **Historical Research**: Citizen access to historical documents
+- **Preservation**: Digital preservation of physical documents
 
-**Alarms:**
-- Lambda function errors
-- Batch job failures
-- Cleanup operation failures
+## 📁 Project Structure
 
-### Accessing Logs
+```
+OCR-AWS-Batch-Serverless-Python/
+├── Infrastructure (Terraform)
+│   ├── versions.tf              # Provider configurations
+│   ├── variables.tf             # Input variables
+│   ├── vpc.tf                   # VPC and networking
+│   ├── iam.tf                   # IAM roles and policies
+│   ├── ecr.tf                   # Container registry
+│   ├── batch.tf                 # AWS Batch configuration
+│   ├── lambda.tf                # Lambda functions
+│   ├── api_gateway.tf           # API Gateway and rate limiting
+│   ├── dynamodb.tf              # Database tables
+│   ├── s3.tf                    # Storage and CDN
+│   ├── cloudwatch.tf            # Monitoring and logging
+│   ├── sqs.tf                   # Message queues
+│   ├── eventbridge.tf           # Event routing
+│   ├── cleanup.tf               # Auto-cleanup system
+│   └── outputs.tf               # Output values
+│
+├── Lambda Functions
+│   ├── s3_uploader/             # File upload handler
+│   ├── lambda_reader/           # Document retrieval
+│   ├── document_search/         # Fuzzy search engine
+│   │   ├── document_search.py   # Search logic with RapidFuzz
+│   │   └── requirements.txt     # Python dependencies
+│   ├── sqs_to_batch_submitter/  # Batch job submission
+│   ├── batch_status_reconciliation/ # Status updates
+│   ├── dead_job_detector/       # Job cleanup
+│   └── cleanup_processor/       # Resource cleanup
+│
+├── AWS Batch Container
+│   ├── Dockerfile              # OCR processing container
+│   ├── index.py                # Python OCR application
+│   └── requirements.txt        # Container dependencies
+│
+├── Build Scripts
+│   ├── build_search_lambda.sh  # Lambda dependency builder
+│   └── .gitignore              # Comprehensive ignore patterns
+│
+└── Documentation
+    ├── README.md               # This file
+    └── terraform.tfvars.example # Configuration template
+```
 
+## 🚀 Advanced Features
+
+### Semantic Search Enhancement
+- **Text Preprocessing**: Automatic text cleaning and normalization
+- **Named Entity Recognition**: Extract people, places, organizations
+- **Topic Modeling**: Automatic subject categorization
+- **Relevance Scoring**: Advanced ranking algorithms
+
+### Performance Optimization
+- **Caching Strategy**: API Gateway and Lambda caching
+- **Connection Pooling**: Optimized database connections
+- **Batch Processing**: Parallel document processing
+- **CDN Optimization**: Global content delivery
+
+### Future Enhancements
+- **Machine Learning**: Content classification and recommendation
+- **Multi-language Support**: OCR and search in multiple languages
+- **Real-time Processing**: WebSocket-based status updates
+- **Advanced Analytics**: Usage patterns and search insights
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines:
+
+1. **Fork** the repository
+2. **Create** a feature branch
+3. **Make** your changes with tests
+4. **Submit** a pull request
+
+### Development Setup
 ```bash
-# View Lambda logs
-aws logs tail /aws/lambda/ocr-processor-batch-trigger --follow
+# Clone repository
+git clone <repository-url>
+cd OCR-AWS-Batch-Serverless-Python
 
-# View Batch job logs
-aws logs tail /aws/batch/ocr-processor-job-def --follow
+# Install dependencies
+pip install -r lambda_functions/document_search/requirements.txt
 
-# View cleanup logs
-aws logs tail /aws/lambda/ocr-processor-auto-cleanup --follow
+# Run local tests
+python -m pytest tests/
+
+# Build Lambda packages
+./build_search_lambda.sh
 ```
 
-## Node.js Application Details
+## 📄 License
 
-The containerized application demonstrates best practices for AWS Batch OCR workloads:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### Key Features
+## 🆘 Support
 
-- **Environment Detection**: Automatically detects AWS Batch environment vs local development
-- **Graceful Shutdown**: Proper container lifecycle management
-- **Health Endpoints**: Built-in health checks for monitoring
-- **Error Handling**: Comprehensive error handling and logging
-- **Security**: Runs as non-root user with minimal privileges
+For questions and support:
 
-### Application Behavior
+1. **Documentation**: Check this README and Terraform outputs
+2. **Issues**: Submit GitHub issues for bugs or feature requests  
+3. **Discussions**: Use GitHub Discussions for questions
+4. **Monitoring**: Use CloudWatch dashboards for operational insights
 
-**In AWS Batch Environment:**
-```
-Container starts → Runs OCR processing logic → Outputs results → Exits cleanly
-Job Status: "Succeeded" ✅
-```
-
-**In Local Development:**
-```
-Container starts → Runs OCR processing logic → Starts web server → Continues running
-Access: http://localhost:3000/process
-```
-
-### Container Optimization
-
-- **Multi-stage build**: Optimized for production
-- **Security scanning**: ECR automatically scans for vulnerabilities
-- **Minimal base image**: Node.js Alpine for reduced attack surface
-- **Build optimization**: `.dockerignore` excludes unnecessary files
-
-## Security Considerations
-
-### Network Security
-
-- **Private Subnets**: Batch jobs run in private subnets with no direct internet access
-- **VPC Endpoints**: Secure communication to AWS services without internet routing
-- **Security Groups**: Minimal required access with explicit rules
-
-### Access Control
-
-- **IAM Roles**: Least privilege principle with service-specific permissions
-- **Resource Isolation**: Clear separation between Lambda, Batch, and cleanup roles
-- **API Security**: API Gateway with proper CORS configuration
-
-### Container Security
-
-- **Non-root Execution**: Containers run as dedicated user account
-- **Image Scanning**: Automatic vulnerability scanning in ECR
-- **Minimal Dependencies**: Only production dependencies in final image
-- **Secret Management**: Environment-based configuration (extensible to Parameter Store)
-
-## Troubleshooting Guide
-
-### Common Issues
-
-**Batch Jobs Not Starting:**
+### Getting Help
 ```bash
-# Check job queue status
-aws batch describe-job-queues --job-queues hello-world-job-queue
-
-# Check compute environment
-aws batch describe-compute-environments --compute-environments hello-world-compute-env
-
-# Verify ECR image exists
-aws ecr describe-images --repository-name batch-hello-world-hello-world
-```
-
-**Lambda Function Errors:**
-```bash
-# View Lambda logs
-aws logs tail /aws/lambda/batch-hello-world-batch-trigger --follow
-
-# Test Lambda directly
-aws lambda invoke --function-name batch-hello-world-batch-trigger response.json
-cat response.json
-```
-
-**API Gateway Issues:**
-```bash
-# Test API Gateway
-curl -v $(terraform output -raw api_gateway_invoke_url)
-
-# Check API Gateway logs
-aws logs tail /aws/apigateway/hello-world-api --follow
-```
-
-### Useful Commands
-
-```bash
-# Get all Terraform outputs
+# Get all available outputs
 terraform output
 
-# Check specific job status
-aws batch describe-jobs --jobs <JOB_ID>
+# Get troubleshooting information
+terraform output troubleshooting
 
-# List recent jobs
-aws batch list-jobs --job-queue hello-world-job-queue
+# Check system architecture
+terraform output architecture
 
-# View cost optimization summary
-terraform output cost_optimization_summary
-
-# Check VPC endpoints
-aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$(terraform output -raw vpc_id)"
+# View API examples
+terraform output api_examples
 ```
 
-## File Structure
+---
 
-```
-ocr-processor-terraform/
-├── Infrastructure Files
-│   ├── versions.tf              # Provider versions and requirements
-│   ├── variables.tf             # Input variables and validation
-│   ├── vpc.tf                   # VPC with cost-optimized endpoints
-│   ├── iam.tf                   # IAM roles and policies
-│   ├── ecr.tf                   # ECR repository configuration
-│   ├── batch.tf                 # AWS Batch resources
-│   ├── lambda.tf                # Lambda function with embedded code
-│   ├── api_gateway.tf           # API Gateway configuration
-│   ├── cloudwatch.tf            # Monitoring and logging
-│   ├── cleanup.tf               # Auto-cleanup system
-│   └── outputs.tf               # Output values and commands
-├── Application Files
-│   ├── Dockerfile               # Multi-stage container build
-│   ├── .dockerignore            # Build optimization
-│   ├── package.json             # Node.js dependencies
-│   └── index.js                 # OCR processing application code
-├── Generated Files (auto-created)
-│   ├── lambda_function.py       # Generated Lambda code
-│   ├── lambda_function.zip      # Lambda deployment package
-│   ├── cleanup_lambda_function.py
-│   └── cleanup_lambda_function.zip
-└── Documentation
-    └── README.md                # This file
-```
+**Built with ❤️ using AWS, Terraform, and Python**
 
-## Best Practices Demonstrated
-
-### Infrastructure as Code
-- **Modular Design**: Logical separation of resources across files
-- **Variable Validation**: Input validation prevents configuration errors
-- **Output Management**: Useful outputs for operations and debugging
-
-### Cost Management
-- **VPC Endpoints**: 85% reduction in networking costs
-- **Fargate**: Pay-per-use compute model
-- **Auto-cleanup**: Prevents resource accumulation
-- **Lifecycle Policies**: Automatic cleanup of old images and logs
-
-### Operations
-- **Monitoring**: Comprehensive observability stack
-- **Automation**: Minimal manual intervention required
-- **Documentation**: Clear operational procedures
-- **Troubleshooting**: Built-in debugging capabilities
-
-### Security
-- **Defense in Depth**: Multiple layers of security controls
-- **Least Privilege**: Minimal required permissions
-- **Network Isolation**: Private subnets with controlled access
-- **Container Hardening**: Security-focused container practices
-
-## Extending the Project
-
-### Adding New Batch Jobs
-
-1. Create new job definition in `batch.tf`
-2. Update Lambda function to handle different job types
-3. Add appropriate IAM permissions
-4. Create new Docker images for different workloads
-
-### Integrating with Other AWS Services
-
-- **SQS**: Add queue-based job triggering
-- **EventBridge**: Integrate with custom events
-- **Step Functions**: Orchestrate complex workflows
-- **Parameter Store**: Centralized configuration management
-
-### Production Enhancements
-
-- **Multi-environment**: Separate dev/staging/production
-- **CI/CD Integration**: Automated testing and deployment
-- **Secrets Management**: Integration with AWS Secrets Manager
-- **Advanced Monitoring**: Custom metrics and alerting
-
-## Cost Estimation
-
-### Monthly Costs (ap-southeast-2)
-
-**Fixed Costs:**
-- VPC Endpoints: $43.20
-- CloudWatch Log Groups: ~$2-5 (depending on volume)
-
-**Variable Costs:**
-- AWS Batch (Fargate): Pay per job execution
-- Lambda: Pay per invocation (very minimal)
-- API Gateway: Pay per request
-
-**Example Usage:**
-- 1000 batch jobs/month: ~$50-70 total
-- 10,000 batch jobs/month: ~$100-150 total
-
-**Cost Optimization:**
-- Keep SSM endpoints disabled: Save $21.60/month
-- Use ECR lifecycle policies: Automatic image cleanup
-- Monitor CloudWatch log retention: Prevent excessive log costs
-
-
-## CloudWatch Monitoring
- for the AWS Batch itself - /aws/batch/ocr-processor-job-def
-
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please read the contributing guidelines and submit pull requests for any improvements.
-
-## Support
-
-For issues and questions:
-1. Check the troubleshooting guide above
-2. Review CloudWatch logs for detailed error information
-3. Use `terraform output` commands for operational guidance
-4. Submit issues for bugs or feature requests
+*Demonstrating modern serverless architecture, advanced search capabilities, and production-ready document processing.*

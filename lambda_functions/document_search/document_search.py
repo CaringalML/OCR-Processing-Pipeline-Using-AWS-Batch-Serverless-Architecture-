@@ -252,8 +252,6 @@ def lambda_handler(event, context):
                         ocr_item = ocr_response['Item']
                         result_item['ocrResults'] = {
                             'refinedText': ocr_item.get('refined_text', ocr_item.get('ocr_text', '')),
-                            'confidence': float(ocr_item.get('confidence', 0)),
-                            'processingTime': ocr_item.get('processing_time', 0),
                             'pageCount': ocr_item.get('page_count', 0)
                         }
                         
