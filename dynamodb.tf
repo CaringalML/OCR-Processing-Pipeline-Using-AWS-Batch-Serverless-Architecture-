@@ -78,3 +78,48 @@ resource "aws_dynamodb_table" "processing_results" {
     Name = "${var.project_name}-${var.environment}-processing-results"
   })
 }
+
+# DynamoDB Table for Recycle Bin
+resource "aws_dynamodb_table" "recycle_bin" {
+  name         = "${var.project_name}-${var.environment}-recycle-bin"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = "file_id"
+  range_key    = "deleted_timestamp"
+
+  attribute {
+    name = "file_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "deleted_timestamp"
+    type = "S"
+  }
+
+  attribute {
+    name = "deletion_date"
+    type = "S"
+  }
+
+  # Global Secondary Index for querying by deletion date (for cleanup)
+  global_secondary_index {
+    name            = "DeletionDateIndex"
+    hash_key        = "deletion_date"
+    range_key       = "deleted_timestamp"
+    projection_type = "ALL"
+  }
+
+  # TTL for automatic deletion after 30 days
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-recycle-bin"
+  })
+}

@@ -21,8 +21,46 @@ def decimal_to_json(obj):
 
 def lambda_handler(event, context):
     """
-    Lambda function to update OCR results (refinedText and formattedText)
+    Lambda function to update OCR results (refinedText, formattedText, and metadata)
     Triggered by API Gateway PATCH requests to /processed/{fileId} endpoint
+    
+    IMPORTANT: This endpoint uses HTTP PATCH method instead of PUT for the following reasons:
+    
+    1. SEMANTIC CORRECTNESS:
+       - PATCH is designed for partial updates/modifications of existing resources
+       - PUT is designed for complete replacement of resources
+       - We're only updating specific fields (refinedText/formattedText/metadata) not replacing entire record
+    
+    2. PARTIAL UPDATE CAPABILITY:
+       - Users can update refinedText, formattedText, metadata, or any combination
+       - PATCH allows optional fields in request body
+       - PUT would require all fields to be sent (complete resource replacement)
+    
+    3. IDEMPOTENCY CONSIDERATIONS:
+       - PATCH can be non-idempotent (each call may produce different results due to edit history)
+       - PUT is idempotent (same request produces same result)
+       - Our edit tracking makes each PATCH unique (timestamps, history)
+    
+    4. HTTP STANDARD COMPLIANCE:
+       - RFC 5789 defines PATCH for partial modifications
+       - RFC 7231 defines PUT for complete replacement
+       - Using PATCH follows REST API best practices
+    
+    5. CLIENT EXPECTATIONS:
+       - Frontend developers expect PATCH for partial updates
+       - PATCH clearly indicates "modify existing" vs PUT's "replace entire"
+       - Better API documentation and understanding
+    
+    6. FIELD PRESERVATION:
+       - PATCH preserves fields not mentioned in request
+       - PUT would require all existing fields to be resent to preserve them
+       - Prevents accidental data loss from incomplete requests
+    
+    Examples:
+    - PATCH: { "refinedText": "new text" } - only updates refinedText
+    - PATCH: { "metadata": { "title": "New Title", "author": "New Author" } } - only updates specific metadata
+    - PATCH: { "refinedText": "new", "formattedText": "new", "metadata": {...} } - updates multiple fields
+    - PUT: Would need entire resource: { "refinedText": "new", "formattedText": "existing", "metadata": {...}, "all_other_fields": "..." }
     """
     
     # Initialize AWS clients
@@ -67,10 +105,14 @@ def lambda_handler(event, context):
         body = json.loads(event.get('body', '{}'))
         
         # Validate that at least one field is being updated
+        # This validation is PATCH-specific - with PUT we'd require ALL fields
         refined_text = body.get('refinedText')
         formatted_text = body.get('formattedText')
+        metadata = body.get('metadata', {})
         
-        if refined_text is None and formatted_text is None:
+        # PATCH allows partial updates - at least one field must be provided
+        # If this were PUT, we'd need to validate ALL resource fields are present
+        if refined_text is None and formatted_text is None and not metadata:
             return {
                 'statusCode': 400,
                 'headers': {
@@ -79,16 +121,47 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Bad Request',
-                    'message': 'At least one of refinedText or formattedText must be provided'
+                    'message': 'At least one of refinedText, formattedText, or metadata must be provided'
+                })
+            }
+        
+        # Initialize metadata table (use throughout function)
+        try:
+            metadata_table = dynamodb.Table(metadata_table_name)
+            print(f"Initialized metadata table: {metadata_table_name}")
+        except Exception as e:
+            print(f"ERROR initializing metadata table: {str(e)}")
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'error': 'Configuration Error',
+                    'message': f'Failed to access metadata table: {str(e)}'
                 })
             }
         
         # Get metadata to verify file exists
-        metadata_table = dynamodb.Table(metadata_table_name)
-        metadata_response = metadata_table.query(
-            KeyConditionExpression=Key('file_id').eq(file_id),
-            Limit=1
-        )
+        try:
+            metadata_response = metadata_table.query(
+                KeyConditionExpression=Key('file_id').eq(file_id),
+                Limit=1
+            )
+        except Exception as e:
+            print(f"ERROR querying metadata table: {str(e)}")
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'error': 'Database Error',
+                    'message': f'Failed to query metadata: {str(e)}'
+                })
+            }
         
         if not metadata_response['Items']:
             return {
@@ -140,12 +213,15 @@ def lambda_handler(event, context):
         
         current_results = results_response['Item']
         
-        # Prepare update expression
+        # Prepare update expression for PATCH operation
+        # PATCH semantics: Only update fields that are explicitly provided
+        # PUT semantics would require: Replace entire resource with provided data
         update_expression = []
         expression_attribute_values = {}
         expression_attribute_names = {}
         
-        # Track edit history
+        # Track edit history (this is why PATCH is perfect - each edit is tracked)
+        # With PUT, this edit tracking would be semantically confusing since PUT implies "replace all"
         edit_history = current_results.get('edit_history', [])
         edit_entry = {
             'edited_at': datetime.now(timezone.utc).isoformat(),
@@ -180,6 +256,34 @@ def lambda_handler(event, context):
             edit_entry['edited_fields'].append('formatted_text')
             edit_entry['previous_formatted_text'] = current_results.get('formatted_text', '')
         
+        # Prepare metadata updates if provided
+        metadata_updates = {}
+        if metadata:
+            print(f"Processing metadata updates: {metadata}")
+            print(f"Metadata table name: {metadata_table_name}")
+            
+            # Validate metadata fields
+            allowed_metadata_fields = ['publication', 'year', 'title', 'author', 'description', 'tags']
+            
+            for field, value in metadata.items():
+                if field in allowed_metadata_fields:
+                    metadata_updates[field] = value
+                    edit_entry['edited_fields'].append(f'metadata.{field}')
+                    edit_entry[f'previous_metadata_{field}'] = file_metadata.get(field, '')
+                else:
+                    print(f"Ignoring invalid metadata field: {field}")
+            
+            print(f"Valid metadata updates: {metadata_updates}")
+            
+            # If metadata updates exist, we need to update the metadata table
+            if metadata_updates:
+                # Store original metadata if this is the first metadata edit
+                for field in metadata_updates.keys():
+                    original_field = f'original_metadata_{field}'
+                    if original_field not in current_results:
+                        update_expression.append(f'{original_field} = :{original_field.replace(".", "_")}')
+                        expression_attribute_values[f':{original_field.replace(".", "_")}'] = file_metadata.get(field, '')
+        
         # Add edit history entry
         edit_history.append(edit_entry)
         update_expression.append('edit_history = :eh')
@@ -193,13 +297,75 @@ def lambda_handler(event, context):
         update_expression.append('user_edited = :ue')
         expression_attribute_values[':ue'] = True
         
-        # Perform the update
-        results_table.update_item(
-            Key={'file_id': file_id},
-            UpdateExpression='SET ' + ', '.join(update_expression),
-            ExpressionAttributeNames=expression_attribute_names if expression_attribute_names else None,
-            ExpressionAttributeValues=expression_attribute_values
-        )
+        # Perform the update on results table
+        update_params = {
+            'Key': {'file_id': file_id},
+            'UpdateExpression': 'SET ' + ', '.join(update_expression),
+            'ExpressionAttributeValues': expression_attribute_values
+        }
+        
+        # Only add ExpressionAttributeNames if it's not empty
+        if expression_attribute_names:
+            update_params['ExpressionAttributeNames'] = expression_attribute_names
+        
+        results_table.update_item(**update_params)
+        
+        # Update metadata table if metadata changes were provided
+        if metadata_updates:
+            try:
+                print(f"Attempting to update metadata table: {metadata_table_name}")
+                print(f"File metadata keys: {list(file_metadata.keys())}")
+                print(f"Upload timestamp: {file_metadata.get('upload_timestamp')}")
+                
+                metadata_update_expression = []
+                metadata_expression_values = {}
+                
+                for field, value in metadata_updates.items():
+                    metadata_update_expression.append(f'{field} = :{field}')
+                    metadata_expression_values[f':{field}'] = value
+                
+                # Add last_updated timestamp
+                metadata_update_expression.append('last_updated = :lu')
+                metadata_expression_values[':lu'] = datetime.now(timezone.utc).isoformat()
+                
+                upload_timestamp = file_metadata.get('upload_timestamp')
+                
+                if not upload_timestamp:
+                    print(f"ERROR: Missing upload_timestamp in file_metadata: {file_metadata}")
+                    raise ValueError(f'Missing upload_timestamp for file {file_id}')
+                
+                print(f"About to update metadata table with keys: file_id={file_id}, upload_timestamp={upload_timestamp}")
+                
+                # metadata_table is already initialized at the top of the function
+                
+                # Update metadata table
+                update_result = metadata_table.update_item(
+                    Key={
+                        'file_id': file_id,
+                        'upload_timestamp': upload_timestamp
+                    },
+                    UpdateExpression='SET ' + ', '.join(metadata_update_expression),
+                    ExpressionAttributeValues=metadata_expression_values,
+                    ReturnValues='UPDATED_NEW'
+                )
+                
+                print(f"Successfully updated metadata for file {file_id}: {update_result}")
+                
+            except Exception as metadata_error:
+                print(f"ERROR updating metadata: {str(metadata_error)}")
+                print(f"Error type: {type(metadata_error)}")
+                # Return the error instead of silently failing
+                return {
+                    'statusCode': 500,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({
+                        'error': 'Metadata Update Error',
+                        'message': f'Failed to update metadata: {str(metadata_error)}'
+                    })
+                }
         
         # Get updated results
         updated_response = results_table.get_item(
@@ -207,6 +373,35 @@ def lambda_handler(event, context):
         )
         
         updated_item = decimal_to_json(updated_response['Item'])
+        
+        # Get updated metadata if metadata was changed
+        updated_metadata = {}
+        if metadata_updates:
+            try:
+                # Use the already initialized metadata_table
+                updated_metadata_response = metadata_table.query(
+                    KeyConditionExpression=Key('file_id').eq(file_id),
+                    Limit=1
+                )
+                if updated_metadata_response['Items']:
+                    updated_file_metadata = decimal_to_json(updated_metadata_response['Items'][0])
+                    updated_metadata = {
+                        'publication': updated_file_metadata.get('publication', ''),
+                        'year': updated_file_metadata.get('year', ''),
+                        'title': updated_file_metadata.get('title', ''),
+                        'author': updated_file_metadata.get('author', ''),
+                        'description': updated_file_metadata.get('description', ''),
+                        'tags': updated_file_metadata.get('tags', [])
+                    }
+                    print(f"Retrieved updated metadata: {updated_metadata}")
+                else:
+                    print(f"Warning: Could not retrieve updated metadata for file {file_id}")
+                    # Return the metadata that was sent in the request as fallback
+                    updated_metadata = metadata_updates
+            except Exception as query_error:
+                print(f"ERROR querying updated metadata: {str(query_error)}")
+                # Return the metadata that was sent in the request as fallback
+                updated_metadata = metadata_updates
         
         # Build response
         response_data = {
@@ -218,6 +413,10 @@ def lambda_handler(event, context):
             'editHistory': updated_item.get('edit_history', [])[-5:],  # Return last 5 edits
             'message': 'OCR results updated successfully'
         }
+        
+        # Include updated metadata in response if it was changed
+        if metadata_updates:
+            response_data['metadata'] = updated_metadata
         
         return {
             'statusCode': 200,

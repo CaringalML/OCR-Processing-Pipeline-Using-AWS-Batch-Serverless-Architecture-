@@ -48,6 +48,24 @@ data "archive_file" "editor_zip" {
   source_file = "${path.module}/lambda_functions/ocr_editor/ocr_editor.py"
 }
 
+data "archive_file" "deleter_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/file_deleter/file_deleter.zip"
+  source_file = "${path.module}/lambda_functions/file_deleter/file_deleter.py"
+}
+
+data "archive_file" "restorer_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/file_restorer/file_restorer.zip"
+  source_file = "${path.module}/lambda_functions/file_restorer/file_restorer.py"
+}
+
+data "archive_file" "recycle_bin_reader_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.zip"
+  source_file = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.py"
+}
+
 # Uploader Lambda Function (S3 file uploader)
 resource "aws_lambda_function" "uploader" {
   filename         = data.archive_file.uploader_zip.output_path
@@ -328,5 +346,127 @@ resource "aws_cloudwatch_log_group" "dead_job_detector_logs" {
   tags              = merge(var.common_tags, {
     Purpose = "Dead job detection and cleanup logging"
     Function = "dead_job_detector"
+  })
+}
+
+# File Deleter Lambda Function (moves files to recycle bin)
+resource "aws_lambda_function" "deleter" {
+  filename         = data.archive_file.deleter_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-file-deleter"
+  role             = aws_iam_role.deleter_role.arn
+  handler          = "file_deleter.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 256
+  source_code_hash = data.archive_file.deleter_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
+      S3_BUCKET         = aws_s3_bucket.upload_bucket.id
+      LOG_LEVEL         = "INFO"
+      ENVIRONMENT       = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.deleter_policy,
+    aws_cloudwatch_log_group.file_deleter_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-file-deleter"
+  })
+}
+
+# File Restorer Lambda Function (restores files from recycle bin)
+resource "aws_lambda_function" "restorer" {
+  filename         = data.archive_file.restorer_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-file-restorer"
+  role             = aws_iam_role.restorer_role.arn
+  handler          = "file_restorer.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 256
+  source_code_hash = data.archive_file.restorer_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
+      LOG_LEVEL         = "INFO"
+      ENVIRONMENT       = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.restorer_policy,
+    aws_cloudwatch_log_group.file_restorer_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-file-restorer"
+  })
+}
+
+# Recycle Bin Reader Lambda Function (lists files in recycle bin)
+resource "aws_lambda_function" "recycle_bin_reader" {
+  filename         = data.archive_file.recycle_bin_reader_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-recycle-bin-reader"
+  role             = aws_iam_role.recycle_bin_reader_role.arn
+  handler          = "recycle_bin_reader.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 256
+  source_code_hash = data.archive_file.recycle_bin_reader_zip.output_base64sha256
+
+  environment {
+    variables = {
+      RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
+      LOG_LEVEL         = "INFO"
+      ENVIRONMENT       = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.recycle_bin_reader_policy,
+    aws_cloudwatch_log_group.recycle_bin_reader_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-recycle-bin-reader"
+  })
+}
+
+# CloudWatch Log Groups - File Deleter
+resource "aws_cloudwatch_log_group" "file_deleter_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-file-deleter"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "File deletion and recycle bin logging"
+    Function = "file_deleter"
+  })
+}
+
+# CloudWatch Log Groups - File Restorer
+resource "aws_cloudwatch_log_group" "file_restorer_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-file-restorer"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "File restoration from recycle bin logging"
+    Function = "file_restorer"
+  })
+}
+
+# CloudWatch Log Groups - Recycle Bin Reader
+resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-recycle-bin-reader"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Recycle bin listing and querying logging"
+    Function = "recycle_bin_reader"
   })
 }

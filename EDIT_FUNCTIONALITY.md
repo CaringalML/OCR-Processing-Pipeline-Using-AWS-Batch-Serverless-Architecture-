@@ -12,7 +12,59 @@ The edit functionality enables users to update the `refinedText` and `formattedT
 
 **Endpoint:** `PATCH /processed/{fileId}`
 
-**Description:** Updates the refinedText and/or formattedText for a specific file.
+**Description:** Updates the refinedText, formattedText, and/or metadata for a specific file.
+
+#### Why PATCH Instead of PUT?
+
+This endpoint uses **HTTP PATCH** method instead of **PUT** for important semantic and practical reasons:
+
+**1. Semantic Correctness:**
+- **PATCH** is designed for partial updates/modifications of existing resources
+- **PUT** is designed for complete replacement of resources
+- We're only updating specific OCR text fields, not replacing the entire processing result
+
+**2. Partial Update Support:**
+- Clients can send only the fields they want to update (`refinedText`, `formattedText`, `metadata`, or any combination)
+- PATCH allows optional fields in the request body
+- PUT semantically requires the entire resource representation
+
+**3. Field Preservation:**
+- PATCH preserves all other fields (metadata, timestamps, analysis results, etc.)
+- PUT would require clients to send all existing data to avoid losing it
+- Reduces risk of accidental data loss from incomplete requests
+
+**4. HTTP Standards Compliance:**
+- **RFC 5789** specifically defines PATCH for partial resource modifications
+- **RFC 7231** defines PUT for complete resource replacement
+- Following REST API best practices and HTTP semantics
+
+**5. Client Developer Experience:**
+- PATCH clearly communicates "modify specific fields"
+- PUT implies "replace entire resource"
+- Better API documentation and developer understanding
+
+**6. Edit History Tracking:**
+- Each PATCH creates a new edit history entry with timestamp
+- Multiple PATCH calls are non-idempotent (different timestamps)
+- PUT semantics would conflict with our edit tracking feature
+
+**Example Comparison:**
+```javascript
+// PATCH - Only send what you want to change
+PATCH /processed/123 
+{ "refinedText": "corrected text" }
+
+// PUT - Would need entire resource
+PUT /processed/123 
+{ 
+  "refinedText": "corrected", 
+  "formattedText": "existing text",
+  "extracted_text": "original text",
+  "summary_analysis": { /* all existing metadata */ },
+  "comprehend_analysis": { /* all existing analysis */ },
+  // ... all other fields to preserve them
+}
+```
 
 **Request Headers:**
 ```
@@ -26,9 +78,25 @@ Content-Type: application/json
 ```json
 {
   "refinedText": "Updated refined text content (optional)",
-  "formattedText": "Updated formatted text content (optional)"
+  "formattedText": "Updated formatted text content (optional)",
+  "metadata": {
+    "title": "Updated document title (optional)",
+    "author": "Updated author name (optional)",
+    "publication": "Updated publication name (optional)",
+    "year": "Updated year (optional)",
+    "description": "Updated description (optional)",
+    "tags": ["tag1", "tag2"] // Updated tags array (optional)
+  }
 }
 ```
+
+**Available Metadata Fields:**
+- `title`: Document title
+- `author`: Document author
+- `publication`: Publication name
+- `year`: Publication year
+- `description`: Document description
+- `tags`: Array of tags for categorization
 
 **Response (200 OK):**
 ```json
@@ -36,19 +104,31 @@ Content-Type: application/json
   "fileId": "123e4567-e89b-12d3-a456-426614174000",
   "refinedText": "Updated refined text content",
   "formattedText": "Updated formatted text content",
+  "metadata": {
+    "title": "Updated document title",
+    "author": "Updated author name",
+    "publication": "Updated publication",
+    "year": "2025",
+    "description": "Updated description",
+    "tags": ["updated", "tags"]
+  },
   "userEdited": true,
   "lastEdited": "2025-01-27T10:30:00Z",
   "editHistory": [
     {
       "edited_at": "2025-01-27T10:30:00Z",
-      "edited_fields": ["refined_text", "formatted_text"],
+      "edited_fields": ["refined_text", "formatted_text", "metadata.title", "metadata.author"],
       "previous_refined_text": "Original refined text",
-      "previous_formatted_text": "Original formatted text"
+      "previous_formatted_text": "Original formatted text",
+      "previous_metadata_title": "Original title",
+      "previous_metadata_author": "Original author"
     }
   ],
   "message": "OCR results updated successfully"
 }
 ```
+
+**Note:** The `metadata` field in the response is only included if metadata was updated in the request.
 
 **Error Responses:**
 - `400 Bad Request`: Missing required fields or file not yet processed
@@ -71,8 +151,14 @@ Content-Type: application/json
 - This helps distinguish between system-processed and user-modified content
 
 ### 4. Partial Updates
-- Users can update just `refinedText`, just `formattedText`, or both
+- Users can update `refinedText`, `formattedText`, `metadata`, or any combination
 - At least one field must be provided in the request
+
+### 5. Metadata Editing
+- Edit document metadata including title, author, publication, year, description, and tags
+- Metadata changes are stored in the metadata table and tracked in edit history
+- Original metadata values are preserved on first edit
+- Metadata updates are independent of text updates
 
 ## Implementation Details
 
@@ -113,20 +199,43 @@ curl -X PATCH https://your-api-gateway-url/dev/processed/123e4567-e89b-12d3-a456
   -d '{
     "refinedText": "This is the corrected refined text"
   }'
+
+# Edit only metadata
+curl -X PATCH https://your-api-gateway-url/dev/processed/123e4567-e89b-12d3-a456-426614174000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "title": "Updated Document Title",
+      "author": "Updated Author Name",
+      "year": "2025"
+    }
+  }'
+
+# Edit everything at once
+curl -X PATCH https://your-api-gateway-url/dev/processed/123e4567-e89b-12d3-a456-426614174000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refinedText": "Updated refined text",
+    "formattedText": "Updated formatted text",
+    "metadata": {
+      "title": "Complete Update",
+      "author": "New Author",
+      "publication": "Updated Publication",
+      "description": "Fully updated document",
+      "tags": ["updated", "complete"]
+    }
+  }'
 ```
 
 ### Using JavaScript
 ```javascript
-async function editOCRResults(fileId, refinedText, formattedText) {
+async function editOCRResults(fileId, updates) {
   const response = await fetch(`${API_BASE_URL}/processed/${fileId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      refinedText: refinedText,
-      formattedText: formattedText
-    })
+    body: JSON.stringify(updates)
   });
   
   if (!response.ok) {
@@ -135,6 +244,34 @@ async function editOCRResults(fileId, refinedText, formattedText) {
   
   return await response.json();
 }
+
+// Usage examples:
+
+// Edit only text
+await editOCRResults('file-id', {
+  refinedText: 'Updated refined text',
+  formattedText: 'Updated formatted text'
+});
+
+// Edit only metadata
+await editOCRResults('file-id', {
+  metadata: {
+    title: 'New Title',
+    author: 'New Author',
+    tags: ['tag1', 'tag2']
+  }
+});
+
+// Edit everything
+await editOCRResults('file-id', {
+  refinedText: 'Updated text',
+  formattedText: 'Updated formatted text',
+  metadata: {
+    title: 'Complete Update',
+    author: 'Updated Author',
+    description: 'Fully updated document'
+  }
+});
 ```
 
 ## Frontend Integration

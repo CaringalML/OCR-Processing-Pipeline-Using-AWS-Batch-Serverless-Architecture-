@@ -7,10 +7,13 @@ output "api_gateway_base_url" {
 output "api_endpoints" {
   description = "All API endpoint URLs"
   value = {
-    upload    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
-    processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
-    search    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
-    edit      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed/{fileId}"
+    upload         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
+    processed      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
+    search         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
+    edit           = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed/{fileId}"
+    delete         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed/{fileId}"
+    recycle_bin    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
+    restore        = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin/{fileId}"
   }
 }
 
@@ -89,6 +92,27 @@ output "lambda_functions" {
       memory_size  = aws_lambda_function.dead_job_detector.memory_size
       timeout      = aws_lambda_function.dead_job_detector.timeout
     }
+    deleter = {
+      name         = aws_lambda_function.deleter.function_name
+      arn          = aws_lambda_function.deleter.arn
+      invoke_arn   = aws_lambda_function.deleter.invoke_arn
+      memory_size  = aws_lambda_function.deleter.memory_size
+      timeout      = aws_lambda_function.deleter.timeout
+    }
+    restorer = {
+      name         = aws_lambda_function.restorer.function_name
+      arn          = aws_lambda_function.restorer.arn
+      invoke_arn   = aws_lambda_function.restorer.invoke_arn
+      memory_size  = aws_lambda_function.restorer.memory_size
+      timeout      = aws_lambda_function.restorer.timeout
+    }
+    recycle_bin_reader = {
+      name         = aws_lambda_function.recycle_bin_reader.function_name
+      arn          = aws_lambda_function.recycle_bin_reader.arn
+      invoke_arn   = aws_lambda_function.recycle_bin_reader.invoke_arn
+      memory_size  = aws_lambda_function.recycle_bin_reader.memory_size
+      timeout      = aws_lambda_function.recycle_bin_reader.timeout
+    }
   }
 }
 
@@ -119,6 +143,11 @@ output "dynamodb" {
       name       = aws_dynamodb_table.processing_results.name
       arn        = aws_dynamodb_table.processing_results.arn
       stream_arn = aws_dynamodb_table.processing_results.stream_arn
+    }
+    recycle_bin_table = {
+      name       = aws_dynamodb_table.recycle_bin.name
+      arn        = aws_dynamodb_table.recycle_bin.arn
+      stream_arn = aws_dynamodb_table.recycle_bin.stream_arn
     }
   }
 }
@@ -163,6 +192,9 @@ output "cloudwatch_logs" {
     sqs_to_batch         = aws_cloudwatch_log_group.sqs_to_batch_submitter_logs.name
     batch_reconciliation = aws_cloudwatch_log_group.batch_status_reconciliation_logs.name
     dead_job_detector    = aws_cloudwatch_log_group.dead_job_detector_logs.name
+    file_deleter         = aws_cloudwatch_log_group.file_deleter_logs.name
+    file_restorer        = aws_cloudwatch_log_group.file_restorer_logs.name
+    recycle_bin_reader   = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
   }
 }
 
@@ -226,6 +258,14 @@ output "api_examples" {
     search_by_year = "curl '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?year=1925'"
     
     get_by_id = "curl '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?fileId=YOUR_FILE_ID'"
+    
+    delete_file = "curl -X DELETE '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed/YOUR_FILE_ID'"
+    
+    permanent_delete = "curl -X DELETE '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed/YOUR_FILE_ID?permanent=true'"
+    
+    list_recycle_bin = "curl '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin'"
+    
+    restore_file = "curl -X POST '${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin/YOUR_FILE_ID'"
   }
 }
 
@@ -263,6 +303,8 @@ output "architecture" {
     processing_flow  = "S3 Event → EventBridge → SQS → Batch → DynamoDB"
     search_flow      = "API Gateway → Search Lambda → DynamoDB (Fuzzy Search)"
     retrieval_flow   = "API Gateway → Reader Lambda → CloudFront CDN"
+    delete_flow      = "API Gateway → Deleter Lambda → Recycle Bin → TTL (30 days)"
+    restore_flow     = "API Gateway → Restorer Lambda → DynamoDB (Restore)"
     
     key_features = [
       "Serverless architecture",
@@ -270,7 +312,9 @@ output "architecture" {
       "Fuzzy search with RapidFuzz",
       "Semantic text processing",
       "Cost-optimized infrastructure",
-      "Comprehensive monitoring"
+      "Comprehensive monitoring",
+      "Recycle bin with 30-day retention",
+      "Soft delete and restore functionality"
     ]
   }
 }

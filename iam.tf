@@ -630,3 +630,193 @@ resource "aws_iam_role_policy_attachment" "dead_job_detector_policy" {
   role       = aws_iam_role.dead_job_detector_role.name
   policy_arn = aws_iam_policy.dead_job_detector_policy.arn
 }
+
+# File Deleter Lambda Role
+resource "aws_iam_role" "deleter_role" {
+  name = "${var.project_name}-${var.environment}-file-deleter-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# File Deleter Lambda Policy
+resource "aws_iam_policy" "deleter_policy" {
+  name = "${var.project_name}-${var.environment}-file-deleter-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.file_metadata.arn,
+          aws_dynamodb_table.processing_results.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = aws_dynamodb_table.recycle_bin.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:DeleteObject"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "deleter_policy" {
+  role       = aws_iam_role.deleter_role.name
+  policy_arn = aws_iam_policy.deleter_policy.arn
+}
+
+# File Restorer Lambda Role
+resource "aws_iam_role" "restorer_role" {
+  name = "${var.project_name}-${var.environment}-file-restorer-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# File Restorer Lambda Policy
+resource "aws_iam_policy" "restorer_policy" {
+  name = "${var.project_name}-${var.environment}-file-restorer-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:Query"
+        ]
+        Resource = [
+          aws_dynamodb_table.file_metadata.arn,
+          aws_dynamodb_table.processing_results.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = aws_dynamodb_table.recycle_bin.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "restorer_policy" {
+  role       = aws_iam_role.restorer_role.name
+  policy_arn = aws_iam_policy.restorer_policy.arn
+}
+
+# Recycle Bin Reader Lambda Role
+resource "aws_iam_role" "recycle_bin_reader_role" {
+  name = "${var.project_name}-${var.environment}-recycle-bin-reader-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Recycle Bin Reader Lambda Policy
+resource "aws_iam_policy" "recycle_bin_reader_policy" {
+  name = "${var.project_name}-${var.environment}-recycle-bin-reader-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = aws_dynamodb_table.recycle_bin.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "recycle_bin_reader_policy" {
+  role       = aws_iam_role.recycle_bin_reader_role.name
+  policy_arn = aws_iam_policy.recycle_bin_reader_policy.arn
+}

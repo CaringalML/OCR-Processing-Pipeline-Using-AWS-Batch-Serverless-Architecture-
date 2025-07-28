@@ -46,6 +46,20 @@ resource "aws_api_gateway_resource" "processed_file_id" {
   path_part   = "{fileId}"
 }
 
+# API Gateway Resource - Recycle Bin
+resource "aws_api_gateway_resource" "recycle_bin" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "recycle-bin"
+}
+
+# API Gateway Resource - Recycle Bin with fileId
+resource "aws_api_gateway_resource" "recycle_bin_file_id" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.recycle_bin.id
+  path_part   = "{fileId}"
+}
+
 # Upload endpoint - POST method
 resource "aws_api_gateway_method" "upload_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -134,7 +148,45 @@ resource "aws_api_gateway_method" "search_options" {
   authorization = "NONE"
 }
 
-# Edit endpoint - PATCH method
+# Edit endpoint - PATCH method (NOT PUT)
+# 
+# IMPORTANT: This endpoint uses HTTP PATCH method instead of PUT for the following reasons:
+#
+# 1. SEMANTIC CORRECTNESS:
+#    - PATCH is designed for partial updates/modifications of existing resources
+#    - PUT is designed for complete replacement of resources
+#    - We're only updating specific OCR text fields, not replacing the entire processing result
+#
+# 2. PARTIAL UPDATE SUPPORT:
+#    - Clients can send only the fields they want to update (refinedText, formattedText, or both)
+#    - PATCH allows optional fields in the request body
+#    - PUT semantically requires the entire resource representation
+#
+# 3. FIELD PRESERVATION:
+#    - PATCH preserves all other fields (metadata, timestamps, analysis results, etc.)
+#    - PUT would require clients to send all existing data to avoid losing it
+#    - Reduces risk of accidental data loss from incomplete requests
+#
+# 4. HTTP STANDARDS COMPLIANCE:
+#    - RFC 5789 specifically defines PATCH for partial resource modifications
+#    - RFC 7231 defines PUT for complete resource replacement
+#    - Following REST API best practices and HTTP semantics
+#
+# 5. CLIENT DEVELOPER EXPERIENCE:
+#    - PATCH clearly communicates "modify specific fields"
+#    - PUT implies "replace entire resource"
+#    - Better API documentation and developer understanding
+#
+# 6. EDIT HISTORY TRACKING:
+#    - Each PATCH creates a new edit history entry with timestamp
+#    - Multiple PATCH calls are non-idempotent (different timestamps)
+#    - PUT semantics would conflict with our edit tracking feature
+#
+# Example usage:
+# PATCH /processed/{fileId} { "refinedText": "corrected text" }
+# vs
+# PUT /processed/{fileId} { "refinedText": "corrected", "formattedText": "existing", ...all other fields... }
+#
 resource "aws_api_gateway_method" "processed_patch" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.processed_file_id.id
@@ -153,6 +205,70 @@ resource "aws_api_gateway_method" "processed_patch" {
 resource "aws_api_gateway_method" "processed_patch_options" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.processed_file_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Delete endpoint - DELETE method
+resource "aws_api_gateway_method" "processed_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.processed_file_id.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+  
+  api_key_required = false
+  
+  request_parameters = {
+    "method.request.path.fileId" = true
+    "method.request.querystring.permanent" = false
+  }
+}
+
+# Note: OPTIONS method for processed_file_id is already defined as processed_patch_options
+# It will handle CORS for both PATCH and DELETE methods
+
+# Recycle Bin List endpoint - GET method
+resource "aws_api_gateway_method" "recycle_bin_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.recycle_bin.id
+  http_method   = "GET"
+  authorization = "NONE"
+  
+  api_key_required = false
+  
+  request_parameters = {
+    "method.request.querystring.limit" = false
+    "method.request.querystring.lastKey" = false
+    "method.request.querystring.fileId" = false
+  }
+}
+
+# Recycle Bin List endpoint - OPTIONS method (CORS)
+resource "aws_api_gateway_method" "recycle_bin_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.recycle_bin.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Restore endpoint - POST method
+resource "aws_api_gateway_method" "recycle_bin_restore" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method   = "POST"
+  authorization = "NONE"
+  
+  api_key_required = false
+  
+  request_parameters = {
+    "method.request.path.fileId" = true
+  }
+}
+
+# Restore endpoint - OPTIONS method (CORS)
+resource "aws_api_gateway_method" "recycle_bin_restore_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.recycle_bin_file_id.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -257,6 +373,69 @@ resource "aws_api_gateway_integration" "processed_patch_options_integration" {
   }
 }
 
+# Delete Integration with Lambda Deleter
+resource "aws_api_gateway_integration" "processed_delete_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.processed_file_id.id
+  http_method = aws_api_gateway_method.processed_delete.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.deleter.invoke_arn
+}
+
+# Note: CORS Integration for processed_file_id OPTIONS is handled by processed_patch_options_integration
+
+# Recycle Bin List Integration with Lambda Reader
+resource "aws_api_gateway_integration" "recycle_bin_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.recycle_bin_reader.invoke_arn
+}
+
+# CORS Integration for Recycle Bin OPTIONS
+resource "aws_api_gateway_integration" "recycle_bin_options_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
+# Restore Integration with Lambda Restorer
+resource "aws_api_gateway_integration" "recycle_bin_restore_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.restorer.invoke_arn
+}
+
+# CORS Integration for Restore OPTIONS
+resource "aws_api_gateway_integration" "recycle_bin_restore_options_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
 # Method Responses
 resource "aws_api_gateway_method_response" "upload_200" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -347,6 +526,72 @@ resource "aws_api_gateway_method_response" "processed_patch_options_200" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.processed_file_id.id
   http_method = aws_api_gateway_method.processed_patch_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Method Response for Delete endpoint
+resource "aws_api_gateway_method_response" "processed_delete_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.processed_file_id.id
+  http_method = aws_api_gateway_method.processed_delete.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Note: Method Response for processed_file_id OPTIONS is handled by processed_patch_options_200
+
+# Method Response for Recycle Bin List endpoint
+resource "aws_api_gateway_method_response" "recycle_bin_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_get.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Method Response for Recycle Bin OPTIONS
+resource "aws_api_gateway_method_response" "recycle_bin_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Method Response for Restore endpoint
+resource "aws_api_gateway_method_response" "recycle_bin_restore_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Method Response for Restore OPTIONS
+resource "aws_api_gateway_method_response" "recycle_bin_restore_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore_options.http_method
   status_code = "200"
 
   response_parameters = {
@@ -464,11 +709,87 @@ resource "aws_api_gateway_integration_response" "processed_patch_options_respons
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-API-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'PATCH,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Methods" = "'PATCH,DELETE,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
   depends_on = [aws_api_gateway_integration.processed_patch_options_integration]
+}
+
+# Integration Response for Delete endpoint
+resource "aws_api_gateway_integration_response" "processed_delete_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.processed_file_id.id
+  http_method = aws_api_gateway_method.processed_delete.http_method
+  status_code = aws_api_gateway_method_response.processed_delete_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.processed_delete_integration]
+}
+
+# Note: Integration Response for processed_file_id OPTIONS is handled by processed_patch_options_response
+
+# Integration Response for Recycle Bin List endpoint
+resource "aws_api_gateway_integration_response" "recycle_bin_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_get.http_method
+  status_code = aws_api_gateway_method_response.recycle_bin_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.recycle_bin_integration]
+}
+
+# Integration Response for Recycle Bin OPTIONS
+resource "aws_api_gateway_integration_response" "recycle_bin_options_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin.id
+  http_method = aws_api_gateway_method.recycle_bin_options.http_method
+  status_code = aws_api_gateway_method_response.recycle_bin_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-API-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.recycle_bin_options_integration]
+}
+
+# Integration Response for Restore endpoint
+resource "aws_api_gateway_integration_response" "recycle_bin_restore_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore.http_method
+  status_code = aws_api_gateway_method_response.recycle_bin_restore_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.recycle_bin_restore_integration]
+}
+
+# Integration Response for Restore OPTIONS
+resource "aws_api_gateway_integration_response" "recycle_bin_restore_options_response" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.recycle_bin_file_id.id
+  http_method = aws_api_gateway_method.recycle_bin_restore_options.http_method
+  status_code = aws_api_gateway_method_response.recycle_bin_restore_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-API-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.recycle_bin_restore_options_integration]
 }
 
 # Lambda Permissions for API Gateway
@@ -504,6 +825,30 @@ resource "aws_lambda_permission" "api_gateway_editor" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+resource "aws_lambda_permission" "api_gateway_deleter" {
+  statement_id  = "AllowExecutionFromAPIGatewayDeleter"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.deleter.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_restorer" {
+  statement_id  = "AllowExecutionFromAPIGatewayRestorer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.restorer.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_recycle_bin_reader" {
+  statement_id  = "AllowExecutionFromAPIGatewayRecycleBinReader"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.recycle_bin_reader.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -515,14 +860,22 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.processed.id,
       aws_api_gateway_resource.search.id,
       aws_api_gateway_resource.processed_file_id.id,
+      aws_api_gateway_resource.recycle_bin.id,
+      aws_api_gateway_resource.recycle_bin_file_id.id,
       aws_api_gateway_method.upload_post.id,
       aws_api_gateway_method.processed_get.id,
       aws_api_gateway_method.search_get.id,
       aws_api_gateway_method.processed_patch.id,
+      aws_api_gateway_method.processed_delete.id,
+      aws_api_gateway_method.recycle_bin_get.id,
+      aws_api_gateway_method.recycle_bin_restore.id,
       aws_api_gateway_integration.upload_integration.id,
       aws_api_gateway_integration.processed_integration.id,
       aws_api_gateway_integration.search_integration.id,
       aws_api_gateway_integration.processed_patch_integration.id,
+      aws_api_gateway_integration.processed_delete_integration.id,
+      aws_api_gateway_integration.recycle_bin_integration.id,
+      aws_api_gateway_integration.recycle_bin_restore_integration.id,
     ]))
   }
 
@@ -535,14 +888,24 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.search_options,
     aws_api_gateway_method.processed_patch,
     aws_api_gateway_method.processed_patch_options,
+    aws_api_gateway_method.processed_delete,
+    aws_api_gateway_method.recycle_bin_get,
+    aws_api_gateway_method.recycle_bin_options,
+    aws_api_gateway_method.recycle_bin_restore,
+    aws_api_gateway_method.recycle_bin_restore_options,
     aws_api_gateway_integration.upload_integration,
     aws_api_gateway_integration.processed_integration,
     aws_api_gateway_integration.search_integration,
     aws_api_gateway_integration.processed_patch_integration,
+    aws_api_gateway_integration.processed_delete_integration,
+    aws_api_gateway_integration.recycle_bin_integration,
+    aws_api_gateway_integration.recycle_bin_restore_integration,
     aws_api_gateway_integration.upload_options_integration,
     aws_api_gateway_integration.processed_options_integration,
     aws_api_gateway_integration.search_options_integration,
-    aws_api_gateway_integration.processed_patch_options_integration
+    aws_api_gateway_integration.processed_patch_options_integration,
+    aws_api_gateway_integration.recycle_bin_options_integration,
+    aws_api_gateway_integration.recycle_bin_restore_options_integration
   ]
 
   lifecycle {
