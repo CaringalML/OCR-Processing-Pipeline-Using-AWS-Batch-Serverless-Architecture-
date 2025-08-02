@@ -1,4 +1,4 @@
-# Serverless OCR Document Processing & Search System
+# Serverless OCR Document Processing & Search System(LLM's version)
 
 A production-ready serverless OCR document processing pipeline with advanced fuzzy search capabilities, built with AWS services and Terraform. This system provides intelligent document analysis, semantic text processing, and enterprise-grade search functionality.
 
