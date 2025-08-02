@@ -2,9 +2,9 @@ name: Terraform Validate and Deploy to AWS ECR
 
 on:
   push:
-    branches: [ v3-python ]
+    branches: [ v4-python ]
   pull_request:
-    branches: [ v3-python ]
+    branches: [ v4-python ]
   workflow_dispatch:
 
 jobs:
