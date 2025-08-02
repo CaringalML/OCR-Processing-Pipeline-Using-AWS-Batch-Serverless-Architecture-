@@ -11,6 +11,14 @@ resource "aws_ecr_repository" "main" {
     encryption_type = "AES256"
   }
 
+  lifecycle {
+    ignore_changes = [
+      image_tag_mutability,
+      image_scanning_configuration,
+      encryption_configuration
+    ]
+  }
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-app-repo"
   })

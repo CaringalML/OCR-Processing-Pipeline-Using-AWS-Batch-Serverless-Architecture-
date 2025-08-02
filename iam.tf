@@ -279,6 +279,46 @@ resource "aws_iam_role" "editor_role" {
   tags = var.common_tags
 }
 
+# Short Batch Processor Lambda Role
+resource "aws_iam_role" "short_batch_processor_role" {
+  name = "${var.project_name}-${var.environment}-short-batch-processor-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Short Batch Submitter Lambda Role
+resource "aws_iam_role" "short_batch_submitter_role" {
+  name = "${var.project_name}-${var.environment}-short-batch-submitter-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
 # SQS Processor Lambda Role
 resource "aws_iam_role" "sqs_processor_role" {
   name = "${var.project_name}-${var.environment}-sqs-processor-role"
@@ -436,6 +476,120 @@ resource "aws_iam_policy" "editor_policy" {
   })
 }
 
+# Short Batch Submitter Lambda Policy
+resource "aws_iam_policy" "short_batch_submitter_policy" {
+  name = "${var.project_name}-${var.environment}-short-batch-submitter-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [
+          aws_sqs_queue.short_batch_queue.arn
+        ]
+      }
+    ]
+  })
+}
+
+# Short Batch Processor Lambda Policy
+resource "aws_iam_policy" "short_batch_processor_policy" {
+  name = "${var.project_name}-${var.environment}-short-batch-processor-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:PutItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "textract:DetectDocumentText",
+          "textract:AnalyzeDocument"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "comprehend:DetectDominantLanguage",
+          "comprehend:DetectEntities",
+          "comprehend:DetectKeyPhrases",
+          "comprehend:DetectSentiment",
+          "comprehend:DetectSyntax"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [
+          aws_sqs_queue.short_batch_queue.arn,
+          aws_sqs_queue.short_batch_dlq.arn
+        ]
+      }
+    ]
+  })
+}
+
 # SQS Processor Lambda Policy
 resource "aws_iam_policy" "sqs_processor_policy" {
   name = "${var.project_name}-${var.environment}-sqs-processor-policy"
@@ -501,6 +655,16 @@ resource "aws_iam_role_policy_attachment" "search_policy" {
 resource "aws_iam_role_policy_attachment" "editor_policy" {
   role       = aws_iam_role.editor_role.name
   policy_arn = aws_iam_policy.editor_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "short_batch_submitter_policy" {
+  role       = aws_iam_role.short_batch_submitter_role.name
+  policy_arn = aws_iam_policy.short_batch_submitter_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "short_batch_processor_policy" {
+  role       = aws_iam_role.short_batch_processor_role.name
+  policy_arn = aws_iam_policy.short_batch_processor_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "sqs_processor_policy" {
@@ -819,4 +983,222 @@ resource "aws_iam_policy" "recycle_bin_reader_policy" {
 resource "aws_iam_role_policy_attachment" "recycle_bin_reader_policy" {
   role       = aws_iam_role.recycle_bin_reader_role.name
   policy_arn = aws_iam_policy.recycle_bin_reader_policy.arn
+}
+
+# ========================================
+# SMART ROUTER IAM ROLE AND POLICIES
+# ========================================
+
+# Smart Router Lambda Role
+resource "aws_iam_role" "smart_router_role" {
+  name = "${var.project_name}-${var.environment}-smart-router-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Smart Router Lambda Policy
+resource "aws_iam_policy" "smart_router_policy" {
+  name = "${var.project_name}-${var.environment}-smart-router-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # DynamoDB - Read and update file metadata
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query"
+        ]
+        Resource = aws_dynamodb_table.file_metadata.arn
+      },
+      # SQS - Send messages to both queues
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [
+          aws_sqs_queue.short_batch_queue.arn,
+          aws_sqs_queue.batch_queue.arn
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "smart_router_policy" {
+  role       = aws_iam_role.smart_router_role.name
+  policy_arn = aws_iam_policy.smart_router_policy.arn
+}
+
+# ========================================
+# LONG BATCH UPLOADER IAM ROLE AND POLICIES
+# ========================================
+
+# Long Batch Uploader Lambda Role
+resource "aws_iam_role" "long_batch_uploader_role" {
+  name = "${var.project_name}-${var.environment}-long-batch-uploader-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Long Batch Uploader Lambda Policy
+resource "aws_iam_policy" "long_batch_uploader_policy" {
+  name = "${var.project_name}-${var.environment}-long-batch-uploader-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # S3 - Upload to bucket
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      # DynamoDB - Write file metadata
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = aws_dynamodb_table.file_metadata.arn
+      }
+      # Note: SQS permissions removed - EventBridge handles queue messaging
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "long_batch_uploader_policy" {
+  role       = aws_iam_role.long_batch_uploader_role.name
+  policy_arn = aws_iam_policy.long_batch_uploader_policy.arn
+}
+
+# ========================================
+# SHORT BATCH UPLOADER IAM ROLE AND POLICIES
+# ========================================
+
+# Short Batch Uploader Lambda Role
+resource "aws_iam_role" "short_batch_uploader_role" {
+  name = "${var.project_name}-${var.environment}-short-batch-uploader-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Short Batch Uploader Lambda Policy
+resource "aws_iam_policy" "short_batch_uploader_policy" {
+  name = "${var.project_name}-${var.environment}-short-batch-uploader-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # S3 - Upload to bucket
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      # DynamoDB - Write file metadata
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = aws_dynamodb_table.file_metadata.arn
+      },
+      # SQS - Send messages to short-batch queue (direct messaging, no EventBridge)
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = aws_sqs_queue.short_batch_queue.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "short_batch_uploader_policy" {
+  role       = aws_iam_role.short_batch_uploader_role.name
+  policy_arn = aws_iam_policy.short_batch_uploader_policy.arn
 }

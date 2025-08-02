@@ -1,0 +1,121 @@
+# AWS Batch Docker Build - Exclude unnecessary files for container optimization
+
+# Terraform infrastructure files
+*.tf
+*.tfstate*
+*.tfvars*
+.terraform/
+terraform.tfvars.example
+
+# Lambda function directories (not needed in Batch container)
+lambda_functions/
+lambda_layers/
+
+# Documentation files
+README.md
+*.md
+EDIT_FUNCTIONALITY.md
+ENDPOINTS.md
+PIPELINE_FIXES_SUMMARY.md
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# GitHub Actions and CI/CD
+.github/
+.github/workflows/
+
+# Development and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.pytest_cache/
+.coverage
+.tox/
+.nox/
+htmlcov/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# AWS CLI and credentials (security)
+.aws/
+*.pem
+*.key
+*.crt
+
+# Sample/test files
+test-*.jpeg
+test-*.png
+test-*.pdf
+sample-*
+invoice-example.png
+
+# Build optimization - keep only essential files for Batch processing
+# Include: index.py, requirements.txt, Dockerfile

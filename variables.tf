@@ -13,6 +13,12 @@ variable "project_name" {
 variable "environment" {
   description = "Environment name"
   type        = string
+  default     = "long-batch"
+}
+
+variable "api_stage_name" {
+  description = "API Gateway stage name for URL structure"
+  type        = string
   default     = "dev"
 }
 
@@ -420,4 +426,10 @@ variable "api_key_names" {
     condition     = length(var.api_key_names) <= 10
     error_message = "Maximum 10 API keys can be created by default."
   }
+}
+
+variable "allow_cross_account_layer_access" {
+  description = "Allow cross-account access to Lambda layers"
+  type        = bool
+  default     = false
 }

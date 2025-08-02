@@ -35,17 +35,64 @@ data "archive_file" "dead_job_detector_zip" {
   source_file = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.py"
 }
 
+# Null resource to build document search dependencies
+resource "null_resource" "document_search_dependencies" {
+  triggers = {
+    requirements_hash = filemd5("${path.module}/lambda_functions/document_search/requirements.txt")
+    source_code_hash  = filemd5("${path.module}/lambda_functions/document_search/document_search.py")
+    install_script_hash = filemd5("${path.module}/lambda_functions/document_search/install_dependencies.sh")
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/lambda_functions/document_search"
+    command = "bash -c 'sed -i \"s/\\r$//\" install_dependencies.sh && chmod +x install_dependencies.sh && LOCAL_BUILD=true ./install_dependencies.sh'"
+  }
+}
+
 data "archive_file" "search_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_functions/document_search/document_search.zip"
   source_dir  = "${path.module}/lambda_functions/document_search"
-  excludes    = ["requirements.txt", "package", "__pycache__"]
+  excludes    = ["requirements.txt", "package", "__pycache__", "install_dependencies.sh"]
+  
+  depends_on = [null_resource.document_search_dependencies]
 }
 
 data "archive_file" "editor_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_functions/ocr_editor/ocr_editor.zip"
   source_file = "${path.module}/lambda_functions/ocr_editor/ocr_editor.py"
+}
+
+# Null resource to detect changes in short batch processor
+resource "null_resource" "short_batch_processor_dependencies" {
+  triggers = {
+    requirements_hash = filemd5("${path.module}/lambda_functions/short_batch_processor/requirements.txt")
+    source_code_hash  = filemd5("${path.module}/lambda_functions/short_batch_processor/short_batch_processor.py")
+    install_script_hash = filemd5("${path.module}/lambda_functions/short_batch_processor/install_dependencies.sh")
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/lambda_functions/short_batch_processor"
+    command = "bash -c 'sed -i \"s/\\r$//\" install_dependencies.sh && chmod +x install_dependencies.sh && LOCAL_BUILD=true ./install_dependencies.sh'"
+  }
+}
+
+# Note: short_batch_processor.zip is created by the null_resource provisioner above
+
+# Create a stable hash based on source file content
+locals {
+  short_batch_processor_hash = base64sha256(join("", [
+    filemd5("${path.module}/lambda_functions/short_batch_processor/requirements.txt"),
+    filemd5("${path.module}/lambda_functions/short_batch_processor/short_batch_processor.py"),
+    filemd5("${path.module}/lambda_functions/short_batch_processor/install_dependencies.sh")
+  ]))
+}
+
+data "archive_file" "short_batch_submitter_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/short_batch_submitter/short_batch_submitter.zip"
+  source_file = "${path.module}/lambda_functions/short_batch_submitter/short_batch_submitter.py"
 }
 
 data "archive_file" "deleter_zip" {
@@ -64,6 +111,24 @@ data "archive_file" "recycle_bin_reader_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.zip"
   source_file = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.py"
+}
+
+data "archive_file" "smart_router_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/smart_router/smart_router.zip"
+  source_file = "${path.module}/lambda_functions/smart_router/smart_router.py"
+}
+
+data "archive_file" "long_batch_uploader_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/long_batch_uploader/long_batch_uploader.zip"
+  source_file = "${path.module}/lambda_functions/long_batch_uploader/long_batch_uploader.py"
+}
+
+data "archive_file" "short_batch_uploader_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/short_batch_uploader/short_batch_uploader.zip"
+  source_file = "${path.module}/lambda_functions/short_batch_uploader/short_batch_uploader.py"
 }
 
 # Uploader Lambda Function (S3 file uploader)
@@ -90,6 +155,8 @@ resource "aws_lambda_function" "uploader" {
     aws_iam_role_policy_attachment.uploader_policy,
     aws_cloudwatch_log_group.s3_uploader_logs
   ]
+
+  # Removed ignore_changes to allow code updates
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-uploader"
@@ -122,6 +189,8 @@ resource "aws_lambda_function" "reader" {
     aws_cloudwatch_log_group.lambda_reader_logs
   ]
 
+  # Removed ignore_changes to allow code updates
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-reader"
   })
@@ -150,8 +219,11 @@ resource "aws_lambda_function" "search" {
 
   depends_on = [
     aws_iam_role_policy_attachment.search_policy,
-    aws_cloudwatch_log_group.document_search_logs
+    aws_cloudwatch_log_group.document_search_logs,
+    null_resource.document_search_dependencies
   ]
+
+  # Removed ignore_changes to allow code updates
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-search"
@@ -183,9 +255,102 @@ resource "aws_lambda_function" "editor" {
     aws_cloudwatch_log_group.ocr_editor_logs
   ]
 
+  # Removed ignore_changes to allow code updates
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-editor"
   })
+}
+
+# Short Batch Submitter Lambda Function (API Gateway -> SQS)
+resource "aws_lambda_function" "short_batch_submitter" {
+  filename         = data.archive_file.short_batch_submitter_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-short-batch-submitter"
+  role             = aws_iam_role.short_batch_submitter_role.arn
+  handler          = "short_batch_submitter.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 30  # Quick response for API Gateway
+  memory_size      = 256
+  source_code_hash = data.archive_file.short_batch_submitter_zip.output_base64sha256
+
+  environment {
+    variables = {
+      SQS_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
+      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
+      LOG_LEVEL      = "INFO"
+      ENVIRONMENT    = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.short_batch_submitter_policy,
+    aws_cloudwatch_log_group.short_batch_submitter_logs
+  ]
+
+  # Removed ignore_changes to allow code updates
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-short-batch-submitter"
+    Purpose = "Submit short batch jobs to SQS queue"
+  })
+}
+
+# Short Batch Processor Lambda Function (SQS -> Processing)
+resource "aws_lambda_function" "short_batch_processor" {
+  filename         = "${path.module}/lambda_functions/short_batch_processor/short_batch_processor.zip"
+  function_name    = "${var.project_name}-${var.environment}-short-batch-processor"
+  role             = aws_iam_role.short_batch_processor_role.arn
+  handler          = "short_batch_processor.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 900  # 15 minutes timeout for processing
+  memory_size      = 1024  # More memory for faster processing
+  source_code_hash = local.short_batch_processor_hash
+  # reserved_concurrent_executions removed due to account limits
+  
+
+  environment {
+    variables = {
+      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
+      MAX_FILE_SIZE_MB = "10"
+      MAX_RETRIES    = "3"
+      RETRY_DELAY    = "2"
+      LOG_LEVEL      = "INFO"
+      ENVIRONMENT    = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.short_batch_processor_policy,
+    aws_cloudwatch_log_group.short_batch_processor_logs,
+    null_resource.short_batch_processor_dependencies
+  ]
+
+  # Removed ignore_changes to allow code updates
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-short-batch-processor"
+    Purpose = "Process small files from SQS with comprehensive text refinement"
+  })
+}
+
+# Lambda Event Source Mapping for Short Batch Queue with Short Polling
+resource "aws_lambda_event_source_mapping" "short_batch_sqs_trigger" {
+  event_source_arn = aws_sqs_queue.short_batch_queue.arn
+  function_name    = aws_lambda_function.short_batch_processor.arn
+  
+  # Batch configuration optimized for speed
+  batch_size                         = 1     # Process messages immediately (no batching delay)
+  maximum_batching_window_in_seconds = 0    # No batching window for immediate processing
+  
+  # Enable partial batch response to handle individual message failures
+  function_response_types = ["ReportBatchItemFailures"]
+  
+  # The queue uses short polling (0 seconds) for immediate message pickup
+  
+  depends_on = [
+    aws_iam_role_policy_attachment.short_batch_processor_policy
+  ]
 }
 
 # SQS to Batch Processor Lambda Function
@@ -214,6 +379,8 @@ resource "aws_lambda_function" "sqs_batch_processor" {
     aws_iam_role_policy_attachment.sqs_processor_policy,
     aws_cloudwatch_log_group.sqs_to_batch_submitter_logs
   ]
+
+  # Removed ignore_changes to allow code updates
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-sqs-batch-processor"
@@ -260,6 +427,26 @@ resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
   })
 }
 
+# CloudWatch Log Groups - Short Batch Submitter (submits to SQS)
+resource "aws_cloudwatch_log_group" "short_batch_submitter_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-submitter"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "Submit short batch jobs to SQS"
+    Function = "short_batch_submitter"
+  })
+}
+
+# CloudWatch Log Groups - Short Batch Processor (processes from SQS)
+resource "aws_cloudwatch_log_group" "short_batch_processor_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-processor"
+  retention_in_days = 7  # 1 week retention
+  tags              = merge(var.common_tags, {
+    Purpose = "Short batch processing for small files"
+    Function = "short_batch_processor"
+  })
+}
+
 # CloudWatch Log Groups - SQS to Batch Submitter (processes queue messages)
 resource "aws_cloudwatch_log_group" "sqs_to_batch_submitter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-sqs-to-batch-submitter"
@@ -293,6 +480,8 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
     aws_iam_role_policy_attachment.batch_reconciliation_policy,
     aws_cloudwatch_log_group.batch_status_reconciliation_logs
   ]
+
+  # Removed ignore_changes to allow code updates
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-batch-status-reconciliation"
@@ -333,6 +522,8 @@ resource "aws_lambda_function" "dead_job_detector" {
     aws_iam_role_policy_attachment.dead_job_detector_policy,
     aws_cloudwatch_log_group.dead_job_detector_logs
   ]
+
+  # Removed ignore_changes to allow code updates
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-dead-job-detector"
@@ -376,6 +567,8 @@ resource "aws_lambda_function" "deleter" {
     aws_cloudwatch_log_group.file_deleter_logs
   ]
 
+  # Removed ignore_changes to allow code updates
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-file-deleter"
   })
@@ -407,6 +600,8 @@ resource "aws_lambda_function" "restorer" {
     aws_cloudwatch_log_group.file_restorer_logs
   ]
 
+  # Removed ignore_changes to allow code updates
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-file-restorer"
   })
@@ -436,8 +631,113 @@ resource "aws_lambda_function" "recycle_bin_reader" {
     aws_cloudwatch_log_group.recycle_bin_reader_logs
   ]
 
+  # Removed ignore_changes to allow code updates
+
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-recycle-bin-reader"
+  })
+}
+
+# Smart Router Lambda Function (intelligent routing between short/long batch)
+resource "aws_lambda_function" "smart_router" {
+  filename         = data.archive_file.smart_router_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-smart-router"
+  role             = aws_iam_role.smart_router_role.arn
+  handler          = "smart_router.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  memory_size      = 256
+  source_code_hash = data.archive_file.smart_router_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE           = aws_dynamodb_table.file_metadata.name
+      SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
+      LONG_BATCH_QUEUE_URL     = aws_sqs_queue.batch_queue.url
+      FILE_SIZE_THRESHOLD_MB   = "10"
+      LOG_LEVEL               = "INFO"
+      ENVIRONMENT             = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.smart_router_policy,
+    aws_cloudwatch_log_group.smart_router_logs
+  ]
+
+  # Removed ignore_changes to allow code updates
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-smart-router"
+    Purpose = "Intelligent routing between short-batch and long-batch processing"
+  })
+}
+
+# Long Batch Uploader Lambda Function (dedicated to long-batch uploads)
+resource "aws_lambda_function" "long_batch_uploader" {
+  filename         = data.archive_file.long_batch_uploader_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-long-batch-uploader"
+  role             = aws_iam_role.long_batch_uploader_role.arn
+  handler          = "long_batch_uploader.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 300
+  memory_size      = 256
+  source_code_hash = data.archive_file.long_batch_uploader_zip.output_base64sha256
+
+  environment {
+    variables = {
+      UPLOAD_BUCKET_NAME    = aws_s3_bucket.upload_bucket.id
+      DYNAMODB_TABLE        = aws_dynamodb_table.file_metadata.name
+      LOG_LEVEL            = "INFO"
+      ENVIRONMENT          = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.long_batch_uploader_policy,
+    aws_cloudwatch_log_group.long_batch_uploader_logs
+  ]
+
+  # Removed ignore_changes to allow code updates
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-long-batch-uploader"
+    Purpose = "Dedicated uploader for long-batch processing via AWS Batch"
+  })
+}
+
+# Short Batch Uploader Lambda Function (dedicated to short-batch uploads)
+resource "aws_lambda_function" "short_batch_uploader" {
+  filename         = data.archive_file.short_batch_uploader_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-short-batch-uploader"
+  role             = aws_iam_role.short_batch_uploader_role.arn
+  handler          = "short_batch_uploader.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 300
+  memory_size      = 256
+  source_code_hash = data.archive_file.short_batch_uploader_zip.output_base64sha256
+
+  environment {
+    variables = {
+      UPLOAD_BUCKET_NAME       = aws_s3_bucket.upload_bucket.id
+      DYNAMODB_TABLE           = aws_dynamodb_table.file_metadata.name
+      SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
+      MAX_LAMBDA_FILE_SIZE_MB  = "50"
+      LOG_LEVEL               = "INFO"
+      ENVIRONMENT             = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.short_batch_uploader_policy,
+    aws_cloudwatch_log_group.short_batch_uploader_logs
+  ]
+
+  # Removed ignore_changes to allow code updates
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-short-batch-uploader"
+    Purpose = "Dedicated uploader for short-batch processing via Lambda"
   })
 }
 
@@ -468,5 +768,35 @@ resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
   tags              = merge(var.common_tags, {
     Purpose = "Recycle bin listing and querying logging"
     Function = "recycle_bin_reader"
+  })
+}
+
+# CloudWatch Log Groups - Smart Router
+resource "aws_cloudwatch_log_group" "smart_router_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-smart-router"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Intelligent routing between short and long batch processing"
+    Function = "smart_router"
+  })
+}
+
+# CloudWatch Log Groups - Long Batch Uploader
+resource "aws_cloudwatch_log_group" "long_batch_uploader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-long-batch-uploader"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Dedicated uploader for long-batch processing via AWS Batch"
+    Function = "long_batch_uploader"
+  })
+}
+
+# CloudWatch Log Groups - Short Batch Uploader
+resource "aws_cloudwatch_log_group" "short_batch_uploader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-uploader"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Dedicated uploader for short-batch processing via Lambda"
+    Function = "short_batch_uploader"
   })
 }

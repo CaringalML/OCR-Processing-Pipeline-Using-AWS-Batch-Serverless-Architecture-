@@ -74,6 +74,8 @@ lambda_functions/**/s3transfer/
 lambda_functions/**/urllib3/
 lambda_functions/**/six.py
 lambda_functions/**/__pycache__/
+lambda_functions/**/.package_checksums
+lambda_functions/**/.current_checksums
 
 # Terraform
 **/.terraform/

@@ -108,9 +108,6 @@ terraform apply
 ### 2. Build and Deploy Dependencies
 
 ```bash
-# Build Lambda dependencies
-./build_search_lambda.sh
-
 # Build and deploy Docker container
 terraform output deployment_commands
 # Follow the ECR login and Docker build commands
@@ -454,7 +451,6 @@ OCR-AWS-Batch-Serverless-Python/
 │   └── requirements.txt        # Container dependencies
 │
 ├── Build Scripts
-│   ├── build_search_lambda.sh  # Lambda dependency builder
 │   └── .gitignore              # Comprehensive ignore patterns
 │
 └── Documentation
@@ -503,8 +499,7 @@ pip install -r lambda_functions/document_search/requirements.txt
 # Run local tests
 python -m pytest tests/
 
-# Build Lambda packages
-./build_search_lambda.sh
+# Lambda packages are built automatically by Terraform
 ```
 
 ## 📄 License

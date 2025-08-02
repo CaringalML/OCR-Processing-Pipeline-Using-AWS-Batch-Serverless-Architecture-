@@ -48,305 +48,141 @@ def parse_multipart_form_data(body, content_type):
                     if filename:  # Only add if filename is not empty
                         file_content_type = headers.get('content-type', 'application/octet-stream')
                         files.append({
-                            'field_name': name,
                             'filename': filename,
                             'content': content,
                             'content_type': file_content_type
                         })
                 else:
-                    # This is a form field
-                    form_data[name] = content.decode() if isinstance(content, bytes) else content
+                    # This is a regular form field
+                    form_data[name] = content.decode()
     
     return form_data, files
 
-def process_single_file_upload(s3_client, dynamodb, bucket_name, dynamodb_table, file_name, file_bytes, file_content_type, metadata=None):
-    """Process upload of a single file with optional metadata"""
-    try:
-        # Generate unique file ID and S3 key
-        file_id = uuid.uuid4().hex
-        timestamp = datetime.utcnow()
-        s3_key = f"uploads/{timestamp.strftime('%Y/%m/%d')}/{file_id}/{file_name}"
-        
-        # Upload file to S3
-        s3_response = s3_client.put_object(
-            Bucket=bucket_name,
-            Key=s3_key,
-            Body=file_bytes,
-            ContentType=file_content_type,
-            Metadata={
-                'file_id': file_id,
-                'original_name': file_name,
-                'upload_timestamp': timestamp.isoformat()
-            }
-        )
-        
-        # Store metadata in DynamoDB
-        table = dynamodb.Table(dynamodb_table)
-        item = {
-            'file_id': file_id,
-            'upload_timestamp': timestamp.isoformat(),
-            'bucket_name': bucket_name,
-            's3_key': s3_key,
-            'file_name': file_name,
-            'file_size': len(file_bytes),
-            'content_type': file_content_type,
-            'processing_status': 'uploaded',
-            'etag': s3_response['ETag'].strip('"'),
-            'upload_date': timestamp.strftime('%Y-%m-%d'),
-            'expiration_time': int((timestamp.timestamp() + 365 * 24 * 60 * 60))  # 1 year TTL
-        }
-        
-        # Add document metadata if provided
-        if metadata:
-            if metadata.get('publication'):
-                item['publication'] = metadata['publication']
-            if metadata.get('year'):
-                item['year'] = str(metadata['year'])
-            if metadata.get('title'):
-                item['title'] = metadata['title']
-            if metadata.get('author'):
-                item['author'] = metadata['author']
-            if metadata.get('description'):
-                item['description'] = metadata['description']
-            if metadata.get('tags'):
-                item['tags'] = metadata['tags'] if isinstance(metadata['tags'], list) else [metadata['tags']]
-        
-        table.put_item(Item=item)
-        
-        print(f"Successfully uploaded file: {file_id} to S3: {s3_key}")
-        
-        return {
-            'success': True,
-            'data': {
-                'fileId': file_id,
-                'fileName': file_name,
-                's3Key': s3_key,
-                'bucket': bucket_name,
-                'size': len(file_bytes),
-                'timestamp': timestamp.isoformat(),
-                'status': 'File uploaded and queued for processing'
-            }
-        }
-        
-    except Exception as e:
-        print(f"Error uploading file {file_name}: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
-
 def lambda_handler(event, context):
     """
-    AWS Lambda handler for S3 file uploads
-    Handles multipart/form-data uploads from API Gateway
+    Handle S3 file upload from API Gateway
+    Now supports folder structure: short-batch-files/ and long-batch-files/
     """
-    
-    # Initialize AWS clients
-    s3_client = boto3.client('s3')
+    s3 = boto3.client('s3')
     dynamodb = boto3.resource('dynamodb')
     
-    # Get configuration from environment variables
-    bucket_name = os.environ.get('UPLOAD_BUCKET_NAME')
-    dynamodb_table = os.environ.get('DYNAMODB_TABLE')
-    
-    # Validate environment variables
-    if not bucket_name or not dynamodb_table:
-        error_msg = "Missing required environment variables"
-        print(f"ERROR: {error_msg}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Configuration Error',
-                'message': error_msg,
-                'timestamp': datetime.utcnow().isoformat()
-            })
-        }
+    bucket_name = os.environ['UPLOAD_BUCKET_NAME']
+    table_name = os.environ['DYNAMODB_TABLE']
+    table = dynamodb.Table(table_name)
     
     try:
-        # Get content type from headers
+        # Parse the multipart form data
         content_type = event.get('headers', {}).get('content-type', '') or event.get('headers', {}).get('Content-Type', '')
+        body = base64.b64decode(event['body']) if event.get('isBase64Encoded', False) else event['body'].encode()
         
-        if 'multipart/form-data' in content_type:
-            # Handle multipart form data (supports multiple files)
-            body = base64.b64decode(event['body']) if event.get('isBase64Encoded') else event['body'].encode()
-            form_data, files = parse_multipart_form_data(body, content_type)
-            
-            # Check if any files were uploaded
-            if not files:
-                return {
-                    'statusCode': 400,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'error': 'Bad Request',
-                        'message': 'No files found in upload',
-                        'timestamp': datetime.utcnow().isoformat()
-                    })
-                }
-            
-            # Process multiple files
-            upload_results = []
-            upload_errors = []
-            
-            for file_info in files:
-                try:
-                    file_name = file_info['filename']
-                    file_bytes = file_info['content']
-                    file_content_type = file_info['content_type']
-                    
-                    # Validate file
-                    if not file_name:
-                        file_name = f"file-{uuid.uuid4().hex[:8]}"
-                        
-                    if len(file_bytes) == 0:
-                        upload_errors.append({
-                            'filename': file_name,
-                            'error': 'File is empty'
-                        })
-                        continue
-                    
-                    # Extract metadata from form data
-                    metadata = {
-                        'publication': form_data.get('publication', ''),
-                        'year': form_data.get('year', ''),
-                        'title': form_data.get('title', ''),
-                        'author': form_data.get('author', ''),
-                        'description': form_data.get('description', ''),
-                        'tags': form_data.get('tags', '')
-                    }
-                    
-                    # Process single file upload with metadata
-                    result = process_single_file_upload(
-                        s3_client, dynamodb, bucket_name, dynamodb_table,
-                        file_name, file_bytes, file_content_type, metadata
-                    )
-                    
-                    if result['success']:
-                        upload_results.append(result['data'])
-                    else:
-                        upload_errors.append({
-                            'filename': file_name,
-                            'error': result['error']
-                        })
-                        
-                except Exception as e:
-                    upload_errors.append({
-                        'filename': file_info.get('filename', 'unknown'),
-                        'error': str(e)
-                    })
-            
-            # Return results for multiple files
+        form_data, files = parse_multipart_form_data(body, content_type)
+        
+        if not files:
             return {
-                'statusCode': 200 if upload_results else 400,
+                'statusCode': 400,
                 'headers': {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
-                'body': json.dumps({
-                    'success': len(upload_results) > 0,
-                    'message': f'Processed {len(files)} files: {len(upload_results)} successful, {len(upload_errors)} failed',
-                    'uploadedFiles': upload_results,
-                    'errors': upload_errors,
-                    'timestamp': datetime.utcnow().isoformat()
-                })
+                'body': json.dumps({'error': 'No files provided'})
             }
+        
+        uploaded_files = []
+        
+        for file_info in files:
+            file_content = file_info['content']
+            original_filename = file_info['filename']
+            content_type = file_info['content_type']
             
-        else:
-            # Fallback to JSON format for backward compatibility (single file)
-            body = json.loads(event['body'])
+            # Generate unique file ID
+            file_id = str(uuid.uuid4())
+            timestamp = datetime.utcnow().isoformat()
             
-            file_name = body.get('fileName', f"file-{uuid.uuid4().hex[:8]}")
-            file_content = body.get('fileContent')  # Base64 encoded
-            file_content_type = body.get('contentType', 'application/octet-stream')
+            # Calculate file size for initial routing decision
+            file_size = len(file_content)
+            file_size_mb = file_size / (1024 * 1024)
             
-            # Extract metadata from JSON body
-            metadata = {
-                'publication': body.get('publication', ''),
-                'year': body.get('year', ''),
-                'title': body.get('title', ''),
-                'author': body.get('author', ''),
-                'description': body.get('description', ''),
-                'tags': body.get('tags', [])
-            }
+            # Determine initial folder based on size (can be overridden by smart router later)
+            # This is just for initial storage organization
+            initial_folder = "short-batch-files" if file_size_mb <= 10 else "long-batch-files"
             
-            if not file_content:
-                return {
-                    'statusCode': 400,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'error': 'Bad Request',
-                        'message': 'Missing file content',
-                        'timestamp': datetime.utcnow().isoformat()
-                    })
+            # Create S3 key with folder structure
+            file_extension = os.path.splitext(original_filename)[1]
+            s3_key = f"{initial_folder}/{file_id}{file_extension}"
+            
+            # Upload to S3 with folder structure
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Body=file_content,
+                ContentType=content_type,
+                Metadata={
+                    'original-filename': original_filename,
+                    'file-id': file_id,
+                    'upload-timestamp': timestamp,
+                    'initial-routing': initial_folder
                 }
-            
-            file_bytes = base64.b64decode(file_content)
-            
-            # Validate file
-            if not file_name:
-                file_name = f"file-{uuid.uuid4().hex[:8]}"
-                
-            if len(file_bytes) == 0:
-                return {
-                    'statusCode': 400,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'error': 'Bad Request',
-                        'message': 'File is empty',
-                        'timestamp': datetime.utcnow().isoformat()
-                    })
-                }
-            
-            # Process single file upload with metadata
-            result = process_single_file_upload(
-                s3_client, dynamodb, bucket_name, dynamodb_table,
-                file_name, file_bytes, file_content_type, metadata
             )
             
-            if result['success']:
-                return {
-                    'statusCode': 200,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'success': True,
-                        'message': 'File uploaded successfully',
-                        **result['data']
-                    })
-                }
-            else:
-                return {
-                    'statusCode': 500,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'success': False,
-                        'error': 'File upload failed',
-                        'details': result['error'],
-                        'timestamp': datetime.utcnow().isoformat()
-                    })
-                }
+            # Store metadata in DynamoDB
+            item = {
+                'file_id': file_id,
+                'upload_timestamp': timestamp,
+                'original_filename': original_filename,  # Keep for backwards compatibility
+                'file_name': original_filename,           # Add the expected field name
+                'content_type': content_type,
+                'file_size': file_size,
+                'file_size_mb': str(file_size_mb),
+                's3_bucket': bucket_name,
+                's3_key': s3_key,
+                's3_folder': initial_folder,
+                'processing_status': 'uploaded',
+                'upload_source': 'api',
+                'bucket_name': bucket_name,  # For GSI query
+                # Add default metadata fields that the reader expects
+                'publication': form_data.get('publication', ''),
+                'year': form_data.get('year', ''),
+                'title': form_data.get('title', ''),
+                'author': form_data.get('author', '')
+            }
+            
+            # Add optional form data
+            if 'priority' in form_data:
+                item['priority'] = form_data['priority']
+            if 'description' in form_data:
+                item['description'] = form_data['description']
+            if 'tags' in form_data:
+                item['tags'] = form_data['tags']
+            
+            table.put_item(Item=item)
+            
+            uploaded_files.append({
+                'file_id': file_id,
+                'filename': original_filename,
+                'size': file_size,
+                'size_mb': round(file_size_mb, 2),
+                's3_key': s3_key,
+                's3_folder': initial_folder,
+                'timestamp': timestamp,
+                'content_type': content_type
+            })
+        
+        # Return success response with all uploaded files
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'message': f'Successfully uploaded {len(uploaded_files)} file(s)',
+                'files': uploaded_files,
+                'note': 'Files are initially organized by size. Smart router will make final processing decision.'
+            })
+        }
         
     except Exception as e:
-        error_msg = f"Error uploading file: {str(e)}"
-        print(f"ERROR: {error_msg}")
-        
+        print(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'headers': {
@@ -354,9 +190,7 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
-                'success': False,
-                'error': 'File upload failed',
-                'details': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'error': 'Internal server error',
+                'details': str(e)
             })
         }

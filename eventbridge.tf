@@ -1,7 +1,7 @@
-# EventBridge Rule for S3 Upload Events
-resource "aws_cloudwatch_event_rule" "s3_upload_rule" {
-  name        = "${var.project_name}-${var.environment}-s3-upload-rule"
-  description = "Capture S3 upload events and trigger batch processing"
+# EventBridge Rule - Long Batch S3 Upload Events
+resource "aws_cloudwatch_event_rule" "s3_long_batch_upload_rule" {
+  name        = "${var.project_name}-${var.environment}-s3-long-batch-upload-rule"
+  description = "Capture S3 upload events for long-batch-files folder"
 
   event_pattern = jsonencode({
     source      = ["aws.s3"]
@@ -10,18 +10,24 @@ resource "aws_cloudwatch_event_rule" "s3_upload_rule" {
       bucket = {
         name = [aws_s3_bucket.upload_bucket.id]
       }
+      object = {
+        key = [{
+          prefix = "long-batch-files/"
+        }]
+      }
     }
   })
 
   tags = var.common_tags
 }
 
-# EventBridge Target - SQS Queue
-resource "aws_cloudwatch_event_target" "sqs_target" {
-  rule      = aws_cloudwatch_event_rule.s3_upload_rule.name
-  target_id = "SendToSQS"
-  arn       = aws_sqs_queue.batch_queue.arn
+# Short batch does not use EventBridge - uses direct SQS messages from API
 
+# EventBridge Target - Long Batch SQS Queue
+resource "aws_cloudwatch_event_target" "long_batch_sqs_target" {
+  rule      = aws_cloudwatch_event_rule.s3_long_batch_upload_rule.name
+  target_id = "SendToLongBatchSQS"
+  arn       = aws_sqs_queue.batch_queue.arn
 
   retry_policy {
     maximum_event_age_in_seconds = var.eventbridge_max_age_seconds
@@ -29,26 +35,29 @@ resource "aws_cloudwatch_event_target" "sqs_target" {
   }
 }
 
-# EventBridge Rule for SQS to Batch
+# Short batch does not use EventBridge targets - uses direct SQS event source mapping
+
+# EventBridge Rule for SQS to Long Batch
 resource "aws_cloudwatch_event_rule" "sqs_to_batch_rule" {
   name                = "${var.project_name}-${var.environment}-sqs-batch-rule"
-  description         = "Process SQS messages by submitting Batch jobs"
+  description         = "Process SQS messages by submitting Long Batch jobs"
   schedule_expression = "rate(1 minute)"
   state               = "ENABLED"
 
   tags = var.common_tags
 }
 
-# Lambda function is defined in lambda.tf
-
-# EventBridge Target - Lambda for SQS processing
+# EventBridge Target - Lambda for Long Batch SQS processing
 resource "aws_cloudwatch_event_target" "lambda_sqs_processor" {
   rule      = aws_cloudwatch_event_rule.sqs_to_batch_rule.name
   target_id = "ProcessSQSMessages"
   arn       = aws_lambda_function.sqs_batch_processor.arn
 }
 
-# Lambda permission for EventBridge
+# Note: Short batch processing uses direct SQS event source mapping to short_batch_processor Lambda
+# No scheduled EventBridge rule needed - the SQS queue directly triggers the Lambda function
+
+# Lambda permission for EventBridge - Long Batch
 resource "aws_lambda_permission" "allow_eventbridge_sqs_processor" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
@@ -56,6 +65,8 @@ resource "aws_lambda_permission" "allow_eventbridge_sqs_processor" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.sqs_to_batch_rule.arn
 }
+
+# Note: No EventBridge permission needed for short batch - uses direct SQS event source mapping
 
 # EventBridge Rule for AWS Batch Job State Changes
 resource "aws_cloudwatch_event_rule" "batch_job_state_change_rule" {

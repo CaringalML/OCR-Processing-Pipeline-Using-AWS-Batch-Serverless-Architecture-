@@ -5,6 +5,17 @@ resource "aws_dynamodb_table" "file_metadata" {
   hash_key     = "file_id"
   range_key    = "upload_timestamp"
 
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes = [
+      name,
+      billing_mode,
+      global_secondary_index,
+      ttl,
+      point_in_time_recovery
+    ]
+  }
+
   attribute {
     name = "file_id"
     type = "S"

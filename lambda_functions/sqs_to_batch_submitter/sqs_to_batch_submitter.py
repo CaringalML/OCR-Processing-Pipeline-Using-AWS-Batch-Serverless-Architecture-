@@ -46,90 +46,109 @@ def lambda_handler(event, context):
                 # Parse the message
                 body = json.loads(message['Body'])
                 
-                # Extract S3 event details
+                # Handle both S3 event messages and direct Lambda upload messages
                 if 'detail' in body:
+                    # S3 event message format
                     detail = body['detail']
                     bucket_name = detail['bucket']['name']
                     object_key = detail['object']['key']
                     
-                    # Skip if not in uploads folder
-                    if not object_key.startswith('uploads/'):
-                        print(f"Skipping non-upload file: {object_key}")
-                        delete_message(sqs_client, queue_url, message['ReceiptHandle'])
-                        continue
-                    
                     # Extract file_id from the key structure
-                    # Format: uploads/YYYY/MM/DD/{file_id}/{filename}
-                    key_parts = object_key.split('/')
-                    if len(key_parts) >= 6:
-                        file_id = key_parts[4]
+                    # Format: long-batch-files/{file_id}.ext
+                    if object_key.startswith('long-batch-files/'):
+                        # New format: long-batch-files/{file_id}.ext
+                        file_id = os.path.splitext(os.path.basename(object_key))[0]
+                    elif 'uploads/' in object_key:
+                        # Legacy format: uploads/YYYY/MM/DD/{file_id}/{filename}
+                        key_parts = object_key.split('/')
+                        if len(key_parts) >= 6:
+                            file_id = key_parts[4]
+                        else:
+                            print(f"Invalid legacy key structure: {object_key}")
+                            delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                            continue
                     else:
-                        print(f"Invalid key structure: {object_key}")
+                        print(f"Skipping non-long-batch file: {object_key}")
                         delete_message(sqs_client, queue_url, message['ReceiptHandle'])
                         continue
-                    
-                    # Submit Batch job
-                    job_name = f"process-file-{file_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
-                    
-                    batch_response = batch_client.submit_job(
-                        jobName=job_name,
-                        jobQueue=job_queue,
-                        jobDefinition=job_definition,
-                        parameters={
-                            'bucket': bucket_name,
-                            'key': object_key,
-                            'fileId': file_id
-                        },
-                        containerOverrides={
-                            'environment': [
-                                {'name': 'S3_BUCKET', 'value': bucket_name},
-                                {'name': 'S3_KEY', 'value': object_key},
-                                {'name': 'FILE_ID', 'value': file_id},
-                                {'name': 'DYNAMODB_TABLE', 'value': dynamodb_table_name}
-                            ]
-                        }
-                    )
-                    
-                    job_id = batch_response['jobId']
-                    print(f"Submitted Batch job {job_id} for file {file_id}")
-                    
-                    # First, query to get the correct upload_timestamp
-                    metadata_response = table.query(
-                        KeyConditionExpression='file_id = :file_id',
-                        ExpressionAttributeValues={':file_id': file_id},
-                        Limit=1
-                    )
-                    
-                    if metadata_response['Items']:
-                        upload_timestamp = metadata_response['Items'][0]['upload_timestamp']
                         
-                        # Update DynamoDB with job information
-                        table.update_item(
-                            Key={
-                                'file_id': file_id,
-                                'upload_timestamp': upload_timestamp
-                            },
-                            UpdateExpression='SET processing_status = :status, batch_job_id = :job_id, batch_job_name = :job_name, last_updated = :updated, processing_started = :started',
-                            ExpressionAttributeValues={
-                                ':status': 'processing',
-                                ':job_id': job_id,
-                                ':job_name': job_name,
-                                ':updated': datetime.utcnow().isoformat(),
-                                ':started': int(datetime.utcnow().timestamp())
-                            }
-                        )
-                    else:
-                        print(f"ERROR: File metadata not found for file_id: {file_id}")
-                        error_count += 1
-                        continue
+                elif 'file_id' in body and 'processing_type' in body:
+                    # Direct Lambda upload message format
+                    file_id = body['file_id']
+                    metadata = body.get('metadata', {})
+                    bucket_name = metadata.get('s3_bucket')
+                    object_key = metadata.get('s3_key')
                     
-                    # Delete message from queue after successful processing
-                    delete_message(sqs_client, queue_url, message['ReceiptHandle'])
-                    processed_count += 1
+                    if not bucket_name or not object_key:
+                        print(f"Missing S3 details in direct upload message: {body}")
+                        delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                        continue
+                        
+                    print(f"Processing direct upload message for file_id: {file_id}")
                     
                 else:
-                    print(f"Invalid message format: {message}")
+                    print(f"Invalid message format - missing required fields: {body}")
+                    delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                    continue
+                
+                # Submit Batch job
+                job_name = f"process-file-{file_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                
+                batch_response = batch_client.submit_job(
+                    jobName=job_name,
+                    jobQueue=job_queue,
+                    jobDefinition=job_definition,
+                    parameters={
+                        'bucket': bucket_name,
+                        'key': object_key,
+                        'fileId': file_id
+                    },
+                    containerOverrides={
+                        'environment': [
+                            {'name': 'S3_BUCKET', 'value': bucket_name},
+                            {'name': 'S3_KEY', 'value': object_key},
+                            {'name': 'FILE_ID', 'value': file_id},
+                            {'name': 'DYNAMODB_TABLE', 'value': dynamodb_table_name}
+                        ]
+                    }
+                )
+                
+                job_id = batch_response['jobId']
+                print(f"Submitted Batch job {job_id} for file {file_id}")
+                
+                # First, query to get the correct upload_timestamp
+                metadata_response = table.query(
+                    KeyConditionExpression='file_id = :file_id',
+                    ExpressionAttributeValues={':file_id': file_id},
+                    Limit=1
+                )
+                
+                if metadata_response['Items']:
+                    upload_timestamp = metadata_response['Items'][0]['upload_timestamp']
+                    
+                    # Update DynamoDB with job information
+                    table.update_item(
+                        Key={
+                            'file_id': file_id,
+                            'upload_timestamp': upload_timestamp
+                        },
+                        UpdateExpression='SET processing_status = :status, batch_job_id = :job_id, batch_job_name = :job_name, last_updated = :updated, processing_started = :started',
+                        ExpressionAttributeValues={
+                            ':status': 'processing',
+                            ':job_id': job_id,
+                            ':job_name': job_name,
+                            ':updated': datetime.utcnow().isoformat(),
+                            ':started': int(datetime.utcnow().timestamp())
+                        }
+                    )
+                else:
+                    print(f"ERROR: File metadata not found for file_id: {file_id}")
                     error_count += 1
+                    continue
+                
+                # Delete message from queue after successful processing
+                delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                processed_count += 1
                     
             except Exception as e:
                 print(f"Error processing message: {str(e)}")

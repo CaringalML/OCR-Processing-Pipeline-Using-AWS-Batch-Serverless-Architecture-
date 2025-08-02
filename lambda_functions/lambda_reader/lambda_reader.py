@@ -116,29 +116,44 @@ def lambda_handler(event, context):
                 response_data['refinedText'] = processing_result.get('refined_text', '')
                 response_data['processingDuration'] = processing_result.get('processing_duration', '')
                 
-                # Add Textract analysis with text refinement details
-                summary_analysis = processing_result.get('summary_analysis', {})
-                text_refinement_details = processing_result.get('text_refinement_details', {})
+                # Use enhanced textract_analysis directly from processor if available
+                enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
+                if enhanced_textract_analysis:
+                    response_data['textract_analysis'] = enhanced_textract_analysis
+                else:
+                    # Fallback to legacy construction for backward compatibility
+                    summary_analysis = processing_result.get('summary_analysis', {})
+                    text_refinement_details = processing_result.get('text_refinement_details', {})
+                    
+                    response_data['textract_analysis'] = {
+                        'total_words': summary_analysis.get('word_count', 0),
+                        'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                        'total_sentences': summary_analysis.get('sentence_count', 0),
+                        'total_improvements': text_refinement_details.get('total_improvements', 0),
+                        'spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                        'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
+                        'methods_used': text_refinement_details.get('methods_used', []),
+                        'entities_found': len(text_refinement_details.get('entities_found', [])),
+                        'processing_notes': text_refinement_details.get('processing_notes', ''),
+                        'confidence_score': summary_analysis.get('confidence', '0'),
+                        'character_count': summary_analysis.get('character_count', 0),
+                        'line_count': summary_analysis.get('line_count', 0)
+                    }
                 
-                response_data['textract_analysis'] = {
-                    'total_words': summary_analysis.get('word_count', 0),
-                    'total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                    'total_sentences': summary_analysis.get('sentence_count', 0),
-                    'total_improvements': text_refinement_details.get('total_improvements', 0),
-                    'spell_corrections': text_refinement_details.get('spell_corrections', 0),
-                    'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
-                    'methods_used': text_refinement_details.get('methods_used', []),
-                    'entities_found': len(text_refinement_details.get('entities_found', [])),
-                    'processing_notes': text_refinement_details.get('processing_notes', ''),
-                    'confidence_score': summary_analysis.get('confidence', '0'),
-                    'character_count': summary_analysis.get('character_count', 0),
-                    'line_count': summary_analysis.get('line_count', 0)
-                }
-                
-                # Add Comprehend analysis if available
+                # Add enhanced Comprehend entity analysis
                 comprehend_analysis = processing_result.get('comprehend_analysis', {})
+                entity_analysis = processing_result.get('entity_analysis', {})
+                
                 if comprehend_analysis:
                     response_data['comprehendAnalysis'] = comprehend_analysis
+                    
+                if entity_analysis:
+                    response_data['entityAnalysis'] = entity_analysis
+                
+                # Add dedicated Invoice Analysis section
+                invoice_analysis = processing_result.get('invoice_analysis', {})
+                if invoice_analysis:
+                    response_data['invoiceAnalysis'] = invoice_analysis
             
         else:
             # Query files by status
@@ -193,34 +208,89 @@ def lambda_handler(event, context):
                 }
                 
                 # Add processing results if available
-                if processing_result and item.get('processing_status') == 'processed':
-                    item_data['extractedText'] = processing_result.get('extracted_text', '')
-                    item_data['formattedText'] = processing_result.get('formatted_text', '')
-                    item_data['refinedText'] = processing_result.get('refined_text', '')
+                if item.get('processing_status') == 'processed':
+                    # Debug: check what fields are available
+                    has_extracted_text = bool(item.get('extractedText'))
+                    has_textract_analysis = bool(item.get('textract_analysis'))
+                    print(f"DEBUG: File {item['file_id']} - has_extracted_text: {has_extracted_text}, has_textract_analysis: {has_textract_analysis}")
                     
-                    # Add Textract analysis with text refinement details
-                    summary_analysis = processing_result.get('summary_analysis', {})
-                    text_refinement_details = processing_result.get('text_refinement_details', {})
+                    # Check if data exists in metadata table first (short-batch files)
+                    if item.get('extractedText') or item.get('textract_analysis'):
+                        # Data is in metadata table (short-batch)
+                        item_data['extractedText'] = item.get('extractedText', '')
+                        item_data['formattedText'] = item.get('formattedText', '')
+                        item_data['refinedText'] = item.get('refinedText', '')
+                        item_data['processingDuration'] = item.get('processingDuration', '')
+                        
+                        # Use enhanced textract_analysis directly from metadata table
+                        textract_analysis = item.get('textract_analysis', {})
+                        if textract_analysis:
+                            item_data['textract_analysis'] = decimal_to_json(textract_analysis)
+                        else:
+                            item_data['textract_analysis'] = {
+                                'total_words': 0,
+                                'total_paragraphs': 0,
+                                'total_sentences': 0,
+                                'total_improvements': 0,
+                                'spell_corrections': 0,
+                                'grammar_refinements': 0,
+                                'methods_used': [],
+                                'entities_found': 0,
+                                'processing_notes': '',
+                                'confidence_score': 0,
+                                'character_count': 0,
+                                'line_count': 0
+                            }
+                        
+                        # Add enhanced entity analysis if available
+                        entity_analysis = item.get('entity_analysis', {})
+                        if entity_analysis:
+                            item_data['entityAnalysis'] = decimal_to_json(entity_analysis)
+                            
+                        # Add comprehensive comprehend analysis if available  
+                        comprehend_analysis = item.get('comprehend_analysis', {})
+                        if comprehend_analysis:
+                            item_data['comprehendAnalysis'] = decimal_to_json(comprehend_analysis)
+                        
+                        # Use comprehend analysis from metadata table
+                        comprehend_analysis = item.get('comprehendAnalysis', {})
+                        if comprehend_analysis:
+                            item_data['comprehendAnalysis'] = decimal_to_json(comprehend_analysis)
+                        
+                        # Add dedicated Invoice Analysis section from metadata table
+                        invoice_analysis = item.get('invoice_analysis', {})
+                        if invoice_analysis:
+                            item_data['invoiceAnalysis'] = decimal_to_json(invoice_analysis)
                     
-                    item_data['textract_analysis'] = {
-                        'total_words': summary_analysis.get('word_count', 0),
-                        'total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                        'total_sentences': summary_analysis.get('sentence_count', 0),
-                        'total_improvements': text_refinement_details.get('total_improvements', 0),
-                        'spell_corrections': text_refinement_details.get('spell_corrections', 0),
-                        'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
-                        'methods_used': text_refinement_details.get('methods_used', []),
-                        'entities_found': len(text_refinement_details.get('entities_found', [])),
-                        'processing_notes': text_refinement_details.get('processing_notes', ''),
-                        'confidence_score': summary_analysis.get('confidence', '0'),
-                        'character_count': summary_analysis.get('character_count', 0),
-                        'line_count': summary_analysis.get('line_count', 0)
-                    }
-                    
-                    # Add Comprehend analysis if available
-                    comprehend_analysis = processing_result.get('comprehend_analysis', {})
-                    if comprehend_analysis:
-                        item_data['comprehendAnalysis'] = comprehend_analysis
+                    elif processing_result:
+                        # Data is in results table (long-batch)
+                        item_data['extractedText'] = processing_result.get('extracted_text', '')
+                        item_data['formattedText'] = processing_result.get('formatted_text', '')
+                        item_data['refinedText'] = processing_result.get('refined_text', '')
+                        
+                        # Add Textract analysis with text refinement details
+                        summary_analysis = processing_result.get('summary_analysis', {})
+                        text_refinement_details = processing_result.get('text_refinement_details', {})
+                        
+                        item_data['textract_analysis'] = {
+                            'total_words': summary_analysis.get('word_count', 0),
+                            'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                            'total_sentences': summary_analysis.get('sentence_count', 0),
+                            'total_improvements': text_refinement_details.get('total_improvements', 0),
+                            'spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                            'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
+                            'methods_used': text_refinement_details.get('methods_used', []),
+                            'entities_found': len(text_refinement_details.get('entities_found', [])),
+                            'processing_notes': text_refinement_details.get('processing_notes', ''),
+                            'confidence_score': summary_analysis.get('confidence', '0'),
+                            'character_count': summary_analysis.get('character_count', 0),
+                            'line_count': summary_analysis.get('line_count', 0)
+                        }
+                        
+                        # Add Comprehend analysis if available
+                        comprehend_analysis = processing_result.get('comprehend_analysis', {})
+                        if comprehend_analysis:
+                            item_data['comprehendAnalysis'] = comprehend_analysis
                 
                 processed_items.append(item_data)
             

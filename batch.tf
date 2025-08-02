@@ -85,7 +85,8 @@ resource "aws_batch_job_definition" "main" {
 
   lifecycle {
     ignore_changes = [
-      container_properties
+      container_properties,
+      platform_capabilities
     ]
   }
 }
