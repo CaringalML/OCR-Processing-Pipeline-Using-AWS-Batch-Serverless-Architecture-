@@ -90,7 +90,28 @@ resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
   period              = "300"
   statistic           = "Average"
   threshold           = "0"
-  alarm_description   = "This metric monitors messages in the DLQ"
+  alarm_description   = <<-EOF
+    ALERT: Messages detected in Long Batch Dead Letter Queue!
+    
+    Environment: ${var.environment}
+    Project: ${var.project_name}
+    Queue: ${var.project_name}-${var.environment}-batch-dlq
+    
+    This indicates that messages have failed processing after ${var.sqs_max_receive_count} attempts.
+    
+    Possible causes:
+    - Batch job submission failures
+    - Invalid message format
+    - Lambda function errors
+    - AWS Batch service issues
+    
+    Action required:
+    1. Check CloudWatch Logs for Lambda function errors
+    2. Review failed messages in DLQ via AWS Console
+    3. Check AWS Batch job queue for failed jobs
+    4. Investigate and fix root cause
+    5. Redrive messages from DLQ once issue is resolved
+  EOF
   treat_missing_data  = "notBreaching"
 
   dimensions = {
@@ -151,7 +172,30 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_messages" {
   period              = "300"
   statistic           = "Average"
   threshold           = "0"
-  alarm_description   = "This metric monitors messages in the Short Batch DLQ"
+  alarm_description   = <<-EOF
+    ALERT: Messages detected in Short Batch Dead Letter Queue!
+    
+    Environment: ${var.environment}
+    Project: ${var.project_name}
+    Queue: ${var.project_name}-${var.environment}-short-batch-dlq
+    
+    This indicates that short batch messages have failed processing after 3 attempts.
+    
+    Possible causes:
+    - Lambda processor function errors
+    - S3 access issues
+    - DynamoDB write failures
+    - Invalid message format
+    - Timeout issues (current limit: 20 minutes)
+    
+    Action required:
+    1. Check short_batch_processor Lambda logs in CloudWatch
+    2. Review failed messages in DLQ via AWS Console
+    3. Verify S3 bucket permissions and file accessibility
+    4. Check DynamoDB table for throttling or errors
+    5. Investigate and fix root cause
+    6. Redrive messages from DLQ once issue is resolved
+  EOF
   treat_missing_data  = "notBreaching"
 
   dimensions = {
@@ -162,3 +206,248 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_messages" {
 
   tags = var.common_tags
 }
+# Additional CloudWatch Alarms for enhanced DLQ monitoring
+
+# Alarm for messages aging in Long Batch DLQ
+resource "aws_cloudwatch_metric_alarm" "dlq_message_age" {
+  alarm_name          = "${var.project_name}-${var.environment}-dlq-message-age"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Maximum"
+  threshold           = "3600" # 1 hour
+  alarm_description   = <<-DESC
+    WARNING: Messages in Long Batch DLQ are aging\!
+    
+    Environment: ${var.environment}
+    Queue: ${var.project_name}-${var.environment}-batch-dlq
+    
+    Messages have been in the DLQ for more than 1 hour.
+    This requires immediate attention to prevent message loss.
+    
+    The DLQ retention period is 14 days - messages will be permanently lost after this time.
+  DESC
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.batch_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+
+# Alarm for high message count in Long Batch DLQ
+resource "aws_cloudwatch_metric_alarm" "dlq_high_message_count" {
+  alarm_name          = "${var.project_name}-${var.environment}-dlq-high-count"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "10"
+  alarm_description   = <<-DESC
+    CRITICAL: High number of messages in Long Batch DLQ\!
+    
+    Environment: ${var.environment}
+    Queue: ${var.project_name}-${var.environment}-batch-dlq
+    Threshold: More than 10 messages
+    
+    This indicates a systemic issue affecting multiple messages.
+    Immediate investigation required to prevent further failures.
+  DESC
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.batch_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+
+# Alarm for messages aging in Short Batch DLQ
+resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_message_age" {
+  alarm_name          = "${var.project_name}-${var.environment}-short-batch-dlq-message-age"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Maximum"
+  threshold           = "1800" # 30 minutes
+  alarm_description   = <<-DESC
+    WARNING: Messages in Short Batch DLQ are aging\!
+    
+    Environment: ${var.environment}
+    Queue: ${var.project_name}-${var.environment}-short-batch-dlq
+    
+    Messages have been in the DLQ for more than 30 minutes.
+    Short batch jobs should be processed quickly - this indicates a problem.
+    
+    The DLQ retention period is 14 days - messages will be permanently lost after this time.
+  DESC
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.short_batch_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+
+# Alarm for high message count in Short Batch DLQ
+resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_high_message_count" {
+  alarm_name          = "${var.project_name}-${var.environment}-short-batch-dlq-high-count"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5"
+  alarm_description   = <<-DESC
+    CRITICAL: High number of messages in Short Batch DLQ\!
+    
+    Environment: ${var.environment}
+    Queue: ${var.project_name}-${var.environment}-short-batch-dlq
+    Threshold: More than 5 messages
+    
+    Short batch processing should be reliable - multiple failures indicate a critical issue.
+    Immediate investigation required.
+  DESC
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.short_batch_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+
+# ========================================
+# INVOICE PROCESSING SQS QUEUES
+# ========================================
+
+# Dead Letter Queue for failed invoice messages
+resource "aws_sqs_queue" "invoice_dlq" {
+  name                       = "${var.project_name}-${var.environment}-invoice-dlq"
+  delay_seconds              = 0
+  max_message_size           = 262144
+  message_retention_seconds  = 1209600 # 14 days
+  receive_wait_time_seconds  = 0
+  visibility_timeout_seconds = 300
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-invoice-dlq"
+    Purpose = "Dead letter queue for failed invoice processing"
+  })
+}
+
+# Main SQS Queue for Invoice processing
+resource "aws_sqs_queue" "invoice_queue" {
+  name                       = "${var.project_name}-${var.environment}-invoice-queue"
+  delay_seconds              = 0
+  max_message_size           = 262144
+  message_retention_seconds  = 86400  # 1 day
+  receive_wait_time_seconds  = 0      # Short polling for immediate processing
+  visibility_timeout_seconds = 1800   # 30 minutes for invoice processing
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.invoice_dlq.arn
+    maxReceiveCount     = 3  # Try 3 times before sending to DLQ
+  })
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-invoice-queue"
+    Purpose = "Queue for specialized invoice OCR processing with Claude AI"
+  })
+}
+
+# CloudWatch Alarm for Invoice DLQ
+resource "aws_cloudwatch_metric_alarm" "invoice_dlq_messages" {
+  alarm_name          = "${var.project_name}-${var.environment}-invoice-dlq-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "0"
+  alarm_description   = <<-EOF
+    ALERT: Messages detected in Invoice Processing Dead Letter Queue!
+    
+    Environment: ${var.environment}
+    Project: ${var.project_name}
+    Queue: ${var.project_name}-${var.environment}-invoice-dlq
+    
+    This indicates that invoice processing messages have failed after 3 attempts.
+    
+    Possible causes:
+    - Claude API errors or rate limits
+    - S3 access issues
+    - DynamoDB write failures
+    - Invalid invoice format or unreadable content
+    - Timeout issues (current limit: 30 minutes)
+    - Budget limit exceeded
+    
+    Action required:
+    1. Check invoice_processor Lambda logs in CloudWatch
+    2. Review failed messages in DLQ via AWS Console
+    3. Verify Claude API key and budget limits
+    4. Check S3 bucket permissions and file accessibility
+    5. Validate invoice file formats and readability
+    6. Investigate and fix root cause
+    7. Redrive messages from DLQ once issue is resolved
+  EOF
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.invoice_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+
+# Alarm for high message count in Invoice DLQ
+resource "aws_cloudwatch_metric_alarm" "invoice_dlq_high_message_count" {
+  alarm_name          = "${var.project_name}-${var.environment}-invoice-dlq-high-count"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5"
+  alarm_description   = <<-DESC
+    CRITICAL: High number of messages in Invoice DLQ\!
+    
+    Environment: ${var.environment}
+    Queue: ${var.project_name}-${var.environment}-invoice-dlq
+    Threshold: More than 5 messages
+    
+    Multiple invoice processing failures indicate a systemic issue.
+    This could impact business operations - immediate investigation required.
+  DESC
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.invoice_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = var.common_tags
+}
+

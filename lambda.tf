@@ -4,11 +4,53 @@ resource "aws_sns_topic" "alerts" {
   tags = var.common_tags
 }
 
+# SNS Topic Subscription for email alerts
+resource "aws_sns_topic_subscription" "admin_email_alerts" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.admin_alert_email
+}
+
 # Archive files for Lambda functions
 data "archive_file" "uploader_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_functions/s3_uploader/s3_uploader.zip"
   source_file = "${path.module}/lambda_functions/s3_uploader/s3_uploader.py"
+}
+
+data "archive_file" "invoice_uploader_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/invoice_uploader/invoice_uploader.zip"
+  source_file = "${path.module}/lambda_functions/invoice_uploader/invoice_uploader.py"
+}
+
+# Null resource to detect changes in invoice processor
+resource "null_resource" "invoice_processor_dependencies" {
+  triggers = {
+    requirements_hash = filemd5("${path.module}/lambda_functions/invoice_processor/requirements.txt")
+    source_code_hash  = filemd5("${path.module}/lambda_functions/invoice_processor/invoice_processor.py")
+    install_script_hash = filemd5("${path.module}/lambda_functions/invoice_processor/install_dependencies.sh")
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/lambda_functions/invoice_processor"
+    command = "bash -c 'sed -i \"s/\\r$//\" install_dependencies.sh && chmod +x install_dependencies.sh && ./install_dependencies.sh'"
+  }
+}
+
+# Create a stable hash based on source file content
+locals {
+  invoice_processor_hash = base64sha256(join("", [
+    filemd5("${path.module}/lambda_functions/invoice_processor/requirements.txt"),
+    filemd5("${path.module}/lambda_functions/invoice_processor/invoice_processor.py"),
+    filemd5("${path.module}/lambda_functions/invoice_processor/install_dependencies.sh")
+  ]))
+}
+
+data "archive_file" "invoice_reader_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_functions/invoice_reader/invoice_reader.zip"
+  source_file = "${path.module}/lambda_functions/invoice_reader/invoice_reader.py"
 }
 
 data "archive_file" "reader_zip" {
@@ -74,7 +116,7 @@ resource "null_resource" "short_batch_processor_dependencies" {
 
   provisioner "local-exec" {
     working_dir = "${path.module}/lambda_functions/short_batch_processor"
-    command = "bash -c 'sed -i \"s/\\r$//\" install_dependencies.sh && chmod +x install_dependencies.sh && LOCAL_BUILD=true ./install_dependencies.sh'"
+    command = "bash -c 'sed -i \"s/\\r$//\" install_dependencies.sh && chmod +x install_dependencies.sh && ./install_dependencies.sh'"
   }
 }
 
@@ -301,7 +343,7 @@ resource "aws_lambda_function" "short_batch_processor" {
   function_name    = "${var.project_name}-${var.environment}-short-batch-processor"
   role             = aws_iam_role.short_batch_processor_role.arn
   handler          = "short_batch_processor.lambda_handler"
-  runtime          = "python3.9"
+  runtime          = "python3.12"
   timeout          = 900  # 15 minutes timeout for processing
   memory_size      = 1024  # More memory for faster processing
   source_code_hash = local.short_batch_processor_hash
@@ -310,11 +352,12 @@ resource "aws_lambda_function" "short_batch_processor" {
 
   environment {
     variables = {
-      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
-      RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
-      MAX_FILE_SIZE_MB = "10"
-      MAX_RETRIES    = "3"
-      RETRY_DELAY    = "2"
+      DOCUMENTS_TABLE = aws_dynamodb_table.file_metadata.name
+      PROCESSED_BUCKET = aws_s3_bucket.upload_bucket.id
+      DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
+      SNS_TOPIC_ARN = aws_sns_topic.alerts.arn
+      ANTHROPIC_API_KEY = var.anthropic_api_key
+      BUDGET_LIMIT = "10.0"
       LOG_LEVEL      = "INFO"
       ENVIRONMENT    = var.environment
     }
@@ -799,4 +842,145 @@ resource "aws_cloudwatch_log_group" "short_batch_uploader_logs" {
     Purpose = "Dedicated uploader for short-batch processing via Lambda"
     Function = "short_batch_uploader"
   })
+}
+
+# ========================================
+# INVOICE PROCESSING LAMBDA FUNCTIONS
+# ========================================
+
+# Invoice Uploader Lambda Function
+resource "aws_lambda_function" "invoice_uploader" {
+  filename         = data.archive_file.invoice_uploader_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-invoice-uploader"
+  role            = aws_iam_role.invoice_uploader_role.arn
+  handler         = "invoice_uploader.lambda_handler"
+  runtime         = "python3.12"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = data.archive_file.invoice_uploader_zip.output_base64sha256
+
+  environment {
+    variables = {
+      UPLOAD_BUCKET     = aws_s3_bucket.upload_bucket.bucket
+      METADATA_TABLE    = aws_dynamodb_table.invoice_metadata.name
+      INVOICE_QUEUE_URL = aws_sqs_queue.invoice_queue.url
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.invoice_uploader_policy,
+    aws_cloudwatch_log_group.invoice_uploader_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-invoice-uploader"
+    Purpose = "Specialized uploader for invoice OCR processing"
+  })
+}
+
+# Invoice Processor Lambda Function
+resource "aws_lambda_function" "invoice_processor" {
+  filename         = "${path.module}/lambda_functions/invoice_processor/invoice_processor.zip"
+  function_name    = "${var.project_name}-${var.environment}-invoice-processor"
+  role            = aws_iam_role.invoice_processor_role.arn
+  handler         = "invoice_processor.lambda_handler"
+  runtime         = "python3.12"
+  timeout         = 900  # 15 minutes for invoice processing
+  memory_size     = 1024
+  source_code_hash = local.invoice_processor_hash
+
+  environment {
+    variables = {
+      DOCUMENTS_TABLE         = aws_dynamodb_table.invoice_metadata.name
+      RESULTS_TABLE          = aws_dynamodb_table.invoice_processing_results.name
+      PROCESSED_BUCKET       = aws_s3_bucket.upload_bucket.bucket
+      DEAD_LETTER_QUEUE_URL  = ""  # Will be set if needed
+      SNS_TOPIC_ARN         = aws_sns_topic.alerts.arn
+      ANTHROPIC_API_KEY     = var.anthropic_api_key
+      BUDGET_LIMIT          = "10.0"
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.invoice_processor_policy,
+    aws_cloudwatch_log_group.invoice_processor_logs,
+    null_resource.invoice_processor_dependencies
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-invoice-processor"
+    Purpose = "Specialized invoice OCR processing with Claude AI"
+  })
+}
+
+# CloudWatch Log Groups - Invoice Uploader
+resource "aws_cloudwatch_log_group" "invoice_uploader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-uploader"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Invoice upload and queuing logging"
+    Function = "invoice_uploader"
+  })
+}
+
+# CloudWatch Log Groups - Invoice Processor
+resource "aws_cloudwatch_log_group" "invoice_processor_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-processor"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Invoice OCR processing with Claude AI logging"
+    Function = "invoice_processor"
+  })
+}
+
+# Invoice Reader Lambda Function
+resource "aws_lambda_function" "invoice_reader" {
+  filename         = data.archive_file.invoice_reader_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-invoice-reader"
+  role            = aws_iam_role.invoice_reader_role.arn
+  handler         = "invoice_reader.lambda_handler"
+  runtime         = "python3.12"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = data.archive_file.invoice_reader_zip.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE    = aws_dynamodb_table.invoice_metadata.name
+      RESULTS_TABLE     = aws_dynamodb_table.invoice_processing_results.name
+      CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.invoice_reader_policy,
+    aws_cloudwatch_log_group.invoice_reader_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-invoice-reader"
+    Purpose = "Specialized reader for processed invoice data with enhanced formatting"
+  })
+}
+
+# CloudWatch Log Groups - Invoice Reader
+resource "aws_cloudwatch_log_group" "invoice_reader_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-reader"
+  retention_in_days = 7
+  tags              = merge(var.common_tags, {
+    Purpose = "Invoice data reading and presentation logging"
+    Function = "invoice_reader"
+  })
+}
+
+# SQS Event Source Mapping for Invoice Processor
+resource "aws_lambda_event_source_mapping" "invoice_processor_sqs" {
+  event_source_arn = aws_sqs_queue.invoice_queue.arn
+  function_name    = aws_lambda_function.invoice_processor.arn
+  batch_size       = 1
+  maximum_batching_window_in_seconds = 5
+
+  depends_on = [
+    aws_iam_role_policy_attachment.invoice_processor_policy
+  ]
 }

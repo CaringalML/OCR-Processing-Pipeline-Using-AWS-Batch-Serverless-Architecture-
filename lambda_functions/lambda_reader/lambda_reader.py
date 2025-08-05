@@ -109,23 +109,88 @@ def lambda_handler(event, context):
                 }
             }
             
-            # Add processing results if available
-            if processing_result:
-                response_data['extractedText'] = processing_result.get('extracted_text', '')
-                response_data['formattedText'] = processing_result.get('formatted_text', '')
-                response_data['refinedText'] = processing_result.get('refined_text', '')
-                response_data['processingDuration'] = processing_result.get('processing_duration', '')
+            # Determine processing type and add appropriate results
+            processing_route = file_metadata.get('processing_route', 'long-batch')
+            
+            if processing_route == 'short-batch' and (file_metadata.get('raw_ocr_text') or file_metadata.get('refined_ocr_text')):
+                # Short-batch (Claude API) results - stored in metadata table
+                raw_text = file_metadata.get('raw_ocr_text', '')
+                refined_text = file_metadata.get('refined_ocr_text', '')
                 
-                # Use enhanced textract_analysis directly from processor if available
+                response_data['ocrResults'] = {
+                    'formattedText': raw_text,      # Exact replica of scanned document
+                    'refinedText': refined_text,    # Grammar and punctuation improved by Claude
+                    'processingModel': file_metadata.get('model', 'claude-sonnet-4-20250514'),
+                    'processingType': 'short-batch',
+                    'processingCost': file_metadata.get('processing_cost', 0),
+                    'processedAt': file_metadata.get('processed_at', ''),
+                    'rawTextLength': len(raw_text),
+                    'refinedTextLength': len(refined_text),
+                    'tokenUsage': {
+                        'ocrTokens': file_metadata.get('ocr_tokens', {}),
+                        'refinementTokens': file_metadata.get('refinement_tokens', {})
+                    },
+                    'detectedLanguage': file_metadata.get('detected_language', 'unknown'),
+                    'languageConfidence': file_metadata.get('language_confidence', 0.0)
+                }
+            elif processing_result:
+                # Long-batch (Textract) results - stored in results table
+                response_data['ocrResults'] = {
+                    'extractedText': processing_result.get('extracted_text', ''),     # Raw Textract
+                    'formattedText': processing_result.get('formatted_text', ''),    # Processed
+                    'refinedText': processing_result.get('refined_text', ''),        # Final refined
+                    'processingModel': 'aws-textract',
+                    'processingType': 'long-batch',
+                    'processingDuration': processing_result.get('processing_duration', '')
+                }
+            else:
+                # No OCR results available
+                response_data['ocrResults'] = None
+            
+            # Add analysis data based on processing type
+            if processing_route == 'short-batch':
+                # For Claude processing, add text statistics for both versions
+                raw_text = file_metadata.get('raw_ocr_text', '')
+                refined_text = file_metadata.get('refined_ocr_text', '')
+                
+                if raw_text or refined_text:
+                    # Use refined text for analysis (better for word/sentence counting)
+                    analysis_text = refined_text if refined_text else raw_text
+                    words = analysis_text.split()
+                    paragraphs = analysis_text.split('\n\n')
+                    sentences = analysis_text.split('. ')
+                    
+                    response_data['textAnalysis'] = {
+                        'total_words': len(words),
+                        'total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                        'total_sentences': len([s for s in sentences if s.strip()]),
+                        'raw_character_count': len(raw_text),
+                        'refined_character_count': len(refined_text),
+                        'processing_model': file_metadata.get('model', 'claude-sonnet-4-20250514'),
+                        'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
+                        'improvement_ratio': round(len(refined_text) / len(raw_text), 2) if raw_text else 1.0
+                    }
+                    
+                    # Add entity analysis for short-batch - from Claude detection
+                    entity_summary = file_metadata.get('entity_summary', {})
+                    if entity_summary:
+                        response_data['entityAnalysis'] = {
+                            'entity_summary': entity_summary,
+                            'total_entities': file_metadata.get('total_entities', 0),
+                            'entity_types': list(entity_summary.keys()) if entity_summary else [],
+                            'detection_method': 'claude_ai'
+                        }
+            elif processing_result:
+                # For Textract processing, use existing analysis
                 enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
                 if enhanced_textract_analysis:
-                    response_data['textract_analysis'] = enhanced_textract_analysis
+                    response_data['textAnalysis'] = enhanced_textract_analysis
                 else:
                     # Fallback to legacy construction for backward compatibility
                     summary_analysis = processing_result.get('summary_analysis', {})
                     text_refinement_details = processing_result.get('text_refinement_details', {})
                     
-                    response_data['textract_analysis'] = {
+                    response_data['textAnalysis'] = {
                         'total_words': summary_analysis.get('word_count', 0),
                         'total_paragraphs': summary_analysis.get('paragraph_count', 0),
                         'total_sentences': summary_analysis.get('sentence_count', 0),
@@ -140,15 +205,11 @@ def lambda_handler(event, context):
                         'line_count': summary_analysis.get('line_count', 0)
                     }
                 
-                # Add enhanced Comprehend entity analysis
+                # Add enhanced Comprehend entity analysis for long-batch
                 comprehend_analysis = processing_result.get('comprehend_analysis', {})
-                entity_analysis = processing_result.get('entity_analysis', {})
-                
                 if comprehend_analysis:
                     response_data['comprehendAnalysis'] = comprehend_analysis
                     
-                if entity_analysis:
-                    response_data['entityAnalysis'] = entity_analysis
                 
                 # Add dedicated Invoice Analysis section
                 invoice_analysis = processing_result.get('invoice_analysis', {})

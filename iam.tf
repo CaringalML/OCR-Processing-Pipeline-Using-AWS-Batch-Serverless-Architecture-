@@ -183,18 +183,6 @@ resource "aws_iam_role_policy" "batch_task_policy" {
         ]
         Resource = "*"
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "comprehend:DetectDominantLanguage",
-          "comprehend:DetectEntities",
-          "comprehend:DetectKeyPhrases",
-          "comprehend:DetectSentiment",
-          "comprehend:DetectSyntax",
-          "comprehend:DetectPiiEntities"
-        ]
-        Resource = "*"
-      }
     ]
   })
 }
@@ -513,6 +501,13 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
         Resource = [
           aws_sqs_queue.short_batch_queue.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage"
+        ]
+        Resource = aws_sqs_queue.short_batch_dlq.arn
       }
     ]
   })
@@ -552,27 +547,23 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
         Resource = [
           aws_dynamodb_table.file_metadata.arn,
           "${aws_dynamodb_table.file_metadata.arn}/index/*",
-          aws_dynamodb_table.processing_results.arn
+          aws_dynamodb_table.processing_results.arn,
+          aws_dynamodb_table.ocr_budget_tracking.arn
         ]
       },
       {
         Effect = "Allow"
         Action = [
-          "textract:DetectDocumentText",
-          "textract:AnalyzeDocument"
+          "s3:PutObject"
         ]
-        Resource = "*"
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
         Effect = "Allow"
         Action = [
-          "comprehend:DetectDominantLanguage",
-          "comprehend:DetectEntities",
-          "comprehend:DetectKeyPhrases",
-          "comprehend:DetectSentiment",
-          "comprehend:DetectSyntax"
+          "sns:Publish"
         ]
-        Resource = "*"
+        Resource = aws_sns_topic.alerts.arn
       },
       {
         Effect = "Allow"
@@ -1201,4 +1192,245 @@ resource "aws_iam_policy" "short_batch_uploader_policy" {
 resource "aws_iam_role_policy_attachment" "short_batch_uploader_policy" {
   role       = aws_iam_role.short_batch_uploader_role.name
   policy_arn = aws_iam_policy.short_batch_uploader_policy.arn
+}
+
+# ========================================
+# INVOICE PROCESSING IAM ROLES AND POLICIES
+# ========================================
+
+# Invoice Uploader Lambda Role
+resource "aws_iam_role" "invoice_uploader_role" {
+  name = "${var.project_name}-${var.environment}-invoice-uploader-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Invoice Processor Lambda Role
+resource "aws_iam_role" "invoice_processor_role" {
+  name = "${var.project_name}-${var.environment}-invoice-processor-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Invoice Reader Lambda Role
+resource "aws_iam_role" "invoice_reader_role" {
+  name = "${var.project_name}-${var.environment}-invoice-reader-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Invoice Uploader Lambda Policy
+resource "aws_iam_policy" "invoice_uploader_policy" {
+  name = "${var.project_name}-${var.environment}-invoice-uploader-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # S3 - Upload to bucket
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      # DynamoDB - Write invoice metadata to dedicated tables
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.invoice_metadata.arn,
+          "${aws_dynamodb_table.invoice_metadata.arn}/index/*"
+        ]
+      },
+      # SQS - Send messages to invoice queue
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = aws_sqs_queue.invoice_queue.arn
+      }
+    ]
+  })
+}
+
+# Invoice Processor Lambda Policy
+resource "aws_iam_policy" "invoice_processor_policy" {
+  name = "${var.project_name}-${var.environment}-invoice-processor-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # S3 - Read from upload bucket and write processed results
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject"
+        ]
+        Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
+      },
+      # DynamoDB - Read and write invoice metadata and results to dedicated tables
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:PutItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.invoice_metadata.arn,
+          "${aws_dynamodb_table.invoice_metadata.arn}/index/*",
+          aws_dynamodb_table.invoice_processing_results.arn,
+          "${aws_dynamodb_table.invoice_processing_results.arn}/index/*",
+          aws_dynamodb_table.ocr_budget_tracking.arn
+        ]
+      },
+      # SNS - Send notifications
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = aws_sns_topic.alerts.arn
+      },
+      # SQS - Receive and delete messages from invoice queue
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [
+          aws_sqs_queue.invoice_queue.arn,
+          aws_sqs_queue.invoice_dlq.arn
+        ]
+      }
+    ]
+  })
+}
+
+# Invoice Reader Lambda Policy
+resource "aws_iam_policy" "invoice_reader_policy" {
+  name = "${var.project_name}-${var.environment}-invoice-reader-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      # DynamoDB - Read invoice metadata and results from dedicated tables
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.invoice_metadata.arn,
+          "${aws_dynamodb_table.invoice_metadata.arn}/index/*",
+          aws_dynamodb_table.invoice_processing_results.arn,
+          "${aws_dynamodb_table.invoice_processing_results.arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach policies to roles
+resource "aws_iam_role_policy_attachment" "invoice_uploader_policy" {
+  role       = aws_iam_role.invoice_uploader_role.name
+  policy_arn = aws_iam_policy.invoice_uploader_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "invoice_processor_policy" {
+  role       = aws_iam_role.invoice_processor_role.name
+  policy_arn = aws_iam_policy.invoice_processor_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "invoice_reader_policy" {
+  role       = aws_iam_role.invoice_reader_role.name
+  policy_arn = aws_iam_policy.invoice_reader_policy.arn
 }

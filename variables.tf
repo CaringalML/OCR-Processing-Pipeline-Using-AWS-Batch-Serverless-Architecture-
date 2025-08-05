@@ -164,6 +164,13 @@ variable "common_tags" {
   }
 }
 
+# Anthropic API Key for Claude OCR
+variable "anthropic_api_key" {
+  description = "Anthropic API key for Claude API access"
+  type        = string
+  sensitive   = true
+}
+
 # S3 and file processing configuration
 variable "upload_bucket_prefix" {
   description = "Prefix for the upload bucket name"
@@ -432,4 +439,15 @@ variable "allow_cross_account_layer_access" {
   description = "Allow cross-account access to Lambda layers"
   type        = bool
   default     = false
+}
+
+# Admin notification email for DLQ alerts
+variable "admin_alert_email" {
+  description = "Email address to receive DLQ and other critical alerts"
+  type        = string
+  default     = "lawrencecaringal5@gmail.com"
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.admin_alert_email))
+    error_message = "Must be a valid email address."
+  }
 }

@@ -1,151 +1,144 @@
 #!/bin/bash
-# Install Dependencies Script for Short Batch Processor Lambda Function
-# Automatically executed by Terraform during deployment
-# Smart packaging with change detection - only rebuilds when source files or dependencies change
 
-set -e
+# Install Dependencies and Package Lambda Function for Claude API OCR
+# This script is automatically called by Terraform during deployment
 
-FUNCTION_NAME="ocr-processor-batch-short-batch-processor"
-PACKAGE_NAME="short_batch_processor.zip"
-PACKAGE_DIR="package"
-SOURCE_FILE="short_batch_processor.py"
+set -e  # Exit on any error
 
-# Always use requirements.txt (standalone mode with all dependencies bundled)
-echo "🚀 [Terraform] Installing dependencies for short_batch_processor Lambda function..."
-echo "📦 Using standalone mode - bundling all dependencies in package"
-REQUIREMENTS_FILE="requirements.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Checksum files for intelligent change detection
-CHECKSUMS_FILE=".package_checksums"
-CURRENT_CHECKSUMS_FILE=".current_checksums"
+echo "===================================================================================="
+echo "Installing dependencies for Short Batch Processor (Claude API)"
+echo "===================================================================================="
 
-echo "🔍 Checking for changes to optimize build time..."
+# Clean up any existing artifacts
+echo "🧹 Cleaning up existing artifacts..."
+rm -rf package/
+rm -f short_batch_processor.zip
+rm -rf __pycache__/
+rm -rf *.pyc
 
-# Calculate current checksums
-calculate_checksums() {
-    {
-        # Source code checksum
-        if [ -f "$SOURCE_FILE" ]; then
-            echo "source: $(md5sum "$SOURCE_FILE" | cut -d' ' -f1)"
-        fi
-        
-        # Requirements checksum
-        if [ -f "$REQUIREMENTS_FILE" ]; then
-            echo "requirements: $(md5sum "$REQUIREMENTS_FILE" | cut -d' ' -f1)"
-        fi
-        
-    } | sort
-}
+# Create package directory
+echo "📁 Creating package directory..."
+mkdir -p package
 
-# Check if package needs rebuilding
-needs_rebuild() {
-    # If no previous checksums or package doesn't exist, rebuild
-    if [ ! -f "$CHECKSUMS_FILE" ] || [ ! -f "$PACKAGE_NAME" ]; then
-        return 0  # needs rebuild
+# Install Python dependencies
+echo "📦 Installing Python dependencies..."
+if [ -f requirements.txt ]; then
+    echo "Installing from requirements.txt..."
+    # Install with dependencies for Lambda Python 3.12 runtime
+    pip install --target package --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all: --upgrade -r requirements.txt || {
+        echo "⚠️  Binary-only install failed, trying with compilation..."
+        pip install --target package --upgrade -r requirements.txt
+    }
+    
+    # Verify critical dependencies were installed
+    if [ ! -d "package/anthropic" ]; then
+        echo "❌ Error: anthropic library not found in package"
+        exit 1
     fi
     
-    # Calculate current checksums
-    calculate_checksums > "$CURRENT_CHECKSUMS_FILE"
-    
-    # Compare with previous checksums
-    if ! diff -q "$CHECKSUMS_FILE" "$CURRENT_CHECKSUMS_FILE" > /dev/null 2>&1; then
-        return 0  # needs rebuild
-    else
-        return 1  # no rebuild needed
+    if [ ! -d "package/boto3" ]; then
+        echo "❌ Error: boto3 library not found in package"
+        exit 1
     fi
-}
-
-# Build package with optimization
-build_package() {
-    echo "📦 Building optimized Lambda deployment package..."
     
-    # Clean up previous builds
-    echo "🧹 Cleaning previous build artifacts..."
-    rm -rf "$PACKAGE_DIR"
-    rm -f "$PACKAGE_NAME"
-    
-    # Create package directory
-    mkdir -p "$PACKAGE_DIR"
-    
-    # Install Python dependencies
-    echo "📥 Installing Python dependencies from requirements.txt..."
-    pip3 install -r "$REQUIREMENTS_FILE" -t "$PACKAGE_DIR/" --upgrade --quiet
-    
-    # Copy source code
-    echo "📋 Copying Lambda function source code..."
-    cp "$SOURCE_FILE" "$PACKAGE_DIR/"
-    
-    # Optimize package size
-    echo "🗂️ Optimizing package size for AWS Lambda..."
-    cd "$PACKAGE_DIR"
-    
-    # Remove Python cache and compiled files
-    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-    find . -name "*.pyc" -delete 2>/dev/null || true
-    find . -name "*.pyo" -delete 2>/dev/null || true
-    find . -name "*.pyd" -delete 2>/dev/null || true
-    
-    # Remove package metadata
-    find . -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-    find . -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-    
-    # Remove test files and documentation
-    find . -name "test*" -type d -exec rm -rf {} + 2>/dev/null || true
-    find . -name "*test*" -name "*.py" -delete 2>/dev/null || true
-    find . -name "*.md" -delete 2>/dev/null || true
-    find . -name "*.rst" -delete 2>/dev/null || true
-    find . -name "*.txt" -not -name "requirements.txt" -delete 2>/dev/null || true
-    
-    # Remove unnecessary spaCy model files (keep only core)
-    find . -path "*/spacy/lang/*" -not -path "*/spacy/lang/en*" -exec rm -rf {} + 2>/dev/null || true
-    find . -path "*/spacy/tests*" -exec rm -rf {} + 2>/dev/null || true
-    
-    # Remove NLTK test data
-    find . -path "*/nltk/test*" -exec rm -rf {} + 2>/dev/null || true
-    find . -path "*/nltk/*/test*" -exec rm -rf {} + 2>/dev/null || true
-    
-    # Remove numpy tests
-    find . -path "*/numpy/*/test*" -exec rm -rf {} + 2>/dev/null || true
-    find . -path "*/numpy/tests*" -exec rm -rf {} + 2>/dev/null || true
-    
-    # Remove source files for compiled extensions
-    find . -name "*.c" -delete 2>/dev/null || true
-    find . -name "*.cpp" -delete 2>/dev/null || true
-    find . -name "*.pyx" -delete 2>/dev/null || true
-    find . -name "*.pxd" -delete 2>/dev/null || true
-    
-    # Create ZIP
-    echo "📦 Creating ZIP package..."
-    zip -r "../$PACKAGE_NAME" . -q
-    cd ..
-    
-    # Save checksums for next time
-    calculate_checksums > "$CHECKSUMS_FILE"
-    
-    # Clean up temp files
-    rm -f "$CURRENT_CHECKSUMS_FILE"
-    
-    package_size=$(du -h "$PACKAGE_NAME" | cut -f1)
-    echo "✅ Deployment package created: $PACKAGE_NAME ($package_size)"
-}
-
-# Main execution logic with intelligent rebuilding
-if needs_rebuild; then
-    if [ -f "$CHECKSUMS_FILE" ]; then
-        echo "🔄 Changes detected in source files or dependencies - rebuilding package..."
-    else
-        echo "📦 No previous package found - building new deployment package..."
+    if [ ! -d "package/botocore" ]; then
+        echo "❌ Error: botocore library not found in package"
+        exit 1
     fi
-    build_package
-    echo "📝 Package optimized and ready for Lambda deployment"
+    
+    if [ ! -d "package/pydantic" ]; then
+        echo "❌ Error: pydantic library not found in package"
+        exit 1
+    fi
+    
+    echo "✅ Dependencies installed successfully"
 else
-    echo "✅ No changes detected - reusing existing optimized package: $PACKAGE_NAME"
-    package_size=$(du -h "$PACKAGE_NAME" | cut -f1)
-    echo "📊 Current package size: $package_size"
+    echo "❌ Error: requirements.txt not found"
+    exit 1
 fi
 
-# Clean up temporary files
-rm -f "$CURRENT_CHECKSUMS_FILE"
+# Copy main function file
+echo "📄 Copying main function file..."
+cp short_batch_processor.py package/
 
-echo "🎉 [Terraform] Dependencies installation completed successfully!"
-echo "🚀 Lambda function package is ready for deployment"
+# Remove unnecessary files to reduce package size (but keep essential modules)
+echo "🗑️ Optimizing package size..."
+cd package
+
+# Remove cache and compiled files
+find . -name "*.pyc" -delete 2>/dev/null || true
+find . -name "*.pyo" -delete 2>/dev/null || true
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Remove metadata directories (but not actual code)
+find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Remove documentation files only (not directories that might contain code)
+find . -name "*.md" -delete 2>/dev/null || true
+find . -name "*.rst" -delete 2>/dev/null || true
+find . -name "README*" -delete 2>/dev/null || true
+find . -name "CHANGELOG*" -delete 2>/dev/null || true
+find . -name "LICENSE*" -delete 2>/dev/null || true
+
+# Remove specific test directories but be more careful
+find . -type d -path "*/tests/*" -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name "test_*" -exec rm -rf {} + 2>/dev/null || true
+
+# Verify critical botocore modules are still present
+echo "🔍 Verifying critical modules..."
+if [ ! -d "botocore/docs" ]; then
+    echo "❌ Error: botocore.docs module missing after cleanup"
+    exit 1
+fi
+
+if [ ! -f "anthropic/__init__.py" ]; then
+    echo "❌ Error: anthropic module missing after cleanup"
+    exit 1
+fi
+
+if [ ! -f "pydantic/__init__.py" ]; then
+    echo "❌ Error: pydantic module missing after cleanup"
+    exit 1
+fi
+
+# Check if pydantic_core exists (it's a dependency of pydantic)
+if [ -d "pydantic_core" ]; then
+    echo "✅ pydantic_core found in package"
+else
+    echo "⚠️  pydantic_core not found as separate package (may be bundled with pydantic)"
+fi
+
+echo "✅ All critical modules verified"
+
+# Create deployment package
+echo "📦 Creating deployment package..."
+zip -r ../short_batch_processor.zip . -q
+
+cd ..
+
+# Verify package was created
+if [ ! -f short_batch_processor.zip ]; then
+    echo "❌ Error: Failed to create deployment package"
+    exit 1
+fi
+
+# Show package information
+PACKAGE_SIZE=$(ls -lh short_batch_processor.zip | awk '{print $5}')
+echo "✅ Deployment package created: short_batch_processor.zip (${PACKAGE_SIZE})"
+
+# List package contents for verification
+echo "📋 Package contents:"
+unzip -l short_batch_processor.zip | head -20
+
+# Clean up temporary package directory
+echo "🧹 Cleaning up temporary files..."
+rm -rf package/
+
+echo "===================================================================================="
+echo "✅ Short Batch Processor package ready for deployment!"
+echo "Package: short_batch_processor.zip (${PACKAGE_SIZE})"
+echo "===================================================================================="

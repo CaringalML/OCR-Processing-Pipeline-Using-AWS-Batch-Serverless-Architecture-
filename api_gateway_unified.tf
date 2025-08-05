@@ -521,6 +521,31 @@ resource "aws_api_gateway_resource" "short_batch_restore_file_id" {
 }
 
 # ========================================
+# INVOICE PROCESSING RESOURCES
+# ========================================
+
+# Short Batch - Invoices
+resource "aws_api_gateway_resource" "short_batch_invoices" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.short_batch.id
+  path_part   = "invoices"
+}
+
+# Short Batch - Invoices - Upload
+resource "aws_api_gateway_resource" "short_batch_invoices_upload" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.short_batch_invoices.id
+  path_part   = "upload"
+}
+
+# Short Batch Invoices - Processed
+resource "aws_api_gateway_resource" "short_batch_invoices_processed" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.short_batch_invoices.id
+  path_part   = "processed"
+}
+
+# ========================================
 # LONG BATCH METHODS
 # ========================================
 
@@ -833,6 +858,150 @@ resource "aws_api_gateway_integration" "short_batch_restore_post" {
 }
 
 # ========================================
+# INVOICE PROCESSING METHODS
+# ========================================
+
+# Invoice Upload POST Method
+resource "aws_api_gateway_method" "invoice_upload_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# Invoice Upload POST Integration
+resource "aws_api_gateway_integration" "invoice_upload_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method = aws_api_gateway_method.invoice_upload_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = aws_lambda_function.invoice_uploader.invoke_arn
+}
+
+# Invoice Upload OPTIONS Method (for CORS)
+resource "aws_api_gateway_method" "invoice_upload_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Invoice Upload OPTIONS Integration (for CORS)
+resource "aws_api_gateway_integration" "invoice_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method = aws_api_gateway_method.invoice_upload_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Invoice Upload OPTIONS Method Response
+resource "aws_api_gateway_method_response" "invoice_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method = aws_api_gateway_method.invoice_upload_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Invoice Upload OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "invoice_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_upload.id
+  http_method = aws_api_gateway_method.invoice_upload_options.http_method
+  status_code = aws_api_gateway_method_response.invoice_upload_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# Invoice Processed GET Method
+resource "aws_api_gateway_method" "invoice_processed_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+# Invoice Processed GET Integration
+resource "aws_api_gateway_integration" "invoice_processed_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method = aws_api_gateway_method.invoice_processed_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = aws_lambda_function.invoice_reader.invoke_arn
+}
+
+# Invoice Processed OPTIONS Method (for CORS)
+resource "aws_api_gateway_method" "invoice_processed_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Invoice Processed OPTIONS Integration (for CORS)
+resource "aws_api_gateway_integration" "invoice_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method = aws_api_gateway_method.invoice_processed_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = jsonencode({ statusCode = 200 })
+  }
+}
+
+# Invoice Processed OPTIONS Method Response
+resource "aws_api_gateway_method_response" "invoice_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method = aws_api_gateway_method.invoice_processed_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+}
+
+# Invoice Processed OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "invoice_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.short_batch_invoices_processed.id
+  http_method = aws_api_gateway_method.invoice_processed_options.http_method
+  status_code = aws_api_gateway_method_response.invoice_processed_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# ========================================
 # DEPLOYMENT AND STAGE
 # ========================================
 
@@ -857,6 +1026,9 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.short_batch_delete_delete,
     aws_api_gateway_integration.short_batch_recycle_bin_get,
     aws_api_gateway_integration.short_batch_restore_post,
+    # Invoice Processing Dependencies
+    aws_api_gateway_integration.invoice_upload_post,
+    aws_api_gateway_integration.invoice_processed_get,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -907,6 +1079,22 @@ resource "aws_lambda_permission" "short_batch_uploader_api_gateway" {
   function_name = aws_lambda_function.short_batch_uploader.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/upload"
+}
+
+resource "aws_lambda_permission" "invoice_uploader_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayInvoice"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.invoice_uploader.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/invoices/upload"
+}
+
+resource "aws_lambda_permission" "invoice_reader_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayInvoiceReader"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.invoice_reader.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/short-batch/invoices/processed"
 }
 
 resource "aws_lambda_permission" "sqs_processor" {

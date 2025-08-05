@@ -24,6 +24,10 @@ output "api_gateway" {
       delete      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/delete/{fileId}"
       recycle_bin = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/recycle-bin"
       restore     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/restore/{fileId}"
+      
+      # Invoice Processing Endpoints
+      invoice_upload    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload"
+      invoice_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed"
     }
   }
 }
@@ -268,6 +272,26 @@ output "monitoring" {
   value = {
     alerts_topic_arn  = aws_sns_topic.alerts.arn
     alerts_topic_name = aws_sns_topic.alerts.name
+    admin_email       = var.admin_alert_email
+    dlq_alarms = {
+      long_batch = {
+        message_count_alarm = aws_cloudwatch_metric_alarm.dlq_messages.alarm_name
+        high_count_alarm    = aws_cloudwatch_metric_alarm.dlq_high_message_count.alarm_name
+        message_age_alarm   = aws_cloudwatch_metric_alarm.dlq_message_age.alarm_name
+      }
+      short_batch = {
+        message_count_alarm = aws_cloudwatch_metric_alarm.short_batch_dlq_messages.alarm_name
+        high_count_alarm    = aws_cloudwatch_metric_alarm.short_batch_dlq_high_message_count.alarm_name
+        message_age_alarm   = aws_cloudwatch_metric_alarm.short_batch_dlq_message_age.alarm_name
+      }
+    }
+    alert_thresholds = {
+      dlq_any_messages       = "Immediately (> 0 messages)"
+      dlq_high_count_long    = "More than 10 messages"
+      dlq_high_count_short   = "More than 5 messages"
+      dlq_age_long_batch     = "Messages older than 1 hour"
+      dlq_age_short_batch    = "Messages older than 30 minutes"
+    }
   }
 }
 
@@ -335,6 +359,19 @@ output "api_examples" {
     # Smart routing upload (size-based decision)
     smart_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload' -F 'file=@document.pdf'"
     
+    # Invoice Processing Examples (OCR extracts all data automatically)
+    invoice_upload_simple = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf'"
+    
+    invoice_upload_with_options = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf' -F 'description=Monthly invoice' -F 'priority=urgent'"
+    
+    invoice_get_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed'"
+    
+    invoice_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?fileId=YOUR_INVOICE_ID'"
+    
+    invoice_search_vendor = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?vendorName=ABC+Company'"
+    
+    invoice_search_number = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?invoiceNumber=INV-001'"
+    
     # Common operations (available on both APIs)
     delete_file = "curl -X DELETE 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/delete/YOUR_FILE_ID'"
     
@@ -390,6 +427,9 @@ output "architecture" {
       "Serverless auto-scaling processing",
       "Fast processing for small files (10-30s)",
       "Heavy processing for complex files (5-15min)",
+      "Specialized invoice OCR processing",
+      "Structured invoice data extraction",
+      "Invoice-specific search and filtering",
       "Fuzzy search with RapidFuzz",
       "Semantic text processing",
       "Cost-optimized infrastructure",
@@ -397,6 +437,41 @@ output "architecture" {
       "Recycle bin with 30-day retention",
       "Soft delete and restore functionality"
     ]
+    
+    invoice_processing = {
+      flow = "Invoice Upload → S3 Invoice Folder → SQS → Claude AI OCR → Comprehensive Extraction → DynamoDB"
+      features = [
+        "Claude Sonnet 4 for maximum accuracy OCR",
+        "60+ detailed fields extracted automatically",
+        "Comprehensive business and client information",
+        "Complete financial breakdown with currency handling",
+        "Enhanced line item details with categories",
+        "Payment and banking information extraction",
+        "Signature and logo detection",
+        "Document quality assessment",
+        "Multi-language support",
+        "Advanced search by any extracted field",
+        "Structured JSON output for easy integration"
+      ]
+      
+      field_categories = {
+        business_info = "15 fields: name, address, contact, tax details, logo detection"
+        client_info = "11 fields: complete customer information and addresses"  
+        invoice_details = "8 fields: numbers, dates, references, types"
+        financial_summary = "12 fields: totals, taxes, discounts, currency"
+        line_items = "9 fields per item: descriptions, quantities, pricing, categories"
+        payment_info = "8 fields: terms, methods, banking details"
+        additional_info = "7 fields: notes, signatures, authorization"
+        document_metadata = "7 fields: quality, confidence, validation"
+      }
+      
+      supported_formats = ["PDF", "PNG", "JPG", "JPEG"]
+      max_file_size = "10MB"
+      processing_time = "10-30 seconds"
+      confidence_scoring = "High/Medium/Low with quality assessment"
+      total_extractable_fields = "60+ structured fields"
+      currency_support = "Multi-currency with symbol and code detection"
+    }
   }
 }
 

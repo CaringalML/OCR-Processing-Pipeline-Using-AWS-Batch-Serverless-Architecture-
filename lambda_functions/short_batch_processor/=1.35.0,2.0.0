@@ -1,0 +1,12 @@
+Collecting botocore
+  Using cached botocore-1.40.1-py3-none-any.whl (13.9 MB)
+Collecting python-dateutil<3.0.0,>=2.1
+  Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+Collecting jmespath<2.0.0,>=0.7.1
+  Using cached jmespath-1.0.1-py3-none-any.whl (20 kB)
+Collecting urllib3!=2.2.0,<3,>=1.25.4
+  Using cached urllib3-2.5.0-py3-none-any.whl (129 kB)
+Collecting six>=1.5
+  Using cached six-1.17.0-py2.py3-none-any.whl (11 kB)
+Installing collected packages: urllib3, six, jmespath, python-dateutil, botocore
+Successfully installed botocore-1.40.1 jmespath-1.0.1 python-dateutil-2.9.0.post0 six-1.17.0 urllib3-2.5.0
