@@ -1001,6 +1001,7 @@ resource "aws_api_gateway_integration_response" "invoice_processed_options" {
   }
 }
 
+
 # ========================================
 # DEPLOYMENT AND STAGE
 # ========================================

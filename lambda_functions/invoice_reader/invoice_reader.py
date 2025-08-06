@@ -296,7 +296,10 @@ def lambda_handler(event, context):
         # Parse query parameters
         query_params = event.get('queryStringParameters', {}) or {}
         status_filter = query_params.get('status', 'completed')  # Default to completed for invoices
-        limit = int(query_params.get('limit', '50'))
+        
+        # Set high default limit to get all records, but allow override
+        limit = int(query_params.get('limit', '10000'))  # High default limit to get all records
+            
         file_id = query_params.get('fileId')
         vendor_name = query_params.get('vendorName')
         invoice_number = query_params.get('invoiceNumber')
@@ -566,29 +569,31 @@ def lambda_handler(event, context):
                     'fileSize': int(item.get('file_size', 0)),
                     'contentType': item.get('content_type') or 'application/octet-stream',
                     'cloudFrontUrl': cloudfront_url or '',
+                    'processingRoute': 'invoice-ocr',
+                    'processingType': 'specialized-invoice',
                     'processingDuration': processing_duration,
-                    'overallConfidence': f"{item.get('extraction_confidence', 0)}%",
-                    
-                    # Invoice-specific summary fields (OCR-extracted or pending)
-                    'vendorName': item.get('vendor_name', '') if item.get('vendor_name') != 'PENDING_OCR' else 'Processing...',
-                    'invoiceNumber': item.get('invoice_number', '') if item.get('invoice_number') != 'PENDING_OCR' else 'Processing...',
-                    'invoiceDate': item.get('invoice_date', '') if item.get('invoice_date') != 'PENDING_OCR' else 'Processing...',
-                    'totalAmount': item.get('total_amount', ''),
-                    'currency': item.get('currency', 'USD'),
-                    'invoiceType': item.get('invoice_type', 'standard'),
-                    'businessCategory': item.get('business_category', ''),
-                    'processingPriority': item.get('processing_priority', 'normal'),
-                    'invoiceFieldsExtracted': item.get('invoice_fields_extracted', 0),
-                    'processedAt': item.get('processed_at', ''),
-                    'processingCost': item.get('processing_cost', 0)
+                    'overallConfidence': f"{item.get('extraction_confidence', 0)}%"
                 }
                 
-                # Format total amount with currency
-                if invoice_summary['totalAmount']:
-                    invoice_summary['formattedTotal'] = format_currency_amount(
-                        invoice_summary['totalAmount'], 
-                        invoice_summary['currency']
-                    )
+                # Add full invoice OCR results if processing is completed
+                if item.get('processing_status') == 'completed':
+                    structured_data = item.get('structured_invoice_data', {})
+                    
+                    if structured_data:
+                        # Format the structured invoice data (same as individual record)
+                        formatted_invoice = format_invoice_data(structured_data, item)
+                        
+                        invoice_summary['invoiceData'] = formatted_invoice
+                        invoice_summary['rawOcrText'] = item.get('raw_ocr_text', '')
+                        invoice_summary['processingMethod'] = item.get('processing_method', 'claude_invoice_ocr')
+                        invoice_summary['invoiceFieldsExtracted'] = item.get('invoice_fields_extracted', 0)
+                        invoice_summary['processedAt'] = item.get('processed_at', '')
+                    else:
+                        invoice_summary['invoiceData'] = None
+                        invoice_summary['message'] = 'Invoice processing completed but no structured data available'
+                else:
+                    invoice_summary['invoiceData'] = None
+                    invoice_summary['message'] = f'Invoice processing status: {item.get("processing_status", "unknown")}'
                 
                 processed_invoices.append(invoice_summary)
             
@@ -596,6 +601,7 @@ def lambda_handler(event, context):
                 'invoices': processed_invoices,
                 'count': len(processed_invoices),
                 'hasMore': response.get('LastEvaluatedKey') is not None,
+                'endpoint': '/processed',
                 'filters': {
                     'status': status_filter,
                     'vendorName': vendor_name,
@@ -603,7 +609,9 @@ def lambda_handler(event, context):
                     'dateFrom': date_from,
                     'dateTo': date_to
                 },
-                'processingType': 'invoice-ocr'
+                'processingType': 'invoice-ocr',
+                'defaultLimit': 10000,
+                'appliedLimit': limit
             }
             
             return {

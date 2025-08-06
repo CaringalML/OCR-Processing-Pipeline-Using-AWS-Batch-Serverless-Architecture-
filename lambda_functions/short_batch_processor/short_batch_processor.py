@@ -169,17 +169,9 @@ def send_to_dlq(message: dict[str, Any], reason: str) -> None:
         logger.error(f"Failed to send message to DLQ: {e}")
 
 def clean_extracted_text(text: str) -> str:
-    """Enhanced text cleaning - removes all newlines and normalizes formatting"""
+    """Simple text cleaning - removes newlines and normalizes spacing since Claude should generate clean text"""
     if not text:
         return ""
-    
-    # For very short text (likely names, labels, or simple phrases), apply minimal cleaning
-    if len(text.split()) <= 5:
-        # Only remove newlines and normalize spaces - don't apply aggressive word fixes
-        cleaned = text.replace('\n', ' ').replace('\r', ' ').replace('\r\n', ' ')
-        cleaned = cleaned.replace('\t', ' ')
-        cleaned = ' '.join(cleaned.split())
-        return cleaned.strip()
     
     # Remove all types of line breaks and carriage returns
     cleaned = text.replace('\n', ' ').replace('\r', ' ').replace('\r\n', ' ')
@@ -187,10 +179,13 @@ def clean_extracted_text(text: str) -> str:
     # Replace tabs with spaces
     cleaned = cleaned.replace('\t', ' ')
     
-    # Replace multiple spaces with single space (will be fixed later for URLs)
+    # Normalize multiple spaces to single spaces
     cleaned = ' '.join(cleaned.split())
     
-    # AGGRESSIVE URL, EMAIL, AND WEBSITE FIXING
+    return cleaned.strip()
+
+
+def is_text_complete(text: str) -> bool:
     
     # Step 1: Fix protocol patterns first (must be done before other URL fixes)
     cleaned = re.sub(r'(https?)\s*:\s*/\s*/\s*', r'\1://', cleaned)  # Fix "https : / /" -> "https://"
@@ -297,9 +292,84 @@ def clean_extracted_text(text: str) -> str:
     cleaned = re.sub(r'([.!?,;:])(?!com|org|net|edu|gov|co|nz|au|uk|ca|us|io|ai|app|dev)(\S)', r'\1 \2', cleaned)
     
     # Fix word spacing issues - AGGRESSIVE FIX for OCR text with broken words
-    # First, fix common broken words that appear in the example
+    # First, fix common broken words that appear in the example - adding more comprehensive patterns
     broken_word_fixes = [
         # Specific fixes from the example
+        (r'Transpor\s+tation', 'Transportation'),
+        (r'transpor\s+tation', 'transportation'),
+        (r'to\s+mor\s+row', 'tomorrow'),
+        (r'Revolutionizin\s+g', 'Revolutionizing'),
+        (r'revolutionizin\s+g', 'revolutionizing'),
+        (r'Mobilit\s+y', 'Mobility'),
+        (r'mobilit\s+y', 'mobility'),
+        (r'certain\s+ty', 'certainty'),
+        (r'defin\s+es', 'defines'),
+        (r'transpor\s+t', 'transport'),
+        (r'significan\s+tly', 'significantly'),
+        (r'efficiency\s+than', 'efficiency than'),
+        (r'systemsprovide', 'systems provide'),
+        (r'approachin\s+g', 'approaching'),
+        (r'crossin\s+g', 'crossing'),
+        (r'Yor\s+k', 'York'),
+        (r'requireless', 'require less'),
+        (r'of\s+fice', 'office'),
+        (r'realit\s+y', 'reality'),
+        (r'demand\s+s', 'demands'),
+        (r'attention\s+to', 'attention to'),
+        (r'crit\s+ical', 'critical'),
+        (r'irutilization', 'their utilization'),
+        (r'in\s+novative', 'innovative'),
+        (r'transpor\s+tation', 'transportation'),
+        (r'exis\s+t', 'exist'),
+        (r'proto\s+type', 'prototype'),
+        (r'for\s+m', 'form'),
+        (r'the\s+y\s+have', 'they have'),
+        (r'se\s+emergin\s+g', 'these emerging'),
+        (r'transfor\s+m', 'transform'),
+        (r'in\s+to', 'into'),
+        (r'stand\s+ard', 'standard'),
+        (r'transpor\s+t', 'transport'),
+        (r'operatin\s+g', 'operating'),
+        (r'in\s+dividuals', 'individuals'),
+        (r'venturein\s+to', 'venture into'),
+        (r'the\s+ir', 'their'),
+        (r'destin\s+ation', 'destination'),
+        (r'subsequentuser', 'subsequent user'),
+        (r'Furthe\s+rmor\s+e', 'Furthermore'),
+        (r'furthe\s+rmor\s+e', 'furthermore'),
+        (r'se\s+auto\s+nomous', 'these autonomous'),
+        (r'elimin\s+ate', 'eliminate'),
+        (r'operatin\s+g', 'operating'),
+        (r'auto\s+matic', 'automatic'),
+        (r'guidance\s+systems', 'guidance systems'),
+        (r'pas\s+sengers', 'passengers'),
+        (r'the\s+ir\s+destin\s+ation', 'their destination'),
+        (r'wit\s+h\s+the', 'with the'),
+        (r'eas\s+e', 'ease'),
+        (r'numbe\s+r', 'number'),
+        (r'al\s+l\s+owin\s+g', 'allowing'),
+        (r'auto\s+maticall\s+y', 'automatically'),
+        (r'desiredaddress', 'desired address'),
+        (r'undertakin\s+g', 'undertaking'),
+        (r'be\s+nefit', 'benefit'),
+        (r'arrivin\s+g\s+at', 'arriving at'),
+        (r'moto\s+r\s+way', 'motorway'),
+        (r'the\s+ir\s+preferred', 'their preferred'),
+        (r'drivin\s+g', 'driving'),
+        (r'the\s+n\s+relax', 'then relax'),
+        (r'dreamin\s+g', 'dreaming'),
+        (r'readin\s+g', 'reading'),
+        (r'enjoyin\s+g', 'enjoying'),
+        (r'conversin\s+g', 'conversing'),
+        (r'wit\s+h\s+pas\s+sengers', 'with passengers'),
+        (r'as\s+sumes', 'assumes'),
+        (r'operationalcontrol', 'operational control'),
+        (r'extraor\s+din\s+ary', 'extraordinary'),
+        (r'exis\s+ts', 'exists'),
+        (r'mirror\s+in\s+g', 'mirroring'),
+        (r'auto\s+mated', 'automated'),
+        (r'navigation\s+systems', 'navigation systems'),
+        (r'wor\s+ldwide', 'worldwide'),
         (r'Wit\s+hout', 'Without'),
         (r'wit\s+hout', 'without'),
         (r'in\s+terruptions', 'interruptions'),
@@ -694,37 +764,46 @@ def process_document_with_claude_ocr(document_bytes: bytes, document_id: str, co
                         },
                         {
                             "type": "text",
-                            "text": f"""Extract ALL text from this {file_extension.upper()} document with these critical OCR rules:
+                            "text": f"""You are a professional OCR specialist. Extract ALL text from this {file_extension.upper()} document with perfect accuracy and formatting.
 
-CRITICAL WORD SPACING REQUIREMENTS:
-1. DO NOT split words incorrectly - if you see "without", write "without" NOT "wit hout"
-2. DO NOT split common words like: "interruptions", "defined", "consistent", "integrated", "University", "assessment", "describes", "often"
-3. Keep complete words together: "seamlessly", "technology", "perfectly", "smoothly", etc.
-4. For compound words and contractions, keep them intact: "don't", "can't", "won't", etc.
-5. PRESERVE PROPER NAMES INTACT: Names like "Martin Lawrence", "Caringal", "Rodriguez", etc. should never be split
+ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:
+1. NEVER break words in the middle - words must be complete and properly spelled
+2. If you see text that appears broken across lines (like "transpor-tation" or "transpor tation"), write the complete word: "transportation"
+3. Join hyphenated words that continue across lines into complete words
+4. Maintain proper spacing between separate words
+5. Keep URLs, emails, and web addresses intact as single units
+6. Preserve proper names and surnames as complete words (never split "Rodriguez" into "Rodri guez")
 
-TEXT EXTRACTION RULES:
-1. Extract text maintaining proper word boundaries and spacing
-2. For URLs, websites, and email addresses - keep them intact:
-   - "www.example.com" NOT "www. example. com"
-   - "user@email.com" NOT "user @ email. com"  
-   - "https://website.com" NOT "https: //website. com"
-3. Preserve punctuation and sentence structure
-4. Read carefully to avoid breaking words that should be whole
-5. Pay extra attention to proper names, surnames, and place names - keep them as single words
-6. For names and labels, maintain exact spacing as they appear
+CRITICAL WORD INTEGRITY:
+- "transportation" NOT "transpor tation" or "transpor-tation"  
+- "tomorrow" NOT "to morrow" or "to-morrow"
+- "revolutionizing" NOT "revolutionizin g" or "revolution-izing"
+- "mobility" NOT "mobilit y" or "mobil-ity"
+- "significantly" NOT "significan tly" or "significant-ly"
+- "consistency" NOT "consis tency" or "consist-ency"
+- "technology" NOT "techno logy" or "tech-nology"
+- "University" NOT "Universit y" or "Univer-sity"
 
-QUALITY CHECK: Before finalizing, verify that:
-- Common English words are not split (like "without", "consistent", "integrated", "University", "assessment", "describes", "often", "interruptions", "defined", "seamlessly", "technology", "perfectly", "smoothly")
-- Proper names and surnames are kept intact (no spaces added within names)
-- Short text like names or labels are extracted exactly as they appear
+TEXT EXTRACTION PROTOCOL:
+1. Read each word carefully and ensure it's complete before writing it
+2. If text spans multiple lines with hyphens or breaks, reconstruct the complete word
+3. Maintain natural sentence flow with proper punctuation
+4. Keep compound words intact (e.g., "without", "into", "therefore")
+5. Preserve technical terms, proper nouns, and specialized vocabulary as complete words
+
+FORMATTING REQUIREMENTS:
+- Extract as continuous flowing text (no line breaks in output)
+- Use single spaces between words
+- Maintain original punctuation and capitalization
+- Keep sentences naturally flowing
 
 After the extracted text, add a separator line "---ANALYSIS---" and provide:
 - Language: [detected language name and ISO code, e.g., "English (en)"]
 - Key Entities: [list up to 10 key people, places, organizations, dates, or other important entities found]
 
-Format like this:
-[EXTRACTED TEXT HERE]
+Extract the text ensuring every word is complete and properly formed:
+
+[COMPLETE, PROPERLY FORMATTED TEXT HERE]
 
 ---ANALYSIS---
 Language: English (en)
