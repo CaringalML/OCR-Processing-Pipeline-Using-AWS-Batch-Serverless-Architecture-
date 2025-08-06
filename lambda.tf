@@ -862,7 +862,7 @@ resource "aws_lambda_function" "invoice_uploader" {
   environment {
     variables = {
       UPLOAD_BUCKET     = aws_s3_bucket.upload_bucket.bucket
-      METADATA_TABLE    = aws_dynamodb_table.invoice_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
       INVOICE_QUEUE_URL = aws_sqs_queue.invoice_queue.url
     }
   }
@@ -891,13 +891,14 @@ resource "aws_lambda_function" "invoice_processor" {
 
   environment {
     variables = {
-      DOCUMENTS_TABLE         = aws_dynamodb_table.invoice_metadata.name
-      RESULTS_TABLE          = aws_dynamodb_table.invoice_processing_results.name
+      DOCUMENTS_TABLE         = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE          = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET       = aws_s3_bucket.upload_bucket.bucket
       DEAD_LETTER_QUEUE_URL  = ""  # Will be set if needed
       SNS_TOPIC_ARN         = aws_sns_topic.alerts.arn
       ANTHROPIC_API_KEY     = var.anthropic_api_key
       BUDGET_LIMIT          = "10.0"
+      BUDGET_TRACKING_TABLE = aws_dynamodb_table.ocr_budget_tracking.name
     }
   }
 
@@ -946,8 +947,8 @@ resource "aws_lambda_function" "invoice_reader" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.invoice_metadata.name
-      RESULTS_TABLE     = aws_dynamodb_table.invoice_processing_results.name
+      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
     }
   }

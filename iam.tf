@@ -1292,8 +1292,8 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = [
-          aws_dynamodb_table.invoice_metadata.arn,
-          "${aws_dynamodb_table.invoice_metadata.arn}/index/*"
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*"
         ]
       },
       # SQS - Send messages to invoice queue
@@ -1351,10 +1351,10 @@ resource "aws_iam_policy" "invoice_processor_policy" {
           "dynamodb:PutItem"
         ]
         Resource = [
-          aws_dynamodb_table.invoice_metadata.arn,
-          "${aws_dynamodb_table.invoice_metadata.arn}/index/*",
-          aws_dynamodb_table.invoice_processing_results.arn,
-          "${aws_dynamodb_table.invoice_processing_results.arn}/index/*",
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.ocr_budget_tracking.arn
         ]
       },
@@ -1409,10 +1409,10 @@ resource "aws_iam_policy" "invoice_reader_policy" {
           "dynamodb:Scan"
         ]
         Resource = [
-          aws_dynamodb_table.invoice_metadata.arn,
-          "${aws_dynamodb_table.invoice_metadata.arn}/index/*",
-          aws_dynamodb_table.invoice_processing_results.arn,
-          "${aws_dynamodb_table.invoice_processing_results.arn}/index/*"
+          aws_dynamodb_table.file_metadata.arn,
+          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*"
         ]
       }
     ]

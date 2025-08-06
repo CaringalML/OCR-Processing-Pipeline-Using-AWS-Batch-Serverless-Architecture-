@@ -23,6 +23,7 @@ import os
 import logging
 import boto3
 import uuid
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 import base64
@@ -128,14 +129,48 @@ def parse_multipart_form_data(body, content_type):
         
         if 'content-disposition' in headers:
             disp = headers['content-disposition']
+            logger.info(f"DEBUG: Processing Content-Disposition: '{disp}'")
             if 'name=' in disp:
                 name = disp.split('name="')[1].split('"')[0]
                 
                 if 'filename=' in disp:
                     # This is a file
-                    filename = disp.split('filename="')[1].split('"')[0]
-                    if filename:
+                    # Handle both filename="value" and filename=value formats
+                    try:
+                        if 'filename="' in disp:
+                            filename = disp.split('filename="')[1].split('"')[0]
+                        elif 'filename=' in disp:
+                            filename = disp.split('filename=')[1].split(';')[0].strip()
+                        else:
+                            filename = ''
+                        
+                        # Clean up the filename
+                        filename = filename.strip()
+                        
+                        # If filename is empty, generate a default name based on content type
+                        if not filename:
+                            file_content_type = headers.get('content-type', 'application/octet-stream')
+                            if 'pdf' in file_content_type.lower():
+                                filename = f'invoice_{int(time.time())}.pdf'
+                            elif 'png' in file_content_type.lower():
+                                filename = f'invoice_{int(time.time())}.png'
+                            elif 'jpeg' in file_content_type.lower() or 'jpg' in file_content_type.lower():
+                                filename = f'invoice_{int(time.time())}.jpg'
+                            else:
+                                filename = f'invoice_{int(time.time())}'
+                        
+                        if filename:
+                            file_content_type = headers.get('content-type', 'application/octet-stream')
+                            logger.info(f"DEBUG: Successfully extracted filename: '{filename}', content_type: '{file_content_type}'")
+                            files.append({
+                                'filename': filename,
+                                'content': content,
+                                'content_type': file_content_type
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error parsing filename from Content-Disposition: {e}, using default filename")
                         file_content_type = headers.get('content-type', 'application/octet-stream')
+                        filename = f'invoice_{int(time.time())}.pdf'
                         files.append({
                             'filename': filename,
                             'content': content,
@@ -180,6 +215,8 @@ def lambda_handler(event, context):
             file_name = file_info['filename']
             file_content_type = file_info['content_type']
             file_size = len(file_bytes)
+            
+            logger.info(f"DEBUG: Parsed file info - filename: '{file_name}', content_type: '{file_content_type}', size: {file_size} bytes")
             
             # Use form data for metadata
             request_data = form_data
@@ -291,7 +328,7 @@ def lambda_handler(event, context):
         file_size_mb = round(file_size / (1024 * 1024), 2)
         
         metadata_item = {
-            'invoice_id': file_id,
+            'file_id': file_id,
             'upload_timestamp': upload_timestamp,
             'original_filename': file_name,
             'file_name': file_name,
@@ -302,13 +339,20 @@ def lambda_handler(event, context):
             's3_key': s3_key,
             's3_folder': 'invoice-files',
             'processing_status': 'uploaded',
-            'processing_route': 'invoice-ocr',
-            'routing_reason': ['Invoice-specific OCR processing endpoint'],
             'upload_source': 'invoice-api',
-            'upload_endpoint': '/batch/short-batch/invoices/upload',
+            'bucket_name': UPLOAD_BUCKET,  # For GSI query (required by main table)
             'file_extension': file_extension,
             
-            # Placeholder fields for DynamoDB indexing (will be populated by OCR)
+            # Add default metadata fields that the main table expects
+            'publication': 'Invoice Document',
+            'year': '',
+            'title': file_name,
+            'author': '',
+            
+            # Invoice-specific metadata (will be populated by OCR)
+            'processing_route': 'invoice-ocr',
+            'routing_reason': ['Invoice-specific OCR processing endpoint'],
+            'upload_endpoint': '/short-batch/invoices/upload',
             'vendor_name': 'PENDING_OCR',
             'invoice_number': 'PENDING_OCR',
             'invoice_date': 'PENDING_OCR',
@@ -330,10 +374,13 @@ def lambda_handler(event, context):
         try:
             if METADATA_TABLE:
                 table = dynamodb.Table(METADATA_TABLE)
+                logger.info(f"DEBUG: Storing metadata item keys: {list(metadata_item.keys())}")
+                logger.info(f"DEBUG: Storing metadata - original_filename: '{metadata_item.get('original_filename')}', file_name: '{metadata_item.get('file_name')}', file_size: '{metadata_item.get('file_size')}', content_type: '{metadata_item.get('content_type')}', s3_key: '{metadata_item.get('s3_key')}'")
                 table.put_item(Item=metadata_item)
                 logger.info(f"Invoice metadata stored in DynamoDB: {file_id}")
         except ClientError as e:
             logger.error(f"Failed to store metadata in DynamoDB: {e}")
+            logger.error(f"DEBUG: Failed metadata item: {metadata_item}")
             # Continue processing even if metadata storage fails
         
         # Send message to invoice processing queue

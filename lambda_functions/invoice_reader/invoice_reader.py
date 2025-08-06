@@ -71,6 +71,37 @@ def format_currency_amount(amount_str, currency='USD'):
     except (ValueError, TypeError):
         return amount_str
 
+def format_date(date_str):
+    """Format date string to DD MMM YYYY format (e.g., '15 Mar 2024')"""
+    if not date_str or date_str.strip() == '':
+        return ''
+    
+    # Common date formats to try parsing
+    date_formats = [
+        '%Y-%m-%d',      # 2024-03-15
+        '%Y/%m/%d',      # 2024/03/15
+        '%m/%d/%Y',      # 03/15/2024
+        '%d/%m/%Y',      # 15/03/2024
+        '%m-%d-%Y',      # 03-15-2024
+        '%d-%m-%Y',      # 15-03-2024
+        '%Y.%m.%d',      # 2024.03.15
+        '%d.%m.%Y',      # 15.03.2024
+        '%B %d, %Y',     # March 15, 2024
+        '%d %B %Y',      # 15 March 2024
+        '%b %d, %Y',     # Mar 15, 2024
+        '%d %b %Y'       # 15 Mar 2024
+    ]
+    
+    for fmt in date_formats:
+        try:
+            parsed_date = datetime.strptime(date_str.strip(), fmt)
+            return parsed_date.strftime('%d %b %Y')  # Format as '15 Mar 2024'
+        except ValueError:
+            continue
+    
+    # If no format matches, return the original string
+    return date_str
+
 def format_invoice_data(structured_data, file_metadata):
     """Format comprehensive structured invoice data for presentation"""
     if not structured_data:
@@ -83,6 +114,7 @@ def format_invoice_data(structured_data, file_metadata):
     
     formatted_invoice = {
         'businessInformation': {
+            'extractionConfidence': f"{structured_data.get('business_info', {}).get('extraction_confidence', 0)}%",
             'businessName': structured_data.get('business_info', {}).get('business_name', ''),
             'tradingName': structured_data.get('business_info', {}).get('trading_name', ''),
             'addressLine1': structured_data.get('business_info', {}).get('address_line_1', ''),
@@ -101,6 +133,7 @@ def format_invoice_data(structured_data, file_metadata):
         },
         
         'clientInformation': {
+            'extractionConfidence': f"{structured_data.get('client_info', {}).get('extraction_confidence', 0)}%",
             'clientName': structured_data.get('client_info', {}).get('client_name', ''),
             'contactPerson': structured_data.get('client_info', {}).get('contact_person', ''),
             'addressLine1': structured_data.get('client_info', {}).get('address_line_1', ''),
@@ -115,9 +148,10 @@ def format_invoice_data(structured_data, file_metadata):
         },
         
         'invoiceDetails': {
+            'extractionConfidence': f"{structured_data.get('invoice_details', {}).get('extraction_confidence', 0)}%",
             'invoiceNumber': structured_data.get('invoice_details', {}).get('invoice_number', ''),
-            'issueDate': structured_data.get('invoice_details', {}).get('issue_date', ''),
-            'dueDate': structured_data.get('invoice_details', {}).get('due_date', ''),
+            'issueDate': format_date(structured_data.get('invoice_details', {}).get('issue_date', '')),
+            'dueDate': format_date(structured_data.get('invoice_details', {}).get('due_date', '')),
             'referenceNumber': structured_data.get('invoice_details', {}).get('reference_number', ''),
             'purchaseOrder': structured_data.get('invoice_details', {}).get('purchase_order', ''),
             'customerId': structured_data.get('invoice_details', {}).get('customer_id', ''),
@@ -126,6 +160,7 @@ def format_invoice_data(structured_data, file_metadata):
         },
         
         'financialSummary': {
+            'extractionConfidence': f"{financial_summary.get('extraction_confidence', 0)}%",
             'subtotal': format_currency_amount(financial_summary.get('subtotal', ''), currency_code),
             'discountAmount': format_currency_amount(financial_summary.get('discount_amount', ''), currency_code),
             'discountPercentage': financial_summary.get('discount_percentage', ''),
@@ -141,9 +176,13 @@ def format_invoice_data(structured_data, file_metadata):
             'currencySymbol': currency_symbol
         },
         
-        'lineItems': [],
+        'lineItems': {
+            'extractionConfidence': f"{structured_data.get('line_items', {}).get('extraction_confidence', 0)}%",
+            'items': []
+        },
         
         'paymentInformation': {
+            'extractionConfidence': f"{structured_data.get('payment_info', {}).get('extraction_confidence', 0)}%",
             'paymentTerms': structured_data.get('payment_info', {}).get('payment_terms', ''),
             'paymentDueDays': structured_data.get('payment_info', {}).get('payment_due_days', ''),
             'paymentMethods': structured_data.get('payment_info', {}).get('payment_methods', ''),
@@ -155,6 +194,7 @@ def format_invoice_data(structured_data, file_metadata):
         },
         
         'additionalInformation': {
+            'extractionConfidence': f"{structured_data.get('additional_info', {}).get('extraction_confidence', 0)}%",
             'notes': structured_data.get('additional_info', {}).get('notes', ''),
             'termsConditions': structured_data.get('additional_info', {}).get('terms_conditions', ''),
             'signaturePresent': structured_data.get('additional_info', {}).get('signature_present', False),
@@ -166,7 +206,7 @@ def format_invoice_data(structured_data, file_metadata):
         },
         
         'documentMetadata': {
-            'extractionConfidence': structured_data.get('document_metadata', {}).get('extraction_confidence', 'unknown'),
+            'extractionConfidence': f"{structured_data.get('document_metadata', {}).get('extraction_confidence', 0)}%",
             'detectedLanguage': structured_data.get('document_metadata', {}).get('detected_language', 'unknown'),
             'documentQuality': structured_data.get('document_metadata', {}).get('document_quality', 'unknown'),
             'fieldsExtractedCount': structured_data.get('document_metadata', {}).get('fields_extracted_count', 0),
@@ -191,8 +231,16 @@ def format_invoice_data(structured_data, file_metadata):
     }
     
     # Format enhanced line items with all details
-    line_items = structured_data.get('line_items', [])
-    for item in line_items:
+    line_items_data = structured_data.get('line_items', {})
+    # Handle both old format (direct array) and new format (with confidence and items array)
+    if isinstance(line_items_data, list):
+        # Old format - direct array of items
+        items_array = line_items_data
+    else:
+        # New format - with confidence and items array
+        items_array = line_items_data.get('items', [])
+    
+    for item in items_array:
         formatted_item = {
             'itemNumber': item.get('item_number', ''),
             'description': item.get('description', ''),
@@ -204,18 +252,8 @@ def format_invoice_data(structured_data, file_metadata):
             'taxIncluded': item.get('tax_included', False),
             'discountApplied': item.get('discount_applied', '')
         }
-        formatted_invoice['lineItems'].append(formatted_item)
+        formatted_invoice['lineItems']['items'].append(formatted_item)
     
-    # Add original upload metadata for context
-    formatted_invoice['uploadMetadata'] = {
-        'processingPriority': file_metadata.get('processing_priority', 'normal'),
-        'businessCategory': file_metadata.get('business_category', ''),
-        'uploadSource': file_metadata.get('upload_source', ''),
-        'tags': file_metadata.get('tags', []),
-        'originalFileName': file_metadata.get('original_filename', ''),
-        'fileSize': file_metadata.get('file_size', 0),
-        'contentType': file_metadata.get('content_type', '')
-    }
     
     return formatted_invoice
 
@@ -233,7 +271,10 @@ def lambda_handler(event, context):
     results_table_name = os.environ.get('RESULTS_TABLE')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
+    logger.info(f"Invoice reader configuration - METADATA_TABLE: {metadata_table_name}, RESULTS_TABLE: {results_table_name}, CLOUDFRONT_DOMAIN: {cloudfront_domain}")
+    
     if not all([metadata_table_name, results_table_name, cloudfront_domain]):
+        logger.error("Missing required environment variables")
         return {
             'statusCode': 500,
             'headers': {
@@ -242,7 +283,12 @@ def lambda_handler(event, context):
             },
             'body': json.dumps({
                 'error': 'Configuration Error',
-                'message': 'Missing required environment variables'
+                'message': 'Missing required environment variables',
+                'debug': {
+                    'METADATA_TABLE': metadata_table_name,
+                    'RESULTS_TABLE': results_table_name,
+                    'CLOUDFRONT_DOMAIN': cloudfront_domain
+                }
             })
         }
     
@@ -262,13 +308,42 @@ def lambda_handler(event, context):
         
         # If specific file_id is requested
         if file_id:
-            # Get invoice metadata
-            metadata_response = metadata_table.query(
-                KeyConditionExpression=Key('invoice_id').eq(file_id),
-                Limit=1
-            )
+            # Get invoice metadata - handle composite key (invoice_id + upload_timestamp)
+            # Since we don't know the upload_timestamp and there's no GSI for file_id alone,
+            # we need to scan the table filtering by file_id
+            logger.info(f"Searching for invoice with ID: {file_id}")
+            
+            try:
+                # Try multiple approaches to find the record
+                metadata_response = None
+                
+                # Approach 1: Scan with Attr (correct for FilterExpression)
+                logger.info(f"Trying scan with FilterExpression for file_id: {file_id}")
+                metadata_response = metadata_table.scan(
+                    FilterExpression=Attr('file_id').eq(file_id),
+                    Limit=10  # Get a few records in case there are multiple with different timestamps
+                )
+                
+                if not metadata_response.get('Items'):
+                    # Approach 2: Try query if there's a GSI we can use
+                    logger.info(f"Scan found no items, trying query with all possible timestamp patterns")
+                    
+                    # If scan fails, let's try a broader scan to see what's actually in the table
+                    logger.info("Attempting broader scan to debug table contents")
+                    debug_response = metadata_table.scan(Limit=5)
+                    if debug_response.get('Items'):
+                        logger.info(f"DEBUG: Found {len(debug_response['Items'])} items in table")
+                        for i, item in enumerate(debug_response['Items'][:2]):  # Log first 2 items
+                            logger.info(f"DEBUG: Sample item {i}: file_id='{item.get('file_id')}', upload_timestamp='{item.get('upload_timestamp')}', keys={list(item.keys())}")
+                    else:
+                        logger.error("DEBUG: Table appears to be empty or inaccessible")
+                
+            except Exception as query_error:
+                logger.error(f"Error during database query: {query_error}")
+                metadata_response = {'Items': []}
             
             if not metadata_response['Items']:
+                logger.error(f"Invoice {file_id} not found in database table {metadata_table_name}")
                 return {
                     'statusCode': 404,
                     'headers': {
@@ -277,34 +352,55 @@ def lambda_handler(event, context):
                     },
                     'body': json.dumps({
                         'error': 'Invoice Not Found',
-                        'message': f'Invoice {file_id} not found'
+                        'message': f'Invoice {file_id} not found in table {metadata_table_name}. Check logs for debug information.',
+                        'debug': {
+                            'searchedId': file_id,
+                            'tableName': metadata_table_name,
+                            'searchMethod': 'scan_with_filter'
+                        }
                     })
                 }
             
             file_metadata = decimal_to_json(metadata_response['Items'][0])
+            logger.info(f"DEBUG: Raw file_metadata keys: {list(file_metadata.keys())}")
+            logger.info(f"DEBUG: file_metadata values - original_filename: '{file_metadata.get('original_filename')}', file_name: '{file_metadata.get('file_name')}', file_size: '{file_metadata.get('file_size')}', content_type: '{file_metadata.get('content_type')}', s3_key: '{file_metadata.get('s3_key')}'")
+            
+            # Additional debugging for filename resolution
+            resolved_filename = file_metadata.get('original_filename') or file_metadata.get('file_name') or 'Unknown'
+            logger.info(f"DEBUG: Resolved filename: '{resolved_filename}' (original_filename: '{file_metadata.get('original_filename')}', file_name: '{file_metadata.get('file_name')}')")
             
             # Since we're using dedicated invoice tables, all records are invoices
             # No need to check processing_route
             
-            # Generate CloudFront URL with better fallback handling
-            s3_key = file_metadata.get('s3_key', file_metadata.get('s3Key', ''))
+            # Generate CloudFront URL (following same pattern as working lambda_reader)
+            s3_key = file_metadata.get('s3_key')
+            if not s3_key:
+                # Try alternative key name
+                s3_key = file_metadata.get('s3Key')
+            
             if not s3_key:
                 # Generate fallback s3_key based on file extension
                 file_extension = file_metadata.get('file_extension', 'unknown')
                 if file_extension == 'unknown' and file_metadata.get('content_type'):
                     # Try to determine extension from content type
                     content_type = file_metadata.get('content_type', '')
-                    if 'pdf' in content_type:
+                    if 'pdf' in content_type.lower():
                         file_extension = 'pdf'
-                    elif 'png' in content_type:
+                    elif 'png' in content_type.lower():
                         file_extension = 'png'
-                    elif 'jpeg' in content_type or 'jpg' in content_type:
+                    elif 'jpeg' in content_type.lower() or 'jpg' in content_type.lower():
                         file_extension = 'jpg'
                 
                 s3_key = f"invoice-files/{file_id}.{file_extension}"
                 logger.warning(f"No s3_key found for invoice: {file_id}, using fallback: {s3_key}")
             
-            cloudfront_url = f"https://{cloudfront_domain}/{s3_key}"
+            # Only generate CloudFront URL if we have a valid s3_key
+            if s3_key:
+                cloudfront_url = f"https://{cloudfront_domain}/{s3_key}"
+                logger.info(f"Generated CloudFront URL for {file_id}: {cloudfront_url}")
+            else:
+                cloudfront_url = None
+                logger.error(f"Unable to generate CloudFront URL for invoice {file_id}: no valid s3_key")
             
             # Calculate processing duration if available
             processing_duration = None
@@ -319,18 +415,19 @@ def lambda_handler(event, context):
                     logger.warning(f"Could not calculate processing duration: {e}")
                     processing_duration = "Unknown"
             
-            # Build response data with proper field mapping
+            # Build response data with improved field mapping
             response_data = {
                 'fileId': file_id,
-                'fileName': file_metadata.get('original_filename', file_metadata.get('file_name', 'Unknown')),
+                'fileName': file_metadata.get('original_filename') or file_metadata.get('file_name') or 'Unknown',
                 'uploadTimestamp': file_metadata.get('upload_timestamp', ''),
                 'processingStatus': file_metadata.get('processing_status', ''),
-                'fileSize': file_metadata.get('file_size', 0),
-                'contentType': file_metadata.get('content_type', 'Unknown'),
-                'cloudFrontUrl': cloudfront_url,
+                'fileSize': int(file_metadata.get('file_size', 0)),
+                'contentType': file_metadata.get('content_type') or 'application/octet-stream',
+                'cloudFrontUrl': cloudfront_url or '',
                 'processingRoute': 'invoice-ocr',
                 'processingType': 'specialized-invoice',
-                'processingDuration': processing_duration
+                'processingDuration': processing_duration,
+                'overallConfidence': f"{file_metadata.get('extraction_confidence', 0)}%"
             }
             
             # Add invoice-specific OCR results
@@ -343,20 +440,7 @@ def lambda_handler(event, context):
                     
                     response_data['invoiceData'] = formatted_invoice
                     response_data['rawOcrText'] = file_metadata.get('raw_ocr_text', '')
-                    response_data['processingCostDetails'] = {
-                        'totalCost': file_metadata.get('processing_cost', 0),
-                        'inputTokens': file_metadata.get('input_tokens', 0),
-                        'outputTokens': file_metadata.get('output_tokens', 0),
-                        'totalTokens': file_metadata.get('total_tokens', 0),
-                        'inputCost': file_metadata.get('input_cost', 0),
-                        'outputCost': file_metadata.get('output_cost', 0),
-                        'costPer1kInputTokens': file_metadata.get('cost_per_1k_input_tokens', 0),
-                        'costPer1kOutputTokens': file_metadata.get('cost_per_1k_output_tokens', 0),
-                        'ocrLlmProvider': file_metadata.get('ocr_llm_provider', 'Claude API'),
-                        'currency': 'USD'
-                    }
                     response_data['processingMethod'] = file_metadata.get('processing_method', 'claude_invoice_ocr')
-                    response_data['extractionConfidence'] = file_metadata.get('extraction_confidence', 'unknown')
                     response_data['invoiceFieldsExtracted'] = file_metadata.get('invoice_fields_extracted', 0)
                     response_data['processedAt'] = file_metadata.get('processed_at', '')
                 else:
@@ -419,32 +503,46 @@ def lambda_handler(event, context):
             
             items = decimal_to_json(response.get('Items', []))
             
+            # Debug logging for first item if available
+            if items:
+                logger.info(f"DEBUG: First item keys: {list(items[0].keys())}")
+                logger.info(f"DEBUG: First item values - original_filename: '{items[0].get('original_filename')}', file_name: '{items[0].get('file_name')}', file_size: '{items[0].get('file_size')}', content_type: '{items[0].get('content_type')}', s3_key: '{items[0].get('s3_key')}'")
+            
             # Sort by upload timestamp (most recent first)
             items.sort(key=lambda x: x.get('upload_timestamp', ''), reverse=True)
             
             # Format items for invoice presentation
             processed_invoices = []
             for item in items:
-                # Generate CloudFront URL with better fallback handling
-                s3_key = item.get('s3_key', item.get('s3Key', ''))
+                # Generate CloudFront URL (following same pattern as working lambda_reader)
+                s3_key = item.get('s3_key')
+                if not s3_key:
+                    # Try alternative key name
+                    s3_key = item.get('s3Key')
+                
                 if not s3_key:
                     # Generate fallback s3_key based on file extension
                     file_extension = item.get('file_extension', 'unknown')
                     if file_extension == 'unknown' and item.get('content_type'):
                         # Try to determine extension from content type
                         content_type = item.get('content_type', '')
-                        if 'pdf' in content_type:
+                        if 'pdf' in content_type.lower():
                             file_extension = 'pdf'
-                        elif 'png' in content_type:
+                        elif 'png' in content_type.lower():
                             file_extension = 'png'
-                        elif 'jpeg' in content_type or 'jpg' in content_type:
+                        elif 'jpeg' in content_type.lower() or 'jpg' in content_type.lower():
                             file_extension = 'jpg'
                     
-                    invoice_id = item.get('invoice_id', 'unknown')
-                    s3_key = f"invoice-files/{invoice_id}.{file_extension}"
-                    logger.warning(f"No s3_key found for invoice: {invoice_id}, using fallback: {s3_key}")
+                    file_id = item.get('file_id', 'unknown')
+                    s3_key = f"invoice-files/{file_id}.{file_extension}"
+                    logger.warning(f"No s3_key found for file: {file_id}, using fallback: {s3_key}")
                 
-                cloudfront_url = f"https://{cloudfront_domain}/{s3_key}"
+                # Only generate CloudFront URL if we have a valid s3_key
+                if s3_key:
+                    cloudfront_url = f"https://{cloudfront_domain}/{s3_key}"
+                else:
+                    cloudfront_url = None
+                    logger.error(f"Unable to generate CloudFront URL for file {file_id}: no valid s3_key")
                 
                 # Calculate processing duration if available
                 processing_duration = None
@@ -459,16 +557,17 @@ def lambda_handler(event, context):
                         logger.warning(f"Could not calculate processing duration: {e}")
                         processing_duration = "Unknown"
                 
-                # Build invoice summary data with proper field mapping
+                # Build invoice summary data with improved field mapping
                 invoice_summary = {
-                    'fileId': item['invoice_id'],
-                    'fileName': item.get('original_filename', item.get('file_name', 'Unknown')),
+                    'fileId': item['file_id'],
+                    'fileName': item.get('original_filename') or item.get('file_name') or 'Unknown',
                     'uploadTimestamp': item.get('upload_timestamp', ''),
                     'processingStatus': item.get('processing_status', ''),
-                    'fileSize': item.get('file_size', 0),
-                    'contentType': item.get('content_type', 'Unknown'),
-                    'cloudFrontUrl': cloudfront_url,
+                    'fileSize': int(item.get('file_size', 0)),
+                    'contentType': item.get('content_type') or 'application/octet-stream',
+                    'cloudFrontUrl': cloudfront_url or '',
                     'processingDuration': processing_duration,
+                    'overallConfidence': f"{item.get('extraction_confidence', 0)}%",
                     
                     # Invoice-specific summary fields (OCR-extracted or pending)
                     'vendorName': item.get('vendor_name', '') if item.get('vendor_name') != 'PENDING_OCR' else 'Processing...',
@@ -479,7 +578,6 @@ def lambda_handler(event, context):
                     'invoiceType': item.get('invoice_type', 'standard'),
                     'businessCategory': item.get('business_category', ''),
                     'processingPriority': item.get('processing_priority', 'normal'),
-                    'extractionConfidence': item.get('extraction_confidence', 'unknown'),
                     'invoiceFieldsExtracted': item.get('invoice_fields_extracted', 0),
                     'processedAt': item.get('processed_at', ''),
                     'processingCost': item.get('processing_cost', 0)

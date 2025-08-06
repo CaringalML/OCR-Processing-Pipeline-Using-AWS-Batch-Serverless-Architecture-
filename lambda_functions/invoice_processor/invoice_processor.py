@@ -95,12 +95,11 @@ COST_PER_1K_TOKENS = {
 def get_current_budget_usage() -> float:
     """Get current budget usage from DynamoDB"""
     try:
-        if not DOCUMENTS_TABLE:
-            logger.warning("DOCUMENTS_TABLE not configured")
-            return 0.0
-            
+        # Use environment variable for budget tracking table
+        budget_table = os.environ.get('BUDGET_TRACKING_TABLE', 'ocr_budget_tracking')
+        
         dynamodb = get_aws_client('dynamodb')
-        table = dynamodb.Table('ocr_budget_tracking')
+        table = dynamodb.Table(budget_table)
         response = table.get_item(Key={'id': 'current_month'})
         
         if 'Item' in response:
@@ -113,8 +112,11 @@ def get_current_budget_usage() -> float:
 def update_budget_usage(cost: float) -> None:
     """Update budget usage in DynamoDB"""
     try:
+        # Use environment variable for budget tracking table
+        budget_table = os.environ.get('BUDGET_TRACKING_TABLE', 'ocr_budget_tracking')
+        
         dynamodb = get_aws_client('dynamodb')
-        table = dynamodb.Table('ocr_budget_tracking')
+        table = dynamodb.Table(budget_table)
         table.update_item(
             Key={'id': 'current_month'},
             UpdateExpression='ADD total_cost :cost',
@@ -309,6 +311,7 @@ After extracting the complete text, provide comprehensive structured data:
 ---STRUCTURED_DATA---
 {{
   "business_info": {{
+    "extraction_confidence": "[0-100]",
     "business_name": "[Full Business/Company Name]",
     "trading_name": "[Trading/Brand Name if different]",
     "address_line_1": "[Street Address]",
@@ -326,6 +329,7 @@ After extracting the complete text, provide comprehensive structured data:
     "logo_present": true/false
   }},
   "client_info": {{
+    "extraction_confidence": "[0-100]",
     "client_name": "[Client/Customer Name]",
     "contact_person": "[Contact Person if specified]",
     "address_line_1": "[Client Street Address]",
@@ -339,6 +343,7 @@ After extracting the complete text, provide comprehensive structured data:
     "email": "[Client Email]"
   }},
   "invoice_details": {{
+    "extraction_confidence": "[0-100]",
     "invoice_number": "[Invoice Number]",
     "issue_date": "[Issue/Invoice Date]",
     "due_date": "[Due Date]",
@@ -349,6 +354,7 @@ After extracting the complete text, provide comprehensive structured data:
     "invoice_type": "standard|credit_note|receipt|proforma|estimate"
   }},
   "financial_summary": {{
+    "extraction_confidence": "[0-100]",
     "subtotal": "[Subtotal Amount]",
     "discount_amount": "[Discount Amount if present]",
     "discount_percentage": "[Discount % if present]",
@@ -363,20 +369,24 @@ After extracting the complete text, provide comprehensive structured data:
     "currency_code": "[Currency Code: USD/NZD/AUD etc]",
     "currency_symbol": "[Currency Symbol: $/£/€ etc]"
   }},
-  "line_items": [
-    {{
-      "item_number": "[Item/SKU Number if present]",
-      "description": "[Full Item Description]",
-      "category": "[Item Category if specified]",
-      "quantity": "[Quantity]",
-      "unit_of_measure": "[Unit: hours/pieces/kg etc]",
-      "unit_price": "[Unit Price]",
-      "line_total": "[Line Total Amount]",
-      "tax_included": true/false,
-      "discount_applied": "[Line discount if present]"
-    }}
-  ],
+  "line_items": {{
+    "extraction_confidence": "[0-100]",
+    "items": [
+      {{
+        "item_number": "[Item/SKU Number if present]",
+        "description": "[Full Item Description]",
+        "category": "[Item Category if specified]",
+        "quantity": "[Quantity]",
+        "unit_of_measure": "[Unit: hours/pieces/kg etc]",
+        "unit_price": "[Unit Price]",
+        "line_total": "[Line Total Amount]",
+        "tax_included": true/false,
+        "discount_applied": "[Line discount if present]"
+      }}
+    ]
+  }},
   "payment_info": {{
+    "extraction_confidence": "[0-100]",
     "payment_terms": "[Payment Terms]",
     "payment_due_days": "[Days until due]",
     "payment_methods": "[Accepted payment methods]",
@@ -387,6 +397,7 @@ After extracting the complete text, provide comprehensive structured data:
     "payment_reference": "[Payment Reference if specified]"
   }},
   "additional_info": {{
+    "extraction_confidence": "[0-100]",
     "notes": "[Additional notes or terms]",
     "terms_conditions": "[Terms and conditions text]",
     "signature_present": true/false,
@@ -397,7 +408,7 @@ After extracting the complete text, provide comprehensive structured data:
     "page_numbers": "[Page numbering if multi-page]"
   }},
   "document_metadata": {{
-    "extraction_confidence": "high|medium|low",
+    "extraction_confidence": "[0-100]",
     "detected_language": "[Primary language]",
     "document_quality": "excellent|good|fair|poor",
     "fields_extracted_count": "[Number of fields successfully extracted]",
@@ -405,6 +416,27 @@ After extracting the complete text, provide comprehensive structured data:
     "data_validation_notes": "[Any data validation concerns]"
   }}
 }}
+
+CONFIDENCE SCORING GUIDELINES:
+- extraction_confidence should be a number from 0-100 representing percentage confidence
+- Apply confidence scoring to EACH SECTION based on field clarity and completeness
+- 90-100%: All key fields clearly visible and extracted with high certainty
+- 80-89%: Most fields extracted successfully, minor uncertainty on some values
+- 70-79%: Good extraction but some fields unclear or missing
+- 60-69%: Moderate extraction quality, several fields uncertain or missing
+- 50-59%: Fair extraction, document readable but many fields problematic
+- 30-49%: Poor extraction, document quality issues affecting readability
+- 0-29%: Very poor extraction, document barely readable or heavily corrupted
+
+SECTION-SPECIFIC CONFIDENCE:
+- business_info: Rate based on company name, address, contact details clarity
+- client_info: Rate based on customer details visibility and completeness
+- invoice_details: Rate based on invoice number, dates, and reference data clarity
+- financial_summary: Rate based on amounts, taxes, and calculations visibility
+- line_items: Rate based on item descriptions, quantities, and prices clarity
+- payment_info: Rate based on payment terms and banking details visibility
+- additional_info: Rate based on notes, terms, and signature area clarity
+- document_metadata: Overall document quality and extraction success rate
 
 ENHANCED QUALITY REQUIREMENTS:
 - Extract all monetary amounts with exact formatting and currency symbols
@@ -472,7 +504,7 @@ ENHANCED QUALITY REQUIREMENTS:
             'processing_method': 'claude_invoice_ocr',
             'file_type': file_extension,
             'media_type': media_type,
-            'extraction_confidence': invoice_data.get('extraction_confidence', 'unknown'),
+            'extraction_confidence': invoice_data.get('document_metadata', {}).get('extraction_confidence', 0),
             'invoice_fields_extracted': len([k for k, v in invoice_data.items() if v and k != 'raw_text'])
         }
         
@@ -496,6 +528,8 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
     
     if not all([bucket, key, document_id, upload_timestamp]):
         raise ValueError("Missing required fields: bucket, key, document_id, or upload_timestamp")
+        
+    logger.info(f"DEBUG: Processing invoice with document_id: '{document_id}', upload_timestamp: '{upload_timestamp}'")
     
     try:
         # Update status to downloading
@@ -503,7 +537,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
             dynamodb = get_aws_client('dynamodb')
             table = dynamodb.Table(DOCUMENTS_TABLE)
             table.update_item(
-                Key={'invoice_id': document_id, 'upload_timestamp': upload_timestamp},
+                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
                 UpdateExpression='SET processing_status = :status',
                 ExpressionAttributeValues={':status': 'downloading_invoice'}
             )
@@ -520,7 +554,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
         # Update status to processing
         if DOCUMENTS_TABLE:
             table.update_item(
-                Key={'invoice_id': document_id, 'upload_timestamp': upload_timestamp},
+                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
                 UpdateExpression='SET processing_status = :status',
                 ExpressionAttributeValues={':status': 'processing_invoice_ocr'}
             )
@@ -567,7 +601,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
         # Update status to saving results
         if DOCUMENTS_TABLE:
             table.update_item(
-                Key={'invoice_id': document_id, 'upload_timestamp': upload_timestamp},
+                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
                 UpdateExpression='SET processing_status = :status',
                 ExpressionAttributeValues={':status': 'saving_invoice_results'}
             )
@@ -585,6 +619,26 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
         
         # Update DynamoDB with final results including OCR-extracted metadata
         if DOCUMENTS_TABLE:
+            # First, get the current record to debug what's there
+            try:
+                dynamodb = get_aws_client('dynamodb')
+                table = dynamodb.Table(DOCUMENTS_TABLE)
+                
+                # Get existing record to debug
+                existing_response = table.get_item(
+                    Key={'file_id': document_id, 'upload_timestamp': upload_timestamp}
+                )
+                
+                if existing_response.get('Item'):
+                    existing_item = existing_response['Item']
+                    logger.info(f"DEBUG: Existing record keys: {list(existing_item.keys())}")
+                    logger.info(f"DEBUG: Existing record - original_filename: '{existing_item.get('original_filename')}', file_name: '{existing_item.get('file_name')}', file_size: '{existing_item.get('file_size')}', content_type: '{existing_item.get('content_type')}', s3_key: '{existing_item.get('s3_key')}'")
+                else:
+                    logger.error(f"DEBUG: No existing record found for file_id: {document_id}, upload_timestamp: {upload_timestamp}")
+                    
+            except Exception as debug_error:
+                logger.error(f"DEBUG: Failed to get existing record: {debug_error}")
+            
             # Extract key fields from OCR results for indexing
             structured_data = ocr_result['structured_data']
             business_info = structured_data.get('business_info', {})
@@ -612,7 +666,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
                 ':llm_provider': ocr_result['ocr_llm_provider'],
                 ':method': ocr_result.get('processing_method', 'claude_invoice_ocr'),
                 ':file_type': ocr_result.get('file_type', 'unknown'),
-                ':confidence': ocr_result.get('extraction_confidence', 'unknown'),
+                ':confidence': ocr_result.get('structured_data', {}).get('document_metadata', {}).get('extraction_confidence', 0),
                 ':fields_count': ocr_result.get('invoice_fields_extracted', 0)
             }
             
@@ -643,13 +697,29 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
             
             table.update_item(
                 Key={
-                    'invoice_id': document_id,
+                    'file_id': document_id,
                     'upload_timestamp': upload_timestamp
                 },
                 UpdateExpression=update_expression,
                 ExpressionAttributeValues=expression_values
             )
             logger.info(f"DynamoDB updated for invoice: {document_id}")
+            
+            # Debug: Get the record again after update to see what happened
+            try:
+                updated_response = table.get_item(
+                    Key={'file_id': document_id, 'upload_timestamp': upload_timestamp}
+                )
+                
+                if updated_response.get('Item'):
+                    updated_item = updated_response['Item']
+                    logger.info(f"DEBUG: After update record keys: {list(updated_item.keys())}")
+                    logger.info(f"DEBUG: After update - original_filename: '{updated_item.get('original_filename')}', file_name: '{updated_item.get('file_name')}', file_size: '{updated_item.get('file_size')}', content_type: '{updated_item.get('content_type')}', s3_key: '{updated_item.get('s3_key')}'")
+                else:
+                    logger.error(f"DEBUG: No record found after update for file_id: {document_id}")
+                    
+            except Exception as after_debug_error:
+                logger.error(f"DEBUG: Failed to get record after update: {after_debug_error}")
         
         logger.info(f"Successfully processed invoice: {document_id} using Claude AI OCR")
         return result
@@ -664,7 +734,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
                 table = dynamodb.Table(DOCUMENTS_TABLE)
                 table.update_item(
                     Key={
-                        'invoice_id': document_id,
+                        'file_id': document_id,
                         'upload_timestamp': upload_timestamp
                     },
                     UpdateExpression='SET processing_status = :status, error_message = :error',
