@@ -135,13 +135,7 @@ output "lambda_functions" {
       memory_size  = aws_lambda_function.recycle_bin_reader.memory_size
       timeout      = aws_lambda_function.recycle_bin_reader.timeout
     }
-    smart_router = {
-      name         = aws_lambda_function.smart_router.function_name
-      arn          = aws_lambda_function.smart_router.arn
-      invoke_arn   = aws_lambda_function.smart_router.invoke_arn
-      memory_size  = aws_lambda_function.smart_router.memory_size
-      timeout      = aws_lambda_function.smart_router.timeout
-    }
+# smart_router removed - routing now integrated into s3_uploader
     long_batch_uploader = {
       name         = aws_lambda_function.long_batch_uploader.function_name
       arn          = aws_lambda_function.long_batch_uploader.arn
@@ -257,7 +251,7 @@ output "cloudwatch_logs" {
     file_restorer        = aws_cloudwatch_log_group.file_restorer_logs.name
     recycle_bin_reader   = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
     short_batch_processor = aws_cloudwatch_log_group.short_batch_processor_logs.name
-    smart_router          = aws_cloudwatch_log_group.smart_router_logs.name
+# smart_router logs removed - routing now integrated into s3_uploader
     long_batch_uploader   = aws_cloudwatch_log_group.long_batch_uploader_logs.name
     short_batch_uploader  = aws_cloudwatch_log_group.short_batch_uploader_logs.name
     short_batch_submitter = aws_cloudwatch_log_group.short_batch_submitter_logs.name

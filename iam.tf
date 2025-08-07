@@ -360,6 +360,18 @@ resource "aws_iam_policy" "uploader_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = aws_dynamodb_table.file_metadata.arn
+      },
+      # SQS - Send messages to processing queues
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [
+          aws_sqs_queue.short_batch_queue.arn,
+          aws_sqs_queue.batch_queue.arn
+        ]
       }
     ]
   })
@@ -977,76 +989,8 @@ resource "aws_iam_role_policy_attachment" "recycle_bin_reader_policy" {
 }
 
 # ========================================
-# SMART ROUTER IAM ROLE AND POLICIES
+# SMART ROUTER REMOVED - Routing now integrated into s3_uploader
 # ========================================
-
-# Smart Router Lambda Role
-resource "aws_iam_role" "smart_router_role" {
-  name = "${var.project_name}-${var.environment}-smart-router-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = var.common_tags
-}
-
-# Smart Router Lambda Policy
-resource "aws_iam_policy" "smart_router_policy" {
-  name = "${var.project_name}-${var.environment}-smart-router-policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      # CloudWatch Logs
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:${var.aws_region}:*:*"
-      },
-      # DynamoDB - Read and update file metadata
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:Query"
-        ]
-        Resource = aws_dynamodb_table.file_metadata.arn
-      },
-      # SQS - Send messages to both queues
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:SendMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = [
-          aws_sqs_queue.short_batch_queue.arn,
-          aws_sqs_queue.batch_queue.arn
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "smart_router_policy" {
-  role       = aws_iam_role.smart_router_role.name
-  policy_arn = aws_iam_policy.smart_router_policy.arn
-}
 
 # ========================================
 # LONG BATCH UPLOADER IAM ROLE AND POLICIES

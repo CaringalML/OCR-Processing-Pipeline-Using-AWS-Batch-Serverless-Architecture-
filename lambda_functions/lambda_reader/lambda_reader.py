@@ -20,6 +20,25 @@ def decimal_to_json(obj):
     else:
         return obj
 
+def format_duration(duration_seconds):
+    """Format duration in seconds to human-readable format"""
+    if not duration_seconds:
+        return "0s"
+    
+    duration = float(duration_seconds)
+    
+    if duration < 60:
+        # Less than 1 minute - show in seconds with 1 decimal place
+        return f"{duration:.1f}s"
+    elif duration < 3600:
+        # Less than 1 hour - show in minutes with 1 decimal place
+        minutes = duration / 60
+        return f"{minutes:.1f}m"
+    else:
+        # 1 hour or more - show in hours with 1 decimal place
+        hours = duration / 3600
+        return f"{hours:.1f}h"
+
 def lambda_handler(event, context):
     """
     Lambda function to read processed files from DynamoDB and generate CloudFront URLs
@@ -124,6 +143,7 @@ def lambda_handler(event, context):
                     'processingType': 'short-batch',
                     'processingCost': file_metadata.get('processing_cost', 0),
                     'processedAt': file_metadata.get('processed_at', ''),
+                    'processingDuration': format_duration(file_metadata.get('processing_time', 0)),
                     'rawTextLength': len(raw_text),
                     'refinedTextLength': len(refined_text),
                     'tokenUsage': {
@@ -141,7 +161,7 @@ def lambda_handler(event, context):
                     'refinedText': processing_result.get('refined_text', ''),        # Final refined
                     'processingModel': 'aws-textract',
                     'processingType': 'long-batch',
-                    'processingDuration': processing_result.get('processing_duration', '')
+                    'processingDuration': format_duration(processing_result.get('processing_duration', 0))
                 }
             else:
                 # No OCR results available

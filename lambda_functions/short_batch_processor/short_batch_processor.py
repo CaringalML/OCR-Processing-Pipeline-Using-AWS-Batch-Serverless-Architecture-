@@ -1186,7 +1186,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                     'file_id': document_id,
                     'upload_timestamp': upload_timestamp
                 },
-                UpdateExpression='SET processing_status = :status, raw_ocr_text = :raw_text, refined_ocr_text = :refined_text, processed_at = :timestamp, processing_cost = :cost, processing_method = :method, file_type = :file_type, quality_assessment = :quality, refinement_skipped = :skipped, ocr_tokens = :ocr_tokens, refinement_tokens = :refinement_tokens, detected_language = :language, language_confidence = :lang_conf, entity_summary = :entities, total_entities = :entity_count',
+                UpdateExpression='SET processing_status = :status, raw_ocr_text = :raw_text, refined_ocr_text = :refined_text, processed_at = :timestamp, processing_cost = :cost, processing_method = :method, file_type = :file_type, quality_assessment = :quality, refinement_skipped = :skipped, ocr_tokens = :ocr_tokens, refinement_tokens = :refinement_tokens, detected_language = :language, language_confidence = :lang_conf, entity_summary = :entities, total_entities = :entity_count, processing_time = :processing_time',
                 ExpressionAttributeValues={
                     ':status': 'completed',
                     ':raw_text': ocr_result['formatted_text'],  # Store full raw OCR text without \n
@@ -1202,7 +1202,8 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                     ':language': ocr_result.get('language_detection', {}).get('detected_language', 'unknown'),
                     ':lang_conf': ocr_result.get('language_detection', {}).get('confidence', Decimal('0.0')),
                     ':entities': ocr_result.get('entity_analysis', {}).get('entity_summary', {}),
-                    ':entity_count': ocr_result.get('entity_analysis', {}).get('total_entities', 0)
+                    ':entity_count': ocr_result.get('entity_analysis', {}).get('total_entities', 0),
+                    ':processing_time': Decimal(str(result['processing_time']))
                 }
             )
             logger.info(f"DynamoDB updated for document: {document_id}")

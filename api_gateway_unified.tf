@@ -110,12 +110,7 @@ resource "aws_api_gateway_resource" "upload" {
   path_part   = "upload"
 }
 
-# Smart Route Resource (main intelligent routing endpoint) 
-resource "aws_api_gateway_resource" "smart_route" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "process"
-}
+# Smart route endpoint removed - routing now integrated into /upload endpoint
 
 # Processed Resource (view processed files)
 resource "aws_api_gateway_resource" "processed" {
@@ -173,64 +168,7 @@ resource "aws_api_gateway_resource" "restore_file_id" {
   path_part   = "{fileId}"
 }
 
-# Smart Route Method
-resource "aws_api_gateway_method" "smart_route_post" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.smart_route.id
-  http_method   = "POST"
-  authorization = "NONE"
-
-  request_parameters = {
-    "method.request.header.Content-Type" = false
-  }
-}
-
-# Smart Route Integration
-resource "aws_api_gateway_integration" "smart_route_integration" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.smart_route.id
-  http_method = aws_api_gateway_method.smart_route_post.http_method
-
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
-  uri                    = aws_lambda_function.smart_router.invoke_arn
-}
-
-# Smart Route Method Response
-resource "aws_api_gateway_method_response" "smart_route_response_200" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.smart_route.id
-  http_method = aws_api_gateway_method.smart_route_post.http_method
-  status_code = "200"
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Origin" = true
-  }
-}
-
-# Smart Route Integration Response
-resource "aws_api_gateway_integration_response" "smart_route_integration_response" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.smart_route.id
-  http_method = aws_api_gateway_method.smart_route_post.http_method
-  status_code = aws_api_gateway_method_response.smart_route_response_200.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
-  }
-
-  depends_on = [aws_api_gateway_integration.smart_route_integration]
-}
-
-# Lambda Permission for Smart Router
-resource "aws_lambda_permission" "smart_router_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.smart_router.function_name
-  principal     = "apigateway.amazonaws.com"
-
-  source_arn = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
-}
+# Smart route methods and integrations removed - routing now integrated into /upload endpoint
 
 # ========================================
 # NEUTRAL ENDPOINT METHODS & INTEGRATIONS

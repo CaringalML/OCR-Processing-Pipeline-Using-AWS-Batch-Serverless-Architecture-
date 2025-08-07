@@ -155,11 +155,7 @@ data "archive_file" "recycle_bin_reader_zip" {
   source_file = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.py"
 }
 
-data "archive_file" "smart_router_zip" {
-  type        = "zip"
-  output_path = "${path.module}/lambda_functions/smart_router/smart_router.zip"
-  source_file = "${path.module}/lambda_functions/smart_router/smart_router.py"
-}
+# smart_router removed - routing now integrated into s3_uploader
 
 data "archive_file" "long_batch_uploader_zip" {
   type        = "zip"
@@ -186,10 +182,13 @@ resource "aws_lambda_function" "uploader" {
 
   environment {
     variables = {
-      UPLOAD_BUCKET_NAME = aws_s3_bucket.upload_bucket.id
-      DYNAMODB_TABLE     = aws_dynamodb_table.file_metadata.name
-      LOG_LEVEL          = "INFO"
-      ENVIRONMENT        = var.environment
+      UPLOAD_BUCKET_NAME       = aws_s3_bucket.upload_bucket.id
+      DYNAMODB_TABLE           = aws_dynamodb_table.file_metadata.name
+      SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
+      LONG_BATCH_QUEUE_URL     = aws_sqs_queue.batch_queue.url
+      FILE_SIZE_THRESHOLD_KB   = "300"
+      LOG_LEVEL               = "INFO"
+      ENVIRONMENT             = var.environment
     }
   }
 
@@ -681,40 +680,7 @@ resource "aws_lambda_function" "recycle_bin_reader" {
   })
 }
 
-# Smart Router Lambda Function (intelligent routing between short/long batch)
-resource "aws_lambda_function" "smart_router" {
-  filename         = data.archive_file.smart_router_zip.output_path
-  function_name    = "${var.project_name}-${var.environment}-smart-router"
-  role             = aws_iam_role.smart_router_role.arn
-  handler          = "smart_router.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
-  source_code_hash = data.archive_file.smart_router_zip.output_base64sha256
-
-  environment {
-    variables = {
-      METADATA_TABLE           = aws_dynamodb_table.file_metadata.name
-      SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
-      LONG_BATCH_QUEUE_URL     = aws_sqs_queue.batch_queue.url
-      FILE_SIZE_THRESHOLD_MB   = "10"
-      LOG_LEVEL               = "INFO"
-      ENVIRONMENT             = var.environment
-    }
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.smart_router_policy,
-    aws_cloudwatch_log_group.smart_router_logs
-  ]
-
-  # Removed ignore_changes to allow code updates
-
-  tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-smart-router"
-    Purpose = "Intelligent routing between short-batch and long-batch processing"
-  })
-}
+# Smart Router removed - routing now integrated into s3_uploader Lambda
 
 # Long Batch Uploader Lambda Function (dedicated to long-batch uploads)
 resource "aws_lambda_function" "long_batch_uploader" {
@@ -814,15 +780,7 @@ resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
   })
 }
 
-# CloudWatch Log Groups - Smart Router
-resource "aws_cloudwatch_log_group" "smart_router_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-smart-router"
-  retention_in_days = 7
-  tags              = merge(var.common_tags, {
-    Purpose = "Intelligent routing between short and long batch processing"
-    Function = "smart_router"
-  })
-}
+# Smart Router CloudWatch logs removed - routing now integrated into s3_uploader
 
 # CloudWatch Log Groups - Long Batch Uploader
 resource "aws_cloudwatch_log_group" "long_batch_uploader_logs" {
