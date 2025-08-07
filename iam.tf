@@ -1050,8 +1050,16 @@ resource "aws_iam_policy" "long_batch_uploader_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = aws_dynamodb_table.file_metadata.arn
+      },
+      # SQS - Send messages directly to long batch queue (replaces EventBridge)
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = aws_sqs_queue.batch_queue.arn
       }
-      # Note: SQS permissions removed - EventBridge handles queue messaging
     ]
   })
 }

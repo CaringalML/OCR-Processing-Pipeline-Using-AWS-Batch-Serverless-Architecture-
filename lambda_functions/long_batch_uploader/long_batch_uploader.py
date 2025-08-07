@@ -181,9 +181,45 @@ def lambda_handler(event, context):
             
             table.put_item(Item=item)
             
-            # Note: S3 EventBridge will automatically send a message to the queue
-            # We don't need to send a direct SQS message to avoid duplicates
-            print(f"LONG-BATCH UPLOADER: File {file_id} uploaded. EventBridge will trigger processing.")
+            # Send direct SQS message for immediate processing (replaces EventBridge)
+            sqs_message = {
+                'fileId': file_id,
+                'bucket': bucket_name,
+                'key': s3_key,
+                'fileName': original_filename,
+                'fileSize': file_size,
+                'contentType': content_type,
+                'uploadTimestamp': timestamp,
+                'processingRoute': 'long-batch',
+                'forcedRouting': True
+            }
+            
+            try:
+                sqs_client = boto3.client('sqs')
+                queue_url = os.environ.get('LONG_BATCH_QUEUE_URL')
+                
+                if queue_url:
+                    response = sqs_client.send_message(
+                        QueueUrl=queue_url,
+                        MessageBody=json.dumps(sqs_message),
+                        MessageAttributes={
+                            'ProcessingRoute': {
+                                'StringValue': 'long-batch',
+                                'DataType': 'String'
+                            },
+                            'FileSize': {
+                                'StringValue': str(file_size),
+                                'DataType': 'Number'
+                            }
+                        }
+                    )
+                    print(f"LONG-BATCH UPLOADER: File {file_id} uploaded and SQS message sent. MessageId: {response['MessageId']}")
+                else:
+                    print(f"WARNING: LONG_BATCH_QUEUE_URL not configured - file uploaded but no processing message sent")
+                    
+            except Exception as sqs_error:
+                print(f"ERROR sending SQS message for {file_id}: {sqs_error}")
+                # Continue processing - file is uploaded, but processing may need manual trigger
             
             uploaded_files.append({
                 'file_id': file_id,

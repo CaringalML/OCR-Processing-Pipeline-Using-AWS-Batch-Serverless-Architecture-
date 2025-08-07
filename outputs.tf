@@ -4,6 +4,17 @@ output "api_gateway" {
   value = {
     base_url = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}"
     
+    # Unified/General Endpoints (combines both batch types)
+    unified_endpoints = {
+      smart_upload    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
+      all_processed   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
+      search_all      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
+      edit            = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/edit"
+      delete          = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/delete/{fileId}"
+      recycle_bin     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
+      restore         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/restore/{fileId}"
+    }
+    
     long_batch_endpoints = {
       upload      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload"
       process     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process"
@@ -331,6 +342,16 @@ output "deployment_commands" {
 output "api_examples" {
   description = "Example API calls for testing"
   value = {
+    # Unified Endpoints Examples (combines both batch types)
+    unified_search_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?q=electric+cars'"
+    
+    unified_get_all_processed = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed'"
+    
+    unified_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?fileId=YOUR_FILE_ID'"
+    
+    # Smart routing upload (size-based decision)
+    smart_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload' -F 'file=@document.pdf'"
+    
     # Long Batch Examples
     long_batch_search = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/search?q=electric+cars'"
     
@@ -349,9 +370,6 @@ output "api_examples" {
     long_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload' -F 'file=@document.pdf'"
     
     short_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload' -F 'file=@document.pdf'"
-    
-    # Smart routing upload (size-based decision)
-    smart_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload' -F 'file=@document.pdf'"
     
     # Invoice Processing Examples (OCR extracts all data automatically)
     invoice_upload_simple = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf'"
@@ -409,12 +427,12 @@ output "architecture" {
   value = {
     upload_flow        = "Smart Router → Size-based routing OR Forced routing via dedicated endpoints"
     long_batch_flow    = "Long Batch Upload → Direct to long-batch-files → AWS Batch → DynamoDB"
-    short_batch_flow   = "Short Batch Upload → Direct to short-batch-files → Lambda → Textract/Comprehend → DynamoDB"
-    smart_routing      = "Generic Upload → Smart Router → Size/type-based decision → Appropriate processing pipeline"
-    search_flow        = "Both APIs → Search Lambda → DynamoDB (Fuzzy Search)"
-    retrieval_flow     = "Both APIs → Reader Lambda → CloudFront CDN"
-    delete_flow        = "Both APIs → Deleter Lambda → Recycle Bin → TTL (30 days)"
-    restore_flow       = "Both APIs → Restorer Lambda → DynamoDB (Restore)"
+    short_batch_flow   = "Short Batch Upload → Direct to short-batch-files → Lambda → Claude AI OCR → DynamoDB"
+    smart_routing      = "Generic Upload (/upload) → Smart Router → Size/type-based decision → Appropriate processing pipeline"
+    unified_retrieval  = "Unified Processed (/processed) → Reader Lambda → Combines both batch types → CloudFront CDN"
+    search_flow        = "Search APIs (/search, /long-batch/search, /short-batch/search) → Search Lambda → DynamoDB (Fuzzy Search)"
+    delete_flow        = "Delete APIs → Deleter Lambda → Recycle Bin → TTL (30 days)"
+    restore_flow       = "Restore APIs → Restorer Lambda → DynamoDB (Restore)"
     
     key_features = [
       "Dual API architecture (Long & Short batch)",

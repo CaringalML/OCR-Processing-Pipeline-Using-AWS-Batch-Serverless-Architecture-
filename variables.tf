@@ -188,26 +188,10 @@ variable "max_file_size_mb" {
   }
 }
 
-# SQS configuration
-variable "sqs_visibility_timeout_seconds" {
-  description = "SQS message visibility timeout in seconds"
-  type        = number
-  default     = 900 # 15 minutes
-  validation {
-    condition     = var.sqs_visibility_timeout_seconds >= 30 && var.sqs_visibility_timeout_seconds <= 43200
-    error_message = "SQS visibility timeout must be between 30 seconds and 12 hours."
-  }
-}
-
-variable "sqs_max_receive_count" {
-  description = "Maximum number of times a message can be received before moving to DLQ"
-  type        = number
-  default     = 3
-  validation {
-    condition     = var.sqs_max_receive_count >= 1 && var.sqs_max_receive_count <= 10
-    error_message = "Max receive count must be between 1 and 10."
-  }
-}
+# SQS configuration variables removed - Values are now hardcoded in sqs.tf for specific use cases:
+# - Long batch: 16min visibility timeout, 2 retries, long polling
+# - Short batch: 20min visibility timeout, 3 retries, short polling  
+# - Invoice: 30min visibility timeout, 3 retries, short polling
 
 # DynamoDB configuration
 variable "dynamodb_billing_mode" {
@@ -231,26 +215,7 @@ variable "cloudfront_price_class" {
   }
 }
 
-# EventBridge configuration
-variable "eventbridge_retry_attempts" {
-  description = "Number of retry attempts for EventBridge targets"
-  type        = number
-  default     = 2
-  validation {
-    condition     = var.eventbridge_retry_attempts >= 0 && var.eventbridge_retry_attempts <= 10
-    error_message = "EventBridge retry attempts must be between 0 and 10."
-  }
-}
-
-variable "eventbridge_max_age_seconds" {
-  description = "Maximum age for EventBridge events in seconds"
-  type        = number
-  default     = 3600 # 1 hour
-  validation {
-    condition     = var.eventbridge_max_age_seconds >= 60 && var.eventbridge_max_age_seconds <= 86400
-    error_message = "EventBridge max age must be between 60 seconds and 24 hours."
-  }
-}
+# EventBridge variables removed - Long batch now uses direct SQS triggering
 
 # ========================================
 # API GATEWAY RATE LIMITING CONFIGURATION

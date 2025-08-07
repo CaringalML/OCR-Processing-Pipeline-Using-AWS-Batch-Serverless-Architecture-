@@ -23,62 +23,29 @@ resource "aws_sqs_queue" "batch_dlq" {
   })
 }
 
-# Main SQS Queue for Batch processing
+# Main SQS Queue for Long Batch processing - Direct SQS with Long Polling
 resource "aws_sqs_queue" "batch_queue" {
   name                       = "${var.project_name}-${var.environment}-batch-queue"
   delay_seconds              = 0
   max_message_size           = 262144
-  message_retention_seconds  = 345600 # 4 days
-  receive_wait_time_seconds  = 20     # Long polling
-  visibility_timeout_seconds = var.sqs_visibility_timeout_seconds
+  message_retention_seconds  = 1209600 # 14 days
+  receive_wait_time_seconds  = 20      # Long polling enabled for efficiency
+  visibility_timeout_seconds = 960     # 16 minutes (AWS Batch timeout + buffer)
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.batch_dlq.arn
-    maxReceiveCount     = var.sqs_max_receive_count
+    maxReceiveCount     = 2  # Only 2 retries before DLQ
   })
-
-  lifecycle {
-    ignore_changes = [
-      name,
-      delay_seconds,
-      max_message_size,
-      message_retention_seconds,
-      receive_wait_time_seconds,
-      visibility_timeout_seconds,
-      redrive_policy
-    ]
-  }
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-batch-queue"
+    Type = "Long-Batch Processing"
+    Architecture = "Direct-SQS-Trigger"
   })
 }
 
-# SQS Queue Policy to allow EventBridge to send messages
-resource "aws_sqs_queue_policy" "batch_queue_policy" {
-  queue_url = aws_sqs_queue.batch_queue.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "events.amazonaws.com"
-        }
-        Action   = "sqs:SendMessage"
-        Resource = aws_sqs_queue.batch_queue.arn
-        Condition = {
-          ArnEquals = {
-            "aws:SourceArn" = aws_cloudwatch_event_rule.s3_long_batch_upload_rule.arn
-          }
-        }
-      }
-    ]
-  })
-}
-
-# Short batch queue does not need EventBridge policy - uses direct API SQS messages only
+# Note: No SQS Queue Policy needed - Long batch now uses direct SQS messages from Lambda uploader
+# Both long-batch and short-batch now use direct API SQS messages for consistency
 
 # CloudWatch Alarm for DLQ
 resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
@@ -97,7 +64,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
     Project: ${var.project_name}
     Queue: ${var.project_name}-${var.environment}-batch-dlq
     
-    This indicates that messages have failed processing after ${var.sqs_max_receive_count} attempts.
+    This indicates that messages have failed processing after 2 attempts.
     
     Possible causes:
     - Batch job submission failures

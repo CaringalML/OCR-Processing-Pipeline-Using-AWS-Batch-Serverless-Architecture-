@@ -5,21 +5,20 @@ from datetime import datetime
 
 def lambda_handler(event, context):
     """
-    Process SQS messages and submit Batch jobs for S3 file processing
+    Process SQS messages from event source mapping and submit Batch jobs for S3 file processing
+    Direct SQS trigger replaces EventBridge polling for better performance
     """
     
     # Initialize AWS clients
-    sqs_client = boto3.client('sqs')
     batch_client = boto3.client('batch')
     dynamodb = boto3.resource('dynamodb')
     
     # Get configuration
-    queue_url = os.environ.get('SQS_QUEUE_URL')
     job_queue = os.environ.get('BATCH_JOB_QUEUE')
     job_definition = os.environ.get('BATCH_JOB_DEFINITION')
     dynamodb_table_name = os.environ.get('DYNAMODB_TABLE')
     
-    if not all([queue_url, job_queue, job_definition, dynamodb_table_name]):
+    if not all([job_queue, job_definition, dynamodb_table_name]):
         print("ERROR: Missing required environment variables")
         return {
             'statusCode': 500,
@@ -29,66 +28,57 @@ def lambda_handler(event, context):
     table = dynamodb.Table(dynamodb_table_name)
     processed_count = 0
     error_count = 0
+    batch_item_failures = []
     
     try:
-        # Receive messages from SQS
-        response = sqs_client.receive_message(
-            QueueUrl=queue_url,
-            MaxNumberOfMessages=10,
-            WaitTimeSeconds=5,
-            MessageAttributeNames=['All']
-        )
+        # Process messages from SQS event source mapping
+        records = event.get('Records', [])
+        print(f"Processing {len(records)} SQS records from event source mapping")
         
-        messages = response.get('Messages', [])
-        
-        for message in messages:
+        for record in records:
+            message_id = record.get('messageId')
+            receipt_handle = record.get('receiptHandle')
+            
             try:
-                # Parse the message
-                body = json.loads(message['Body'])
+                # Parse the SQS message body from event source mapping
+                body = json.loads(record['body'])
                 
-                # Handle both S3 event messages and direct Lambda upload messages
-                if 'detail' in body:
-                    # S3 event message format
-                    detail = body['detail']
-                    bucket_name = detail['bucket']['name']
-                    object_key = detail['object']['key']
+                # Handle both message formats: direct long-batch uploader and smart router
+                if 'fileId' in body and 'processingRoute' in body:
+                    # Direct long-batch uploader message format (new)
+                    file_id = body['fileId']
+                    bucket_name = body['bucket']
+                    object_key = body['key']
+                    file_name = body.get('fileName', '')
+                    file_size = body.get('fileSize', 0)
+                    content_type = body.get('contentType', '')
                     
-                    # Extract file_id from the key structure
-                    # Format: long-batch-files/{file_id}.ext
-                    if object_key.startswith('long-batch-files/'):
-                        # New format: long-batch-files/{file_id}.ext
-                        file_id = os.path.splitext(os.path.basename(object_key))[0]
-                    elif 'uploads/' in object_key:
-                        # Legacy format: uploads/YYYY/MM/DD/{file_id}/{filename}
-                        key_parts = object_key.split('/')
-                        if len(key_parts) >= 6:
-                            file_id = key_parts[4]
-                        else:
-                            print(f"Invalid legacy key structure: {object_key}")
-                            delete_message(sqs_client, queue_url, message['ReceiptHandle'])
-                            continue
-                    else:
-                        print(f"Skipping non-long-batch file: {object_key}")
-                        delete_message(sqs_client, queue_url, message['ReceiptHandle'])
-                        continue
-                        
-                elif 'file_id' in body and 'processing_type' in body:
-                    # Direct Lambda upload message format
+                    print(f"Processing direct long-batch uploader message for file_id: {file_id}")
+                    print(f"S3 location: s3://{bucket_name}/{object_key}")
+                    
+                elif 'file_id' in body and 'processing_type' in body and body['processing_type'] == 'long-batch':
+                    # Smart router message format (existing)
                     file_id = body['file_id']
                     metadata = body.get('metadata', {})
-                    bucket_name = metadata.get('s3_bucket')
+                    bucket_name = metadata.get('s3_bucket') or metadata.get('bucket_name')
                     object_key = metadata.get('s3_key')
+                    file_name = metadata.get('file_name', '')
+                    file_size = metadata.get('file_size', 0)
+                    content_type = metadata.get('content_type', '')
+                    
+                    print(f"Processing smart router long-batch message for file_id: {file_id}")
+                    print(f"S3 location: s3://{bucket_name}/{object_key}")
                     
                     if not bucket_name or not object_key:
-                        print(f"Missing S3 details in direct upload message: {body}")
-                        delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                        print(f"Missing S3 details in smart router message: {body}")
+                        batch_item_failures.append({"itemIdentifier": message_id})
+                        error_count += 1
                         continue
-                        
-                    print(f"Processing direct upload message for file_id: {file_id}")
                     
                 else:
-                    print(f"Invalid message format - missing required fields: {body}")
-                    delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                    print(f"Invalid message format - missing required fields. Expected either (fileId+processingRoute) or (file_id+processing_type=long-batch): {body}")
+                    batch_item_failures.append({"itemIdentifier": message_id})
+                    error_count += 1
                     continue
                 
                 # Submit Batch job
@@ -143,42 +133,34 @@ def lambda_handler(event, context):
                     )
                 else:
                     print(f"ERROR: File metadata not found for file_id: {file_id}")
+                    batch_item_failures.append({"itemIdentifier": message_id})
                     error_count += 1
                     continue
                 
-                # Delete message from queue after successful processing
-                delete_message(sqs_client, queue_url, message['ReceiptHandle'])
+                # Success - message will be automatically deleted by SQS
                 processed_count += 1
+                print(f"Successfully submitted batch job {job_id} for file {file_id}")
                     
             except Exception as e:
-                print(f"Error processing message: {str(e)}")
+                print(f"Error processing message {message_id}: {str(e)}")
+                batch_item_failures.append({"itemIdentifier": message_id})
                 error_count += 1
-                # Message will return to queue after visibility timeout
         
         print(f"Processed {processed_count} messages, {error_count} errors")
         
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'processed': processed_count,
-                'errors': error_count,
-                'total_messages': len(messages)
-            })
+        # Return batch item failures for SQS event source mapping
+        response = {
+            'batchItemFailures': batch_item_failures
         }
         
+        if batch_item_failures:
+            print(f"Returning {len(batch_item_failures)} failed items for retry")
+        
+        return response
+        
     except Exception as e:
-        print(f"ERROR: {str(e)}")
+        print(f"CRITICAL ERROR in Lambda execution: {str(e)}")
+        # Return all messages as failures for retry
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            'batchItemFailures': [{"itemIdentifier": record.get('messageId')} for record in event.get('Records', [])]
         }
-
-def delete_message(sqs_client, queue_url, receipt_handle):
-    """Helper function to delete a message from SQS"""
-    try:
-        sqs_client.delete_message(
-            QueueUrl=queue_url,
-            ReceiptHandle=receipt_handle
-        )
-    except Exception as e:
-        print(f"Error deleting message: {str(e)}")

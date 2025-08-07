@@ -376,6 +376,30 @@ resource "aws_lambda_function" "short_batch_processor" {
   })
 }
 
+# Lambda Event Source Mapping for Long Batch Queue with Long Polling
+resource "aws_lambda_event_source_mapping" "long_batch_sqs_trigger" {
+  event_source_arn = aws_sqs_queue.batch_queue.arn
+  function_name    = aws_lambda_function.sqs_batch_processor.arn
+  
+  # Batch configuration optimized for long polling efficiency
+  batch_size                         = 10    # Process up to 10 messages per invocation
+  maximum_batching_window_in_seconds = 5     # Wait up to 5 seconds to fill batch
+  
+  # Enable partial batch response to handle individual message failures
+  function_response_types = ["ReportBatchItemFailures"]
+  
+  # Configure visibility timeout for long-running batch job submissions
+  scaling_config {
+    maximum_concurrency = 2  # Limit concurrency to avoid overwhelming AWS Batch
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-long-batch-sqs-trigger"
+    Purpose = "Direct SQS trigger for long batch processing"
+    Architecture = "SQS-Lambda-Batch"
+  })
+}
+
 # Lambda Event Source Mapping for Short Batch Queue with Short Polling
 resource "aws_lambda_event_source_mapping" "short_batch_sqs_trigger" {
   event_source_arn = aws_sqs_queue.short_batch_queue.arn
@@ -697,6 +721,7 @@ resource "aws_lambda_function" "long_batch_uploader" {
     variables = {
       UPLOAD_BUCKET_NAME    = aws_s3_bucket.upload_bucket.id
       DYNAMODB_TABLE        = aws_dynamodb_table.file_metadata.name
+      LONG_BATCH_QUEUE_URL  = aws_sqs_queue.batch_queue.url
       LOG_LEVEL            = "INFO"
       ENVIRONMENT          = var.environment
     }
