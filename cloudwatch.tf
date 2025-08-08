@@ -1,6 +1,6 @@
 # CloudWatch Log Groups - AWS Batch Jobs (OCR processing container logs)
 resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
-  name              = "/aws/batch/${var.project_name}-${var.environment}-ocr-long-batch-processing"
+  name              = "/aws/batch/${var.project_name}-${var.environment}-long-batch-processor"
   retention_in_days = 7  # 1 week retention
   skip_destroy      = false
   tags              = merge(var.common_tags, {
