@@ -146,21 +146,7 @@ output "lambda_functions" {
       memory_size  = aws_lambda_function.recycle_bin_reader.memory_size
       timeout      = aws_lambda_function.recycle_bin_reader.timeout
     }
-# smart_router removed - routing now integrated into s3_uploader
-    long_batch_uploader = {
-      name         = aws_lambda_function.long_batch_uploader.function_name
-      arn          = aws_lambda_function.long_batch_uploader.arn
-      invoke_arn   = aws_lambda_function.long_batch_uploader.invoke_arn
-      memory_size  = aws_lambda_function.long_batch_uploader.memory_size
-      timeout      = aws_lambda_function.long_batch_uploader.timeout
-    }
-    short_batch_uploader = {
-      name         = aws_lambda_function.short_batch_uploader.function_name
-      arn          = aws_lambda_function.short_batch_uploader.arn
-      invoke_arn   = aws_lambda_function.short_batch_uploader.invoke_arn
-      memory_size  = aws_lambda_function.short_batch_uploader.memory_size
-      timeout      = aws_lambda_function.short_batch_uploader.timeout
-    }
+# long_batch_uploader and short_batch_uploader removed - functionality consolidated into s3_uploader
     short_batch_submitter = {
       name         = aws_lambda_function.short_batch_submitter.function_name
       arn          = aws_lambda_function.short_batch_submitter.arn
@@ -262,9 +248,7 @@ output "cloudwatch_logs" {
     file_restorer        = aws_cloudwatch_log_group.file_restorer_logs.name
     recycle_bin_reader   = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
     short_batch_processor = aws_cloudwatch_log_group.short_batch_processor_logs.name
-# smart_router logs removed - routing now integrated into s3_uploader
-    long_batch_uploader   = aws_cloudwatch_log_group.long_batch_uploader_logs.name
-    short_batch_uploader  = aws_cloudwatch_log_group.short_batch_uploader_logs.name
+# long_batch_uploader and short_batch_uploader logs removed - functionality consolidated into s3_uploader
     short_batch_submitter = aws_cloudwatch_log_group.short_batch_submitter_logs.name
     ocr_editor           = aws_cloudwatch_log_group.ocr_editor_logs.name
     cleanup_processor    = aws_cloudwatch_log_group.cleanup_processor_logs.name

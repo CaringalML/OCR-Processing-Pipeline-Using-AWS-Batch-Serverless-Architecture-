@@ -157,17 +157,6 @@ data "archive_file" "recycle_bin_reader_zip" {
 
 # smart_router removed - routing now integrated into s3_uploader
 
-data "archive_file" "long_batch_uploader_zip" {
-  type        = "zip"
-  output_path = "${path.module}/lambda_functions/long_batch_uploader/long_batch_uploader.zip"
-  source_file = "${path.module}/lambda_functions/long_batch_uploader/long_batch_uploader.py"
-}
-
-data "archive_file" "short_batch_uploader_zip" {
-  type        = "zip"
-  output_path = "${path.module}/lambda_functions/short_batch_uploader/short_batch_uploader.zip"
-  source_file = "${path.module}/lambda_functions/short_batch_uploader/short_batch_uploader.py"
-}
 
 # Uploader Lambda Function (S3 file uploader)
 resource "aws_lambda_function" "uploader" {
@@ -457,6 +446,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
 resource "aws_cloudwatch_log_group" "s3_uploader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-s3-uploader"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "S3 file upload with metadata logging"
     Function = "s3_uploader"
@@ -467,6 +457,7 @@ resource "aws_cloudwatch_log_group" "s3_uploader_logs" {
 resource "aws_cloudwatch_log_group" "lambda_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-lambda-reader"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "File retrieval and metadata display logging"
     Function = "lambda_reader"
@@ -477,6 +468,7 @@ resource "aws_cloudwatch_log_group" "lambda_reader_logs" {
 resource "aws_cloudwatch_log_group" "document_search_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-document-search"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Document fuzzy search logging"
     Function = "document_search"
@@ -487,6 +479,7 @@ resource "aws_cloudwatch_log_group" "document_search_logs" {
 resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-editor"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "OCR result editing logging"
     Function = "ocr_editor"
@@ -497,6 +490,7 @@ resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
 resource "aws_cloudwatch_log_group" "short_batch_submitter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-submitter"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Submit short batch jobs to SQS"
     Function = "short_batch_submitter"
@@ -507,6 +501,7 @@ resource "aws_cloudwatch_log_group" "short_batch_submitter_logs" {
 resource "aws_cloudwatch_log_group" "short_batch_processor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-processor"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Short batch processing for small files"
     Function = "short_batch_processor"
@@ -517,6 +512,7 @@ resource "aws_cloudwatch_log_group" "short_batch_processor_logs" {
 resource "aws_cloudwatch_log_group" "sqs_to_batch_submitter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-sqs-to-batch-submitter"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "SQS to AWS Batch job submission logging"
     Function = "sqs_to_batch_submitter"
@@ -558,6 +554,7 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
 resource "aws_cloudwatch_log_group" "batch_status_reconciliation_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-batch-status-reconciliation"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "AWS Batch job status reconciliation logging"
     Function = "batch_status_reconciliation"
@@ -600,6 +597,7 @@ resource "aws_lambda_function" "dead_job_detector" {
 resource "aws_cloudwatch_log_group" "dead_job_detector_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-dead-job-detector"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Dead job detection and cleanup logging"
     Function = "dead_job_detector"
@@ -706,79 +704,13 @@ resource "aws_lambda_function" "recycle_bin_reader" {
 
 # Smart Router removed - routing now integrated into s3_uploader Lambda
 
-# Long Batch Uploader Lambda Function (dedicated to long-batch uploads)
-resource "aws_lambda_function" "long_batch_uploader" {
-  filename         = data.archive_file.long_batch_uploader_zip.output_path
-  function_name    = "${var.project_name}-${var.environment}-long-batch-uploader"
-  role             = aws_iam_role.long_batch_uploader_role.arn
-  handler          = "long_batch_uploader.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 300
-  memory_size      = 256
-  source_code_hash = data.archive_file.long_batch_uploader_zip.output_base64sha256
 
-  environment {
-    variables = {
-      UPLOAD_BUCKET_NAME    = aws_s3_bucket.upload_bucket.id
-      DYNAMODB_TABLE        = aws_dynamodb_table.file_metadata.name
-      LONG_BATCH_QUEUE_URL  = aws_sqs_queue.batch_queue.url
-      LOG_LEVEL            = "INFO"
-      ENVIRONMENT          = var.environment
-    }
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.long_batch_uploader_policy,
-    aws_cloudwatch_log_group.long_batch_uploader_logs
-  ]
-
-  # Removed ignore_changes to allow code updates
-
-  tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-long-batch-uploader"
-    Purpose = "Dedicated uploader for long-batch processing via AWS Batch"
-  })
-}
-
-# Short Batch Uploader Lambda Function (dedicated to short-batch uploads)
-resource "aws_lambda_function" "short_batch_uploader" {
-  filename         = data.archive_file.short_batch_uploader_zip.output_path
-  function_name    = "${var.project_name}-${var.environment}-short-batch-uploader"
-  role             = aws_iam_role.short_batch_uploader_role.arn
-  handler          = "short_batch_uploader.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 300
-  memory_size      = 256
-  source_code_hash = data.archive_file.short_batch_uploader_zip.output_base64sha256
-
-  environment {
-    variables = {
-      UPLOAD_BUCKET_NAME       = aws_s3_bucket.upload_bucket.id
-      DYNAMODB_TABLE           = aws_dynamodb_table.file_metadata.name
-      SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
-      MAX_LAMBDA_FILE_SIZE_MB  = "50"
-      LOG_LEVEL               = "INFO"
-      ENVIRONMENT             = var.environment
-    }
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.short_batch_uploader_policy,
-    aws_cloudwatch_log_group.short_batch_uploader_logs
-  ]
-
-  # Removed ignore_changes to allow code updates
-
-  tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-short-batch-uploader"
-    Purpose = "Dedicated uploader for short-batch processing via Lambda"
-  })
-}
 
 # CloudWatch Log Groups - File Deleter
 resource "aws_cloudwatch_log_group" "file_deleter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-file-deleter"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "File deletion and recycle bin logging"
     Function = "file_deleter"
@@ -789,6 +721,7 @@ resource "aws_cloudwatch_log_group" "file_deleter_logs" {
 resource "aws_cloudwatch_log_group" "file_restorer_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-file-restorer"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "File restoration from recycle bin logging"
     Function = "file_restorer"
@@ -799,6 +732,7 @@ resource "aws_cloudwatch_log_group" "file_restorer_logs" {
 resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-recycle-bin-reader"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Recycle bin listing and querying logging"
     Function = "recycle_bin_reader"
@@ -807,25 +741,7 @@ resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
 
 # Smart Router CloudWatch logs removed - routing now integrated into s3_uploader
 
-# CloudWatch Log Groups - Long Batch Uploader
-resource "aws_cloudwatch_log_group" "long_batch_uploader_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-long-batch-uploader"
-  retention_in_days = 7
-  tags              = merge(var.common_tags, {
-    Purpose = "Dedicated uploader for long-batch processing via AWS Batch"
-    Function = "long_batch_uploader"
-  })
-}
 
-# CloudWatch Log Groups - Short Batch Uploader
-resource "aws_cloudwatch_log_group" "short_batch_uploader_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-uploader"
-  retention_in_days = 7
-  tags              = merge(var.common_tags, {
-    Purpose = "Dedicated uploader for short-batch processing via Lambda"
-    Function = "short_batch_uploader"
-  })
-}
 
 # ========================================
 # INVOICE PROCESSING LAMBDA FUNCTIONS
@@ -901,6 +817,7 @@ resource "aws_lambda_function" "invoice_processor" {
 resource "aws_cloudwatch_log_group" "invoice_uploader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-uploader"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Invoice upload and queuing logging"
     Function = "invoice_uploader"
@@ -911,6 +828,7 @@ resource "aws_cloudwatch_log_group" "invoice_uploader_logs" {
 resource "aws_cloudwatch_log_group" "invoice_processor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-processor"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Invoice OCR processing with Claude AI logging"
     Function = "invoice_processor"
@@ -951,6 +869,7 @@ resource "aws_lambda_function" "invoice_reader" {
 resource "aws_cloudwatch_log_group" "invoice_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-reader"
   retention_in_days = 7
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Invoice data reading and presentation logging"
     Function = "invoice_reader"

@@ -495,7 +495,7 @@ resource "aws_api_gateway_method" "long_batch_upload_post" {
   authorization = "NONE"
 }
 
-# Long Batch Upload POST Integration
+# Long Batch Upload POST Integration (now uses unified uploader)
 resource "aws_api_gateway_integration" "long_batch_upload_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.long_batch_upload.id
@@ -503,7 +503,7 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
 
   integration_http_method = "POST"
   type                   = "AWS_PROXY"
-  uri                    = aws_lambda_function.long_batch_uploader.invoke_arn
+  uri                    = aws_lambda_function.uploader.invoke_arn
 }
 
 # Long Batch Process POST Method
@@ -651,7 +651,7 @@ resource "aws_api_gateway_method" "short_batch_upload_post" {
   authorization = "NONE"
 }
 
-# Short Batch Upload POST Integration
+# Short Batch Upload POST Integration (now uses unified uploader)
 resource "aws_api_gateway_integration" "short_batch_upload_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.short_batch_upload.id
@@ -659,7 +659,7 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
 
   integration_http_method = "POST"
   type                   = "AWS_PROXY"
-  uri                    = aws_lambda_function.short_batch_uploader.invoke_arn
+  uri                    = aws_lambda_function.uploader.invoke_arn
 }
 
 # Short Batch Process POST Method
@@ -1003,19 +1003,19 @@ resource "aws_api_gateway_stage" "main" {
 # LAMBDA PERMISSIONS
 # ========================================
 
-# Lambda permissions for API Gateway
-resource "aws_lambda_permission" "long_batch_uploader_api_gateway" {
+# Lambda permissions for API Gateway (now using unified uploader)
+resource "aws_lambda_permission" "uploader_long_batch_api_gateway" {
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.long_batch_uploader.function_name
+  function_name = aws_lambda_function.uploader.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/long-batch/upload"
 }
 
-resource "aws_lambda_permission" "short_batch_uploader_api_gateway" {
+resource "aws_lambda_permission" "uploader_short_batch_api_gateway" {
   statement_id  = "AllowExecutionFromAPIGatewayShortBatch"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.short_batch_uploader.function_name
+  function_name = aws_lambda_function.uploader.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/upload"
 }

@@ -64,8 +64,9 @@ resource "aws_iam_role_policy" "cleanup_lambda_policy" {
 # CloudWatch Log Group for Cleanup Lambda
 # CloudWatch Log Groups - Cleanup Processor (automated resource cleanup)
 resource "aws_cloudwatch_log_group" "cleanup_processor_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-cleanup-processor"
+  name              = "/aws/lambda/${var.project_name}-auto-cleanup"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Automated resource cleanup logging"
     Function = "cleanup_processor"

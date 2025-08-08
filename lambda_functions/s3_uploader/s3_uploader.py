@@ -8,7 +8,7 @@ from urllib.parse import unquote_plus
 import email
 from io import StringIO
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Optional
 
 # Configure logging
 logger = logging.getLogger()
@@ -155,10 +155,57 @@ def parse_multipart_form_data(body, content_type):
     
     return form_data, files
 
+def get_processing_route_from_path(path: str, query_params: Dict[str, str] = None) -> Tuple[str, str, bool]:
+    """
+    Determine processing route based on API path and query parameters.
+    Returns: (route, endpoint_type, force_routing)
+    """
+    if query_params is None:
+        query_params = {}
+    
+    # Check for explicit route override in query params
+    route_override = query_params.get('route', '').lower()
+    if route_override in ['short-batch', 'long-batch']:
+        return route_override, 'query-override', True
+    
+    # Route based on API path - consolidated routing
+    if '/batch/short-batch/upload' in path or '/short-batch/upload' in path:
+        return 'short-batch', 'endpoint-specific', True
+    elif '/batch/long-batch/upload' in path or '/long-batch/upload' in path:
+        return 'long-batch', 'endpoint-specific', True
+    elif '/batch/upload' in path:
+        return 'auto', 'smart-router', False
+    else:
+        # Default smart routing for legacy /upload endpoint
+        return 'auto', 'legacy', False
+
+def validate_file_size_for_route(file_size_bytes: int, route: str, max_lambda_size_mb: int = 50) -> Dict[str, Any]:
+    """
+    Validate if file size is appropriate for the chosen route.
+    """
+    file_size_mb = file_size_bytes / (1024 * 1024)
+    
+    if route == 'short-batch' and file_size_mb > max_lambda_size_mb:
+        return {
+            'valid': False,
+            'error': f'File too large for short-batch processing',
+            'details': f'File size {file_size_mb:.2f}MB exceeds Lambda limit of {max_lambda_size_mb}MB',
+            'suggestion': 'Use /long-batch/upload endpoint or /batch/upload for automatic routing'
+        }
+    
+    return {'valid': True}
+
 def lambda_handler(event, context):
     """
-    Enhanced S3 file upload with integrated smart routing.
-    Files are routed to short-batch (≤300KB) or long-batch (>300KB) immediately upon upload.
+    Unified S3 file upload handler supporting multiple routing strategies:
+    
+    Routes:
+    - /batch/upload (or /upload) - Smart routing based on file size (≤300KB -> short-batch, >300KB -> long-batch)
+    - /batch/short-batch/upload or /short-batch/upload - Force short-batch processing (Lambda), rejects files >50MB
+    - /batch/long-batch/upload or /long-batch/upload - Force long-batch processing (AWS Batch), no size limit
+    
+    Query Parameters:
+    - route=short-batch|long-batch - Override routing decision
     """
     s3 = boto3.client('s3')
     dynamodb = boto3.resource('dynamodb')
@@ -166,6 +213,13 @@ def lambda_handler(event, context):
     bucket_name = os.environ['UPLOAD_BUCKET_NAME']
     table_name = os.environ['DYNAMODB_TABLE']
     table = dynamodb.Table(table_name)
+    
+    # Get processing route from path and query parameters
+    path = event.get('path', '/upload')
+    query_params = event.get('queryStringParameters') or {}
+    route_decision, endpoint_type, force_routing = get_processing_route_from_path(path, query_params)
+    
+    logger.info(f"Upload request - Path: {path}, Route: {route_decision}, Type: {endpoint_type}, Force: {force_routing}")
     
     try:
         # Parse the multipart form data
@@ -206,8 +260,37 @@ def lambda_handler(event, context):
             # Get priority from form data
             priority = form_data.get('priority', 'normal')
             
-            # Make intelligent routing decision
-            routing_decision = make_routing_decision(file_size, file_type, priority)
+            # Determine final routing based on endpoint and file characteristics
+            if route_decision == 'auto':
+                # Use smart routing for auto routes
+                routing_decision = make_routing_decision(file_size, file_type, priority)
+                final_route = routing_decision['route']
+                routing_reasons = routing_decision['reason']
+            else:
+                # Validate forced routing
+                validation = validate_file_size_for_route(file_size, route_decision)
+                if not validation['valid']:
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps(validation)
+                    }
+                
+                final_route = route_decision
+                routing_reasons = [f'Forced via {endpoint_type}: {path}']
+                
+                # Create routing decision structure for forced routes
+                routing_decision = {
+                    'route': final_route,
+                    'reason': routing_reasons,
+                    'estimated_processing_time': '30 seconds - 5 minutes' if final_route == 'short-batch' else '5-30 minutes',
+                    'processor_type': 'lambda' if final_route == 'short-batch' else 'aws_batch',
+                    's3_folder': f'{final_route}-files',
+                    'queue_url': os.environ.get('SHORT_BATCH_QUEUE_URL') if final_route == 'short-batch' else os.environ.get('LONG_BATCH_QUEUE_URL')
+                }
             
             # Create S3 key with appropriate folder structure
             s3_key = f"{routing_decision['s3_folder']}/{file_id}{file_extension}"
@@ -251,6 +334,11 @@ def lambda_handler(event, context):
                 'estimated_processing_time': routing_decision['estimated_processing_time'],
                 'routing_decision': routing_decision,  # Store full decision for debugging
                 'priority': priority,
+                # Enhanced routing metadata
+                'endpoint_type': endpoint_type,
+                'api_path': path,
+                'force_routing': force_routing,
+                'route_override': query_params.get('route', ''),
                 # Add default metadata fields that the reader expects
                 'publication': form_data.get('publication', ''),
                 'year': form_data.get('year', ''),
@@ -282,10 +370,12 @@ def lambda_handler(event, context):
                 'timestamp': timestamp,
                 'content_type': content_type,
                 'routing': {
-                    'decision': routing_decision['route'],
+                    'decision': final_route,
                     'processor': routing_decision['processor_type'],
-                    'reason': routing_decision['reason'][0] if routing_decision['reason'] else 'No specific reason',
-                    'estimated_time': routing_decision['estimated_processing_time']
+                    'reason': routing_reasons[0] if routing_reasons else 'No specific reason',
+                    'estimated_time': routing_decision['estimated_processing_time'],
+                    'endpoint_type': endpoint_type,
+                    'forced': force_routing
                 },
                 'queue_status': 'sent' if queue_result.get('success') else 'failed',
                 'queue_message_id': queue_result.get('message_id')
@@ -307,10 +397,23 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'message': f'Successfully uploaded and routed {len(uploaded_files)} file(s)',
                 'files': uploaded_files,
+                'endpoint_info': {
+                    'path': path,
+                    'type': endpoint_type,
+                    'routing_method': route_decision,
+                    'force_routing': force_routing
+                },
                 'routing_info': {
                     'threshold_kb': FILE_SIZE_THRESHOLD_KB,
                     'short_batch': f'Files ≤ {FILE_SIZE_THRESHOLD_KB}KB → Fast Lambda processing (30s-5min)',
                     'long_batch': f'Files > {FILE_SIZE_THRESHOLD_KB}KB → AWS Batch processing (5-30min)'
+                },
+                'available_endpoints': {
+                    '/batch/upload': 'Smart routing based on file size and priority',
+                    '/batch/short-batch/upload': 'Force Lambda processing (files ≤50MB)',
+                    '/batch/long-batch/upload': 'Force AWS Batch processing (any size)',
+                    '/short-batch/upload': 'Legacy - Force Lambda processing (files ≤50MB)',
+                    '/long-batch/upload': 'Legacy - Force AWS Batch processing (any size)'
                 }
             })
         }

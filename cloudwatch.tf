@@ -1,7 +1,8 @@
 # CloudWatch Log Groups - AWS Batch Jobs (OCR processing container logs)
 resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
-  name              = "/aws/batch/${var.project_name}-${var.environment}-ocr-job-definition"
+  name              = "/aws/batch/${var.project_name}-${var.environment}-ocr-long-batch-processing"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "AWS Batch OCR processing container logs"
     Function = "aws_batch_ocr"
@@ -12,6 +13,7 @@ resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
 resource "aws_cloudwatch_log_group" "api_gateway_access_logs" {
   name              = "/aws/apigateway/${var.project_name}-${var.environment}-api-access"
   retention_in_days = 7  # 1 week retention
+  skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "API Gateway access and error logging"
     Function = "api_gateway"
@@ -127,7 +129,25 @@ resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
 }
 
 # ========================================
-# RATE LIMITING MONITORING
+# SECURITY AND RATE LIMITING MONITORING
+# ========================================
+
+# SNS Topic for Security Alerts
+resource "aws_sns_topic" "security_alerts" {
+  name = "${var.project_name}-${var.environment}-security-alerts"
+  tags = merge(var.common_tags, {
+    Purpose = "Security and rate limiting notifications"
+    AlertType = "Security"
+  })
+}
+
+# SNS Topic Subscription for security alerts email
+resource "aws_sns_topic_subscription" "security_email_alerts" {
+  topic_arn = aws_sns_topic.security_alerts.arn
+  protocol  = "email"
+  endpoint  = var.admin_alert_email
+}
+
 # ========================================
 
 # CloudWatch Alarm for 4XX errors (includes rate limiting)
@@ -143,7 +163,8 @@ resource "aws_cloudwatch_metric_alarm" "api_4xx_errors" {
   statistic           = "Sum"
   threshold           = "20"
   alarm_description   = "This metric monitors API Gateway 4XX errors (including rate limiting)"
-  alarm_actions       = []
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -169,7 +190,8 @@ resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
   statistic           = "Average"
   threshold           = "5000"  # 5 seconds
   alarm_description   = "This metric monitors API Gateway latency"
-  alarm_actions       = []
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -195,7 +217,8 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   statistic           = "Sum"
   threshold           = var.api_throttling_rate_limit * 300 * 0.8  # 80% of max capacity
   alarm_description   = "This metric monitors unusual request spikes that may indicate abuse"
-  alarm_actions       = []
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -205,6 +228,86 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   tags = merge(var.common_tags, {
     AlarmType = "Security"
     Severity  = "Medium"
+  })
+}
+
+# CloudWatch Alarm for rapid consecutive 429 errors (rate limiting)
+resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment}-rate-limit-abuse"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "4XXError"
+  namespace           = "AWS/ApiGateway"
+  period              = "60"  # 1 minute window
+  statistic           = "Sum"
+  threshold           = "50"  # More than 50 rate limit errors in 1 minute
+  alarm_description   = "Detects rapid rate limiting violations indicating potential abuse"
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
+
+  dimensions = {
+    ApiName = aws_api_gateway_rest_api.main.name
+    Stage   = aws_api_gateway_stage.main.stage_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "Security"
+    Severity  = "High"
+    ThreatLevel = "Suspicious"
+  })
+}
+
+# CloudWatch Alarm for 5XX errors indicating system stress
+resource "aws_cloudwatch_metric_alarm" "api_5xx_errors" {
+  count = var.enable_rate_limiting ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment}-api-5xx-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "5XXError"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "10"
+  alarm_description   = "This metric monitors API Gateway 5XX errors indicating system stress"
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
+
+  dimensions = {
+    ApiName = aws_api_gateway_rest_api.main.name
+    Stage   = aws_api_gateway_stage.main.stage_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "System"
+    Severity  = "High"
+  })
+}
+
+# CloudWatch Alarm for Lambda function errors (potential attack vectors)
+resource "aws_cloudwatch_metric_alarm" "lambda_error_spike" {
+  alarm_name          = "${var.project_name}-${var.environment}-lambda-error-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "20"
+  alarm_description   = "Detects unusual Lambda error spikes that may indicate attacks"
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  ok_actions          = [aws_sns_topic.security_alerts.arn]
+
+  dimensions = {
+    FunctionName = aws_lambda_function.uploader.function_name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "Security"
+    Severity  = "Medium"
+    Component = "Lambda"
   })
 }
 
