@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -22,6 +23,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install Python dependencies with pre-built wheels where possible
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir wheel && \
+    pip install --no-cache-dir --force-reinstall --no-binary regex regex>=2022.10.31 && \
     pip install --no-cache-dir -r requirements.txt
 
 # === EXISTING LIBRARIES (PRESERVED) ===
