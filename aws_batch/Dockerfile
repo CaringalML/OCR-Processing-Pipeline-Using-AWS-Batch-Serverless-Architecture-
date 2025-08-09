@@ -1,15 +1,17 @@
-# Multi-stage build for faster and smaller images
-# Stage 1: Build stage with Alpine to match runtime
-FROM python:3.12-alpine3.20 as builder
+# Multi-stage build optimized for AWS Batch
+# Stage 1: Build stage with Debian slim for PyTorch compatibility
+FROM python:3.12-slim as builder
 
-# Install build dependencies for Alpine
-RUN apk add --no-cache \
+# Add labels for AWS Batch tracking
+LABEL maintainer="Lawrence Caringal"
+LABEL application="batch-processing"
+
+# Install build dependencies for Debian
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    musl-dev \
-    python3-dev \
-    linux-headers \
-    build-base
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -37,20 +39,17 @@ RUN python -c "import boto3; import regex; print('Core dependencies verified')"
 # === ENHANCED LIBRARIES (SAFE ADDITIONS) ===
 # Pre-download AI models for offline use (with error handling)
 RUN echo 'import subprocess, sys; print("Downloading spaCy model..."); subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=False); print("spaCy model download completed")' | python || true
-RUN echo 'from transformers import pipeline; print("Downloading transformers model..."); pipeline("text2text-generation", model="facebook/bart-base"); print("Transformers model cached")' | python || true  
+RUN echo 'from transformers import pipeline; print("Downloading transformers model..."); pipeline("text2text-generation", model="facebook/bart-base"); print("Transformers model cached")' | python || true
 RUN echo 'from sentence_transformers import SentenceTransformer; print("Downloading sentence-transformers model..."); SentenceTransformer("all-MiniLM-L6-v2"); print("Sentence-transformers model cached")' | python || true
 RUN echo "=== ENHANCEMENT SETUP COMPLETE ==="
 
-# Stage 2: Runtime stage with minimal Alpine image
-FROM python:3.12-alpine3.20
+# Stage 2: Runtime stage with minimal Debian image
+FROM python:3.12-slim
 
-# Install runtime dependencies including what's needed for compiled Python extensions
-RUN apk add --no-cache \
-    libstdc++ \
-    libgomp \
-    libgcc \
-    libc6-compat \
-    && rm -rf /var/cache/apk/*
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -64,6 +63,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
+# AWS Batch specific optimizations
+# Disable Python buffering for real-time CloudWatch logs
+ENV PYTHONUNBUFFERED=1
+# Set memory allocation for better container performance
+ENV MALLOC_ARENA_MAX=2
+
 # Verify core dependencies work in runtime environment
 RUN python -c "import boto3; import regex; import ftfy; print('✅ All core dependencies verified in runtime stage')"
 
@@ -71,12 +76,22 @@ RUN python -c "import boto3; import regex; import ftfy; print('✅ All core depe
 COPY . .
 
 # Create a non-root user and change ownership
-RUN addgroup -g 1001 -S python && \
-    adduser -S python -u 1001 -G python && \
+# AWS Batch runs containers as root by default, but we can still use non-root for security
+RUN groupadd -g 1001 python && \
+    useradd -m -u 1001 -g python python && \
     chown -R python:python /app
+
+# Create directory for AWS Batch job outputs if needed
+RUN mkdir -p /tmp/batch-output && \
+    chown -R python:python /tmp/batch-output
 
 # Switch to non-root user
 USER python
 
+# Health check for AWS Batch monitoring (optional)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
 # Command to run the application
+# AWS Batch will override this with job definition parameters
 CMD ["python", "index.py"]
