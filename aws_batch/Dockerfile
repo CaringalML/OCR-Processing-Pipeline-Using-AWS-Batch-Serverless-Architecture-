@@ -30,6 +30,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN pip install --no-cache-dir \
     pyspellchecker==0.7.2
 
+# Test core dependencies are properly installed
+RUN python -c "import boto3; import regex; print('Core dependencies verified')"
+
 # === ENHANCED LIBRARIES (SAFE ADDITIONS) ===
 # Pre-download AI models for offline use (with error handling)
 RUN echo 'import subprocess, sys; print("Downloading spaCy model..."); subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=False); print("spaCy model download completed")' | python || true
@@ -44,6 +47,8 @@ FROM python:3.12-alpine3.20
 RUN apk add --no-cache \
     libstdc++ \
     libgomp \
+    gcc \
+    musl-dev \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
