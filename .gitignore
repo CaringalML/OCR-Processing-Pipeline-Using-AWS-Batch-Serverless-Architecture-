@@ -83,6 +83,7 @@ lambda_functions/**/.current_checksums
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
 *.tfvars
 !terraform.tfvars.example
 .terraform/

@@ -7,19 +7,19 @@ resource "aws_sns_topic" "alerts" {
 # SNS Topic Subscription for email alerts
 resource "aws_sns_topic_subscription" "admin_email_alerts" {
   topic_arn = aws_sns_topic.alerts.arn
-  protocol  = "email"
+  protocol  = var.sns_email_protocol
   endpoint  = var.admin_alert_email
 }
 
 # Archive files for Lambda functions
 data "archive_file" "uploader_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/s3_uploader/s3_uploader.zip"
   source_file = "${path.module}/lambda_functions/s3_uploader/s3_uploader.py"
 }
 
 data "archive_file" "invoice_uploader_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/invoice_uploader/invoice_uploader.zip"
   source_file = "${path.module}/lambda_functions/invoice_uploader/invoice_uploader.py"
 }
@@ -48,31 +48,31 @@ locals {
 }
 
 data "archive_file" "invoice_reader_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/invoice_reader/invoice_reader.zip"
   source_file = "${path.module}/lambda_functions/invoice_reader/invoice_reader.py"
 }
 
 data "archive_file" "reader_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/lambda_reader/lambda_reader.zip"
   source_file = "${path.module}/lambda_functions/lambda_reader/lambda_reader.py"
 }
 
 data "archive_file" "sqs_processor_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/sqs_to_batch_submitter/sqs_to_batch_submitter.zip"
   source_file = "${path.module}/lambda_functions/sqs_to_batch_submitter/sqs_to_batch_submitter.py"
 }
 
 data "archive_file" "batch_reconciliation_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/batch_status_reconciliation/batch_status_reconciliation.zip"
   source_file = "${path.module}/lambda_functions/batch_status_reconciliation/batch_status_reconciliation.py"
 }
 
 data "archive_file" "dead_job_detector_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.zip"
   source_file = "${path.module}/lambda_functions/dead_job_detector/dead_job_detector.py"
 }
@@ -92,7 +92,7 @@ resource "null_resource" "document_search_dependencies" {
 }
 
 data "archive_file" "search_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/document_search/document_search.zip"
   source_dir  = "${path.module}/lambda_functions/document_search"
   excludes    = ["requirements.txt", "package", "__pycache__", "install_dependencies.sh"]
@@ -101,7 +101,7 @@ data "archive_file" "search_zip" {
 }
 
 data "archive_file" "editor_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/ocr_editor/ocr_editor.zip"
   source_file = "${path.module}/lambda_functions/ocr_editor/ocr_editor.py"
 }
@@ -132,25 +132,25 @@ locals {
 }
 
 data "archive_file" "short_batch_submitter_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/short_batch_submitter/short_batch_submitter.zip"
   source_file = "${path.module}/lambda_functions/short_batch_submitter/short_batch_submitter.py"
 }
 
 data "archive_file" "deleter_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/file_deleter/file_deleter.zip"
   source_file = "${path.module}/lambda_functions/file_deleter/file_deleter.py"
 }
 
 data "archive_file" "restorer_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/file_restorer/file_restorer.zip"
   source_file = "${path.module}/lambda_functions/file_restorer/file_restorer.py"
 }
 
 data "archive_file" "recycle_bin_reader_zip" {
-  type        = "zip"
+  type        = var.archive_file_type
   output_path = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.zip"
   source_file = "${path.module}/lambda_functions/recycle_bin_reader/recycle_bin_reader.py"
 }
@@ -164,9 +164,9 @@ resource "aws_lambda_function" "uploader" {
   function_name    = "${var.project_name}-${var.environment}-uploader"
   role             = aws_iam_role.uploader_role.arn
   handler          = "s3_uploader.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 300
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_long
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.uploader_zip.output_base64sha256
 
   environment {
@@ -175,8 +175,8 @@ resource "aws_lambda_function" "uploader" {
       DYNAMODB_TABLE           = aws_dynamodb_table.file_metadata.name
       SHORT_BATCH_QUEUE_URL    = aws_sqs_queue.short_batch_queue.url
       LONG_BATCH_QUEUE_URL     = aws_sqs_queue.batch_queue.url
-      FILE_SIZE_THRESHOLD_KB   = "300"
-      LOG_LEVEL               = "INFO"
+      FILE_SIZE_THRESHOLD_KB   = var.file_size_threshold_kb
+      LOG_LEVEL               = var.lambda_log_level
       ENVIRONMENT             = var.environment
     }
   }
@@ -199,9 +199,9 @@ resource "aws_lambda_function" "reader" {
   function_name    = "${var.project_name}-${var.environment}-reader"
   role             = aws_iam_role.reader_role.arn
   handler          = "lambda_reader.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.reader_zip.output_base64sha256
 
   environment {
@@ -209,7 +209,7 @@ resource "aws_lambda_function" "reader" {
       METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
-      LOG_LEVEL         = "INFO"
+      LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
     }
   }
@@ -232,9 +232,9 @@ resource "aws_lambda_function" "search" {
   function_name    = "${var.project_name}-${var.environment}-search"
   role             = aws_iam_role.search_role.arn
   handler          = "document_search.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 512
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_medium
   source_code_hash = data.archive_file.search_zip.output_base64sha256
 
   environment {
@@ -242,7 +242,7 @@ resource "aws_lambda_function" "search" {
       METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
-      LOG_LEVEL         = "INFO"
+      LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
     }
   }
@@ -266,16 +266,16 @@ resource "aws_lambda_function" "editor" {
   function_name    = "${var.project_name}-${var.environment}-editor"
   role             = aws_iam_role.editor_role.arn
   handler          = "ocr_editor.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.editor_zip.output_base64sha256
 
   environment {
     variables = {
       METADATA_TABLE = aws_dynamodb_table.file_metadata.name
       RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
-      LOG_LEVEL      = "INFO"
+      LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
   }
@@ -298,16 +298,16 @@ resource "aws_lambda_function" "short_batch_submitter" {
   function_name    = "${var.project_name}-${var.environment}-short-batch-submitter"
   role             = aws_iam_role.short_batch_submitter_role.arn
   handler          = "short_batch_submitter.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 30  # Quick response for API Gateway
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_short  # Quick response for API Gateway
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.short_batch_submitter_zip.output_base64sha256
 
   environment {
     variables = {
       SQS_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
       METADATA_TABLE = aws_dynamodb_table.file_metadata.name
-      LOG_LEVEL      = "INFO"
+      LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
   }
@@ -331,9 +331,9 @@ resource "aws_lambda_function" "short_batch_processor" {
   function_name    = "${var.project_name}-${var.environment}-short-batch-processor"
   role             = aws_iam_role.short_batch_processor_role.arn
   handler          = "short_batch_processor.lambda_handler"
-  runtime          = "python3.12"
-  timeout          = 900  # 15 minutes timeout for processing
-  memory_size      = 1024  # More memory for faster processing
+  runtime          = var.lambda_runtime_python312
+  timeout          = var.lambda_timeout_extended  # 15 minutes timeout for processing
+  memory_size      = var.lambda_memory_large  # More memory for faster processing
   source_code_hash = local.short_batch_processor_hash
   # reserved_concurrent_executions removed due to account limits
   
@@ -345,8 +345,8 @@ resource "aws_lambda_function" "short_batch_processor" {
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
       SNS_TOPIC_ARN = aws_sns_topic.alerts.arn
       ANTHROPIC_API_KEY = var.anthropic_api_key
-      BUDGET_LIMIT = "10.0"
-      LOG_LEVEL      = "INFO"
+      BUDGET_LIMIT = var.budget_limit_default
+      LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
   }
@@ -371,15 +371,15 @@ resource "aws_lambda_event_source_mapping" "long_batch_sqs_trigger" {
   function_name    = aws_lambda_function.sqs_batch_processor.arn
   
   # Batch configuration optimized for long polling efficiency
-  batch_size                         = 10    # Process up to 10 messages per invocation
-  maximum_batching_window_in_seconds = 5     # Wait up to 5 seconds to fill batch
+  batch_size                         = var.event_source_batch_size_large    # Process up to 10 messages per invocation
+  maximum_batching_window_in_seconds = var.event_source_batching_window_standard     # Wait up to 5 seconds to fill batch
   
   # Enable partial batch response to handle individual message failures
-  function_response_types = ["ReportBatchItemFailures"]
+  function_response_types = var.event_source_response_types
   
   # Configure visibility timeout for long-running batch job submissions
   scaling_config {
-    maximum_concurrency = 2  # Limit concurrency to avoid overwhelming AWS Batch
+    maximum_concurrency = var.event_source_max_concurrency  # Limit concurrency to avoid overwhelming AWS Batch
   }
 
   tags = merge(var.common_tags, {
@@ -395,11 +395,11 @@ resource "aws_lambda_event_source_mapping" "short_batch_sqs_trigger" {
   function_name    = aws_lambda_function.short_batch_processor.arn
   
   # Batch configuration optimized for speed
-  batch_size                         = 1     # Process messages immediately (no batching delay)
-  maximum_batching_window_in_seconds = 0    # No batching window for immediate processing
+  batch_size                         = var.event_source_batch_size_single     # Process messages immediately (no batching delay)
+  maximum_batching_window_in_seconds = var.event_source_batching_window_immediate    # No batching window for immediate processing
   
   # Enable partial batch response to handle individual message failures
-  function_response_types = ["ReportBatchItemFailures"]
+  function_response_types = var.event_source_response_types
   
   # The queue uses short polling (0 seconds) for immediate message pickup
   
@@ -414,9 +414,9 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   function_name    = "${var.project_name}-${var.environment}-sqs-batch-processor"
   role             = aws_iam_role.sqs_processor_role.arn
   handler          = "sqs_to_batch_submitter.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.sqs_processor_zip.output_base64sha256
 
   environment {
@@ -425,7 +425,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
       BATCH_JOB_DEFINITION = aws_batch_job_definition.main.name
       SQS_QUEUE_URL        = aws_sqs_queue.batch_queue.url
       DYNAMODB_TABLE       = aws_dynamodb_table.file_metadata.name
-      LOG_LEVEL            = "INFO"
+      LOG_LEVEL            = var.lambda_log_level
       ENVIRONMENT          = var.environment
     }
   }
@@ -445,8 +445,8 @@ resource "aws_lambda_function" "sqs_batch_processor" {
 # CloudWatch Log Groups - S3 Uploader (handles file uploads with metadata)
 resource "aws_cloudwatch_log_group" "s3_uploader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-s3-uploader"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "S3 file upload with metadata logging"
     Function = "s3_uploader"
@@ -456,8 +456,8 @@ resource "aws_cloudwatch_log_group" "s3_uploader_logs" {
 # CloudWatch Log Groups - Lambda Reader (retrieves processed files with metadata)
 resource "aws_cloudwatch_log_group" "lambda_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-lambda-reader"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "File retrieval and metadata display logging"
     Function = "lambda_reader"
@@ -467,8 +467,8 @@ resource "aws_cloudwatch_log_group" "lambda_reader_logs" {
 # CloudWatch Log Groups - Document Search (fuzzy search functionality)
 resource "aws_cloudwatch_log_group" "document_search_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-document-search"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Document fuzzy search logging"
     Function = "document_search"
@@ -478,8 +478,8 @@ resource "aws_cloudwatch_log_group" "document_search_logs" {
 # CloudWatch Log Groups - OCR Editor (edits refined and formatted text)
 resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-editor"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "OCR result editing logging"
     Function = "ocr_editor"
@@ -489,8 +489,8 @@ resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
 # CloudWatch Log Groups - Short Batch Submitter (submits to SQS)
 resource "aws_cloudwatch_log_group" "short_batch_submitter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-submitter"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Submit short batch jobs to SQS"
     Function = "short_batch_submitter"
@@ -500,8 +500,8 @@ resource "aws_cloudwatch_log_group" "short_batch_submitter_logs" {
 # CloudWatch Log Groups - Short Batch Processor (processes from SQS)
 resource "aws_cloudwatch_log_group" "short_batch_processor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-short-batch-processor"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Short batch processing for small files"
     Function = "short_batch_processor"
@@ -511,8 +511,8 @@ resource "aws_cloudwatch_log_group" "short_batch_processor_logs" {
 # CloudWatch Log Groups - SQS to Batch Submitter (processes queue messages)
 resource "aws_cloudwatch_log_group" "sqs_to_batch_submitter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-sqs-to-batch-submitter"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "SQS to AWS Batch job submission logging"
     Function = "sqs_to_batch_submitter"
@@ -525,15 +525,15 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
   function_name    = "${var.project_name}-${var.environment}-batch-status-reconciliation"
   role             = aws_iam_role.batch_reconciliation_role.arn
   handler          = "batch_status_reconciliation.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.batch_reconciliation_zip.output_base64sha256
 
   environment {
     variables = {
       DYNAMODB_TABLE = aws_dynamodb_table.file_metadata.name
-      LOG_LEVEL      = "INFO"
+      LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
   }
@@ -553,8 +553,8 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
 # CloudWatch Log Groups - Batch Status Reconciliation (updates job status)
 resource "aws_cloudwatch_log_group" "batch_status_reconciliation_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-batch-status-reconciliation"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "AWS Batch job status reconciliation logging"
     Function = "batch_status_reconciliation"
@@ -567,16 +567,16 @@ resource "aws_lambda_function" "dead_job_detector" {
   function_name    = "${var.project_name}-${var.environment}-dead-job-detector"
   role             = aws_iam_role.dead_job_detector_role.arn
   handler          = "dead_job_detector.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 300
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_long
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.dead_job_detector_zip.output_base64sha256
 
   environment {
     variables = {
       DYNAMODB_TABLE           = aws_dynamodb_table.file_metadata.name
-      MAX_PROCESSING_MINUTES   = "120"
-      LOG_LEVEL               = "INFO"
+      MAX_PROCESSING_MINUTES   = var.max_processing_minutes
+      LOG_LEVEL               = var.lambda_log_level
       ENVIRONMENT             = var.environment
     }
   }
@@ -596,8 +596,8 @@ resource "aws_lambda_function" "dead_job_detector" {
 # CloudWatch Log Groups - Dead Job Detector (detects stuck jobs)
 resource "aws_cloudwatch_log_group" "dead_job_detector_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-dead-job-detector"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days  # 1 week retention
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Dead job detection and cleanup logging"
     Function = "dead_job_detector"
@@ -610,9 +610,9 @@ resource "aws_lambda_function" "deleter" {
   function_name    = "${var.project_name}-${var.environment}-file-deleter"
   role             = aws_iam_role.deleter_role.arn
   handler          = "file_deleter.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.deleter_zip.output_base64sha256
 
   environment {
@@ -621,7 +621,7 @@ resource "aws_lambda_function" "deleter" {
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
       S3_BUCKET         = aws_s3_bucket.upload_bucket.id
-      LOG_LEVEL         = "INFO"
+      LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
     }
   }
@@ -644,9 +644,9 @@ resource "aws_lambda_function" "restorer" {
   function_name    = "${var.project_name}-${var.environment}-file-restorer"
   role             = aws_iam_role.restorer_role.arn
   handler          = "file_restorer.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.restorer_zip.output_base64sha256
 
   environment {
@@ -654,7 +654,7 @@ resource "aws_lambda_function" "restorer" {
       METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
-      LOG_LEVEL         = "INFO"
+      LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
     }
   }
@@ -677,15 +677,15 @@ resource "aws_lambda_function" "recycle_bin_reader" {
   function_name    = "${var.project_name}-${var.environment}-recycle-bin-reader"
   role             = aws_iam_role.recycle_bin_reader_role.arn
   handler          = "recycle_bin_reader.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 60
-  memory_size      = 256
+  runtime          = var.lambda_runtime_python39
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
   source_code_hash = data.archive_file.recycle_bin_reader_zip.output_base64sha256
 
   environment {
     variables = {
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
-      LOG_LEVEL         = "INFO"
+      LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
     }
   }
@@ -709,8 +709,8 @@ resource "aws_lambda_function" "recycle_bin_reader" {
 # CloudWatch Log Groups - File Deleter
 resource "aws_cloudwatch_log_group" "file_deleter_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-file-deleter"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "File deletion and recycle bin logging"
     Function = "file_deleter"
@@ -720,8 +720,8 @@ resource "aws_cloudwatch_log_group" "file_deleter_logs" {
 # CloudWatch Log Groups - File Restorer
 resource "aws_cloudwatch_log_group" "file_restorer_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-file-restorer"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "File restoration from recycle bin logging"
     Function = "file_restorer"
@@ -731,8 +731,8 @@ resource "aws_cloudwatch_log_group" "file_restorer_logs" {
 # CloudWatch Log Groups - Recycle Bin Reader
 resource "aws_cloudwatch_log_group" "recycle_bin_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-recycle-bin-reader"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Recycle bin listing and querying logging"
     Function = "recycle_bin_reader"
@@ -753,9 +753,9 @@ resource "aws_lambda_function" "invoice_uploader" {
   function_name    = "${var.project_name}-${var.environment}-invoice-uploader"
   role            = aws_iam_role.invoice_uploader_role.arn
   handler         = "invoice_uploader.lambda_handler"
-  runtime         = "python3.12"
-  timeout         = 60
-  memory_size     = 512
+  runtime         = var.lambda_runtime_python312
+  timeout         = var.lambda_timeout_standard
+  memory_size     = var.lambda_memory_medium
   source_code_hash = data.archive_file.invoice_uploader_zip.output_base64sha256
 
   environment {
@@ -783,9 +783,9 @@ resource "aws_lambda_function" "invoice_processor" {
   function_name    = "${var.project_name}-${var.environment}-invoice-processor"
   role            = aws_iam_role.invoice_processor_role.arn
   handler         = "invoice_processor.lambda_handler"
-  runtime         = "python3.12"
-  timeout         = 900  # 15 minutes for invoice processing
-  memory_size     = 1024
+  runtime         = var.lambda_runtime_python312
+  timeout         = var.lambda_timeout_extended  # 15 minutes for invoice processing
+  memory_size     = var.lambda_memory_large
   source_code_hash = local.invoice_processor_hash
 
   environment {
@@ -816,8 +816,8 @@ resource "aws_lambda_function" "invoice_processor" {
 # CloudWatch Log Groups - Invoice Uploader
 resource "aws_cloudwatch_log_group" "invoice_uploader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-uploader"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Invoice upload and queuing logging"
     Function = "invoice_uploader"
@@ -827,8 +827,8 @@ resource "aws_cloudwatch_log_group" "invoice_uploader_logs" {
 # CloudWatch Log Groups - Invoice Processor
 resource "aws_cloudwatch_log_group" "invoice_processor_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-processor"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Invoice OCR processing with Claude AI logging"
     Function = "invoice_processor"
@@ -841,9 +841,9 @@ resource "aws_lambda_function" "invoice_reader" {
   function_name    = "${var.project_name}-${var.environment}-invoice-reader"
   role            = aws_iam_role.invoice_reader_role.arn
   handler         = "invoice_reader.lambda_handler"
-  runtime         = "python3.12"
-  timeout         = 60
-  memory_size     = 512
+  runtime         = var.lambda_runtime_python312
+  timeout         = var.lambda_timeout_standard
+  memory_size     = var.lambda_memory_medium
   source_code_hash = data.archive_file.invoice_reader_zip.output_base64sha256
 
   environment {
@@ -868,8 +868,8 @@ resource "aws_lambda_function" "invoice_reader" {
 # CloudWatch Log Groups - Invoice Reader
 resource "aws_cloudwatch_log_group" "invoice_reader_logs" {
   name              = "/aws/lambda/${var.project_name}-${var.environment}-invoice-reader"
-  retention_in_days = 7
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "Invoice data reading and presentation logging"
     Function = "invoice_reader"
@@ -881,7 +881,7 @@ resource "aws_lambda_event_source_mapping" "invoice_processor_sqs" {
   event_source_arn = aws_sqs_queue.invoice_queue.arn
   function_name    = aws_lambda_function.invoice_processor.arn
   batch_size       = 1
-  maximum_batching_window_in_seconds = 5
+  maximum_batching_window_in_seconds = var.event_source_batching_window_standard
 
   depends_on = [
     aws_iam_role_policy_attachment.invoice_processor_policy

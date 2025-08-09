@@ -2,11 +2,11 @@
 resource "aws_dynamodb_table" "file_metadata" {
   name         = "${var.project_name}-${var.environment}-file-metadata"
   billing_mode = var.dynamodb_billing_mode
-  hash_key     = "file_id"
-  range_key    = "upload_timestamp"
+  hash_key     = var.dynamodb_file_metadata_hash_key
+  range_key    = var.dynamodb_file_metadata_range_key
 
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true
     ignore_changes = [
       name,
       billing_mode,
@@ -17,52 +17,52 @@ resource "aws_dynamodb_table" "file_metadata" {
   }
 
   attribute {
-    name = "file_id"
-    type = "S"
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
   }
 
   attribute {
-    name = "upload_timestamp"
-    type = "S"
+    name = var.dynamodb_file_metadata_range_key
+    type = var.dynamodb_attribute_type_string
   }
 
   attribute {
-    name = "bucket_name"
-    type = "S"
+    name = var.dynamodb_bucket_attribute_name
+    type = var.dynamodb_attribute_type_string
   }
 
   attribute {
-    name = "processing_status"
-    type = "S"
+    name = var.dynamodb_processing_status_attribute_name
+    type = var.dynamodb_attribute_type_string
   }
 
   # Global Secondary Index for querying by bucket
   global_secondary_index {
-    name            = "BucketIndex"
-    hash_key        = "bucket_name"
+    name            = var.dynamodb_bucket_index_name
+    hash_key        = var.dynamodb_bucket_attribute_name
     range_key       = "upload_timestamp"
     projection_type = "ALL"
   }
 
   # Global Secondary Index for querying by status
   global_secondary_index {
-    name            = "StatusIndex"
-    hash_key        = "processing_status"
+    name            = var.dynamodb_status_index_name
+    hash_key        = var.dynamodb_processing_status_attribute_name
     range_key       = "upload_timestamp"
     projection_type = "ALL"
   }
 
   ttl {
-    attribute_name = "expiration_time"
-    enabled        = true
+    attribute_name = var.dynamodb_file_metadata_ttl_attribute
+    enabled        = var.dynamodb_ttl_enabled
   }
 
   point_in_time_recovery {
-    enabled = false
+    enabled = var.dynamodb_point_in_time_recovery_enabled
   }
 
   server_side_encryption {
-    enabled = true
+    enabled = var.dynamodb_server_side_encryption_enabled
   }
 
   tags = merge(var.common_tags, {
@@ -74,15 +74,15 @@ resource "aws_dynamodb_table" "file_metadata" {
 resource "aws_dynamodb_table" "processing_results" {
   name         = "${var.project_name}-${var.environment}-processing-results"
   billing_mode = var.dynamodb_billing_mode
-  hash_key     = "file_id"
+  hash_key     = var.dynamodb_processing_results_hash_key
 
   attribute {
-    name = "file_id"
-    type = "S"
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
   }
 
   server_side_encryption {
-    enabled = true
+    enabled = var.dynamodb_server_side_encryption_enabled
   }
 
   tags = merge(var.common_tags, {
@@ -94,40 +94,40 @@ resource "aws_dynamodb_table" "processing_results" {
 resource "aws_dynamodb_table" "recycle_bin" {
   name         = "${var.project_name}-${var.environment}-recycle-bin"
   billing_mode = var.dynamodb_billing_mode
-  hash_key     = "file_id"
-  range_key    = "deleted_timestamp"
+  hash_key     = var.dynamodb_recycle_bin_hash_key
+  range_key    = var.dynamodb_recycle_bin_range_key
 
   attribute {
-    name = "file_id"
-    type = "S"
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
   }
 
   attribute {
     name = "deleted_timestamp"
-    type = "S"
+    type = var.dynamodb_attribute_type_string
   }
 
   attribute {
     name = "deletion_date"
-    type = "S"
+    type = var.dynamodb_attribute_type_string
   }
 
   # Global Secondary Index for querying by deletion date (for cleanup)
   global_secondary_index {
-    name            = "DeletionDateIndex"
-    hash_key        = "deletion_date"
-    range_key       = "deleted_timestamp"
+    name            = var.dynamodb_deletion_date_index_name
+    hash_key        = var.dynamodb_deletion_date_attribute_name
+    range_key       = var.dynamodb_recycle_bin_range_key
     projection_type = "ALL"
   }
 
   # TTL for automatic deletion after 30 days
   ttl {
-    attribute_name = "ttl"
+    attribute_name = var.dynamodb_recycle_bin_ttl_attribute
     enabled        = true
   }
 
   server_side_encryption {
-    enabled = true
+    enabled = var.dynamodb_server_side_encryption_enabled
   }
 
   tags = merge(var.common_tags, {
@@ -137,17 +137,17 @@ resource "aws_dynamodb_table" "recycle_bin" {
 
 # DynamoDB Table for OCR Budget Tracking
 resource "aws_dynamodb_table" "ocr_budget_tracking" {
-  name         = "ocr_budget_tracking"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "id"
+  name         = var.dynamodb_budget_tracking_table_name
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = var.dynamodb_budget_tracking_hash_key
 
   attribute {
-    name = "id"
-    type = "S"
+    name = var.dynamodb_budget_tracking_hash_key
+    type = var.dynamodb_attribute_type_string
   }
 
   server_side_encryption {
-    enabled = true
+    enabled = var.dynamodb_server_side_encryption_enabled
   }
 
   tags = merge(var.common_tags, {
@@ -171,7 +171,7 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 #   range_key    = "upload_timestamp"
 
 #   lifecycle {
-#     prevent_destroy = false
+#     prevent_destroy = var.dynamodb_prevent_destroy
 #     ignore_changes = [
 #       name,
 #       billing_mode,
@@ -183,37 +183,37 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 # 
 #   attribute {
 #     name = "invoice_id"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
-#     name = "upload_timestamp"
-#     type = "S"
+#     name = var.dynamodb_file_metadata_range_key
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "vendor_name"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "invoice_number"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
-#     name = "processing_status"
-#     type = "S"
+#     name = var.dynamodb_processing_status_attribute_name
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "invoice_date"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "business_category"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   # Global Secondary Index for querying by vendor name
@@ -235,7 +235,7 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 #   # Global Secondary Index for querying by processing status
 #   global_secondary_index {
 #     name            = "ProcessingStatusIndex"
-#     hash_key        = "processing_status"
+#     hash_key        = var.dynamodb_processing_status_attribute_name
 #     range_key       = "upload_timestamp"
 #     projection_type = "ALL"
 #   }
@@ -283,7 +283,7 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 #   range_key    = "processing_timestamp"
 # 
 #   lifecycle {
-#     prevent_destroy = false
+#     prevent_destroy = var.dynamodb_prevent_destroy
 #     ignore_changes = [
 #       name,
 #       billing_mode,
@@ -295,22 +295,22 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 # 
 #   attribute {
 #     name = "invoice_id"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "processing_timestamp"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "extraction_confidence"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "processing_method"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   # Global Secondary Index for querying by extraction confidence
@@ -356,7 +356,7 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 #   range_key    = "deleted_timestamp"
 # 
 #   lifecycle {
-#     prevent_destroy = false
+#     prevent_destroy = var.dynamodb_prevent_destroy
 #     ignore_changes = [
 #       name,
 #       billing_mode,
@@ -368,29 +368,29 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 # 
 #   attribute {
 #     name = "invoice_id"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "deleted_timestamp"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "deletion_date"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   attribute {
 #     name = "vendor_name"
-#     type = "S"
+#     type = var.dynamodb_attribute_type_string
 #   }
 # 
 #   # Global Secondary Index for querying by deletion date (for cleanup)
 #   global_secondary_index {
-#     name            = "DeletionDateIndex"
-#     hash_key        = "deletion_date"
-#     range_key       = "deleted_timestamp"
+#     name            = var.dynamodb_deletion_date_index_name
+#     hash_key        = var.dynamodb_deletion_date_attribute_name
+#     range_key       = var.dynamodb_recycle_bin_range_key
 #     projection_type = "ALL"
 #   }
 # 
@@ -398,13 +398,13 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
 #   global_secondary_index {
 #     name            = "DeletedVendorIndex"
 #     hash_key        = "vendor_name"
-#     range_key       = "deleted_timestamp"
+#     range_key       = var.dynamodb_recycle_bin_range_key
 #     projection_type = "ALL"
 #   }
 # 
 #   # TTL for automatic deletion after 90 days (longer retention for invoices)
 #   ttl {
-#     attribute_name = "ttl"
+#     attribute_name = var.dynamodb_recycle_bin_ttl_attribute
 #     enabled        = true
 #   }
 # 

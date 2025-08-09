@@ -8,16 +8,10 @@ resource "aws_api_gateway_rest_api" "main" {
   description = "Unified API Gateway for file processing with environment stages"
 
   endpoint_configuration {
-    types = ["REGIONAL"]
+    types = var.api_gateway_endpoint_types
   }
 
-  binary_media_types = [
-    "multipart/form-data",
-    "image/*",
-    "application/pdf",
-    "application/zip",
-    "application/octet-stream"
-  ]
+  binary_media_types = var.api_gateway_binary_media_types
 
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-api"
@@ -33,49 +27,49 @@ resource "aws_api_gateway_rest_api" "main" {
 resource "aws_api_gateway_resource" "long_batch" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "long-batch"
+  path_part   = var.api_path_long_batch
 }
 
 # Long Batch - Upload
 resource "aws_api_gateway_resource" "long_batch_upload" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "upload"
+  path_part   = var.api_path_upload
 }
 
 # Long Batch - Process
 resource "aws_api_gateway_resource" "long_batch_process" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "process"
+  path_part   = var.api_path_process
 }
 
 # Long Batch - Processed
 resource "aws_api_gateway_resource" "long_batch_processed" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "processed"
+  path_part   = var.api_path_processed
 }
 
 # Long Batch - Search
 resource "aws_api_gateway_resource" "long_batch_search" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "search"
+  path_part   = var.api_path_search
 }
 
 # Long Batch - Edit
 resource "aws_api_gateway_resource" "long_batch_edit" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "edit"
+  path_part   = var.api_path_edit
 }
 
 # Long Batch - Delete
 resource "aws_api_gateway_resource" "long_batch_delete" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "delete"
+  path_part   = var.api_path_delete
 }
 
 # Long Batch - Delete with fileId
@@ -89,14 +83,14 @@ resource "aws_api_gateway_resource" "long_batch_delete_file_id" {
 resource "aws_api_gateway_resource" "long_batch_recycle_bin" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "recycle-bin"
+  path_part   = var.api_path_recycle_bin
 }
 
 # Long Batch - Restore
 resource "aws_api_gateway_resource" "long_batch_restore" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = "restore"
+  path_part   = var.api_path_restore
 }
 
 # ========================================
@@ -107,7 +101,7 @@ resource "aws_api_gateway_resource" "long_batch_restore" {
 resource "aws_api_gateway_resource" "upload" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "upload"
+  path_part   = var.api_path_upload
 }
 
 # Smart route endpoint removed - routing now integrated into /upload endpoint
@@ -116,28 +110,28 @@ resource "aws_api_gateway_resource" "upload" {
 resource "aws_api_gateway_resource" "processed" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "processed"
+  path_part   = var.api_path_processed
 }
 
 # Search Resource (search functionality)
 resource "aws_api_gateway_resource" "search" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "search"
+  path_part   = var.api_path_search
 }
 
 # Edit Resource (edit OCR results)
 resource "aws_api_gateway_resource" "edit" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "edit"
+  path_part   = var.api_path_edit
 }
 
 # Delete Resource (file management)
 resource "aws_api_gateway_resource" "delete" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "delete"
+  path_part   = var.api_path_delete
 }
 
 # Delete with fileId
@@ -151,14 +145,14 @@ resource "aws_api_gateway_resource" "delete_file_id" {
 resource "aws_api_gateway_resource" "recycle_bin" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "recycle-bin"
+  path_part   = var.api_path_recycle_bin
 }
 
 # Restore Resource (restore from recycle bin)
 resource "aws_api_gateway_resource" "restore" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "restore"
+  path_part   = var.api_path_restore
 }
 
 # Restore with fileId
@@ -188,8 +182,8 @@ resource "aws_api_gateway_integration" "upload_post" {
   resource_id = aws_api_gateway_resource.upload.id
   http_method = aws_api_gateway_method.upload_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.uploader.invoke_arn
 }
 
@@ -216,8 +210,8 @@ resource "aws_api_gateway_integration" "processed_get" {
   resource_id = aws_api_gateway_resource.processed.id
   http_method = aws_api_gateway_method.processed_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.reader.invoke_arn
 }
 
@@ -244,8 +238,8 @@ resource "aws_api_gateway_integration" "search_get" {
   resource_id = aws_api_gateway_resource.search.id
   http_method = aws_api_gateway_method.search_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.search.invoke_arn
 }
 
@@ -272,8 +266,8 @@ resource "aws_api_gateway_integration" "edit_post" {
   resource_id = aws_api_gateway_resource.edit.id
   http_method = aws_api_gateway_method.edit_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.editor.invoke_arn
 }
 
@@ -300,8 +294,8 @@ resource "aws_api_gateway_integration" "delete_post" {
   resource_id = aws_api_gateway_resource.delete_file_id.id
   http_method = aws_api_gateway_method.delete_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.deleter.invoke_arn
 }
 
@@ -328,8 +322,8 @@ resource "aws_api_gateway_integration" "recycle_bin_get" {
   resource_id = aws_api_gateway_resource.recycle_bin.id
   http_method = aws_api_gateway_method.recycle_bin_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
@@ -356,8 +350,8 @@ resource "aws_api_gateway_integration" "restore_post" {
   resource_id = aws_api_gateway_resource.restore_file_id.id
   http_method = aws_api_gateway_method.restore_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.restorer.invoke_arn
 }
 
@@ -385,49 +379,49 @@ resource "aws_api_gateway_resource" "long_batch_restore_file_id" {
 resource "aws_api_gateway_resource" "short_batch" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "short-batch"
+  path_part   = var.api_path_short_batch
 }
 
 # Short Batch - Upload
 resource "aws_api_gateway_resource" "short_batch_upload" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "upload"
+  path_part   = var.api_path_upload
 }
 
 # Short Batch - Process
 resource "aws_api_gateway_resource" "short_batch_process" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "process"
+  path_part   = var.api_path_process
 }
 
 # Short Batch - Processed
 resource "aws_api_gateway_resource" "short_batch_processed" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "processed"
+  path_part   = var.api_path_processed
 }
 
 # Short Batch - Search
 resource "aws_api_gateway_resource" "short_batch_search" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "search"
+  path_part   = var.api_path_search
 }
 
 # Short Batch - Edit
 resource "aws_api_gateway_resource" "short_batch_edit" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "edit"
+  path_part   = var.api_path_edit
 }
 
 # Short Batch - Delete
 resource "aws_api_gateway_resource" "short_batch_delete" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "delete"
+  path_part   = var.api_path_delete
 }
 
 # Short Batch - Delete with fileId
@@ -441,14 +435,14 @@ resource "aws_api_gateway_resource" "short_batch_delete_file_id" {
 resource "aws_api_gateway_resource" "short_batch_recycle_bin" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "recycle-bin"
+  path_part   = var.api_path_recycle_bin
 }
 
 # Short Batch - Restore
 resource "aws_api_gateway_resource" "short_batch_restore" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "restore"
+  path_part   = var.api_path_restore
 }
 
 # Short Batch - Restore with fileId
@@ -466,21 +460,21 @@ resource "aws_api_gateway_resource" "short_batch_restore_file_id" {
 resource "aws_api_gateway_resource" "short_batch_invoices" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = "invoices"
+  path_part   = var.api_path_invoices
 }
 
 # Short Batch - Invoices - Upload
 resource "aws_api_gateway_resource" "short_batch_invoices_upload" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch_invoices.id
-  path_part   = "upload"
+  path_part   = var.api_path_upload
 }
 
 # Short Batch Invoices - Processed
 resource "aws_api_gateway_resource" "short_batch_invoices_processed" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch_invoices.id
-  path_part   = "processed"
+  path_part   = var.api_path_processed
 }
 
 # ========================================
@@ -501,8 +495,8 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
   resource_id = aws_api_gateway_resource.long_batch_upload.id
   http_method = aws_api_gateway_method.long_batch_upload_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.uploader.invoke_arn
 }
 
@@ -520,8 +514,8 @@ resource "aws_api_gateway_integration" "long_batch_process_post" {
   resource_id = aws_api_gateway_resource.long_batch_process.id
   http_method = aws_api_gateway_method.long_batch_process_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.sqs_batch_processor.invoke_arn
 }
 
@@ -539,8 +533,8 @@ resource "aws_api_gateway_integration" "long_batch_processed_get" {
   resource_id = aws_api_gateway_resource.long_batch_processed.id
   http_method = aws_api_gateway_method.long_batch_processed_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.reader.invoke_arn
 }
 
@@ -558,8 +552,8 @@ resource "aws_api_gateway_integration" "long_batch_search_get" {
   resource_id = aws_api_gateway_resource.long_batch_search.id
   http_method = aws_api_gateway_method.long_batch_search_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.search.invoke_arn
 }
 
@@ -577,8 +571,8 @@ resource "aws_api_gateway_integration" "long_batch_edit_put" {
   resource_id = aws_api_gateway_resource.long_batch_edit.id
   http_method = aws_api_gateway_method.long_batch_edit_put.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.editor.invoke_arn
 }
 
@@ -596,8 +590,8 @@ resource "aws_api_gateway_integration" "long_batch_delete_delete" {
   resource_id = aws_api_gateway_resource.long_batch_delete_file_id.id
   http_method = aws_api_gateway_method.long_batch_delete_delete.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.deleter.invoke_arn
 }
 
@@ -615,8 +609,8 @@ resource "aws_api_gateway_integration" "long_batch_recycle_bin_get" {
   resource_id = aws_api_gateway_resource.long_batch_recycle_bin.id
   http_method = aws_api_gateway_method.long_batch_recycle_bin_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
@@ -634,8 +628,8 @@ resource "aws_api_gateway_integration" "long_batch_restore_post" {
   resource_id = aws_api_gateway_resource.long_batch_restore_file_id.id
   http_method = aws_api_gateway_method.long_batch_restore_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.restorer.invoke_arn
 }
 
@@ -657,8 +651,8 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
   resource_id = aws_api_gateway_resource.short_batch_upload.id
   http_method = aws_api_gateway_method.short_batch_upload_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.uploader.invoke_arn
 }
 
@@ -676,8 +670,8 @@ resource "aws_api_gateway_integration" "short_batch_process_post" {
   resource_id = aws_api_gateway_resource.short_batch_process.id
   http_method = aws_api_gateway_method.short_batch_process_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.short_batch_submitter.invoke_arn
 }
 
@@ -695,8 +689,8 @@ resource "aws_api_gateway_integration" "short_batch_processed_get" {
   resource_id = aws_api_gateway_resource.short_batch_processed.id
   http_method = aws_api_gateway_method.short_batch_processed_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.reader.invoke_arn
 }
 
@@ -714,8 +708,8 @@ resource "aws_api_gateway_integration" "short_batch_search_get" {
   resource_id = aws_api_gateway_resource.short_batch_search.id
   http_method = aws_api_gateway_method.short_batch_search_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.search.invoke_arn
 }
 
@@ -733,8 +727,8 @@ resource "aws_api_gateway_integration" "short_batch_edit_put" {
   resource_id = aws_api_gateway_resource.short_batch_edit.id
   http_method = aws_api_gateway_method.short_batch_edit_put.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.editor.invoke_arn
 }
 
@@ -752,8 +746,8 @@ resource "aws_api_gateway_integration" "short_batch_delete_delete" {
   resource_id = aws_api_gateway_resource.short_batch_delete_file_id.id
   http_method = aws_api_gateway_method.short_batch_delete_delete.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.deleter.invoke_arn
 }
 
@@ -771,8 +765,8 @@ resource "aws_api_gateway_integration" "short_batch_recycle_bin_get" {
   resource_id = aws_api_gateway_resource.short_batch_recycle_bin.id
   http_method = aws_api_gateway_method.short_batch_recycle_bin_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
@@ -790,8 +784,8 @@ resource "aws_api_gateway_integration" "short_batch_restore_post" {
   resource_id = aws_api_gateway_resource.short_batch_restore_file_id.id
   http_method = aws_api_gateway_method.short_batch_restore_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.restorer.invoke_arn
 }
 
@@ -813,8 +807,8 @@ resource "aws_api_gateway_integration" "invoice_upload_post" {
   resource_id = aws_api_gateway_resource.short_batch_invoices_upload.id
   http_method = aws_api_gateway_method.invoice_upload_post.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.invoice_uploader.invoke_arn
 }
 
@@ -835,7 +829,7 @@ resource "aws_api_gateway_integration" "invoice_upload_options" {
   type = "MOCK"
   
   request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
+    "application/json" = var.mock_response_template
   }
 }
 
@@ -861,9 +855,9 @@ resource "aws_api_gateway_integration_response" "invoice_upload_options" {
   status_code = aws_api_gateway_method_response.invoice_upload_options.status_code
 
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
   }
 }
 
@@ -881,8 +875,8 @@ resource "aws_api_gateway_integration" "invoice_processed_get" {
   resource_id = aws_api_gateway_resource.short_batch_invoices_processed.id
   http_method = aws_api_gateway_method.invoice_processed_get.http_method
 
-  integration_http_method = "POST"
-  type                   = "AWS_PROXY"
+  integration_http_method = var.api_integration_http_method
+  type                   = var.api_integration_type
   uri                    = aws_lambda_function.invoice_reader.invoke_arn
 }
 
@@ -903,7 +897,7 @@ resource "aws_api_gateway_integration" "invoice_processed_options" {
   type = "MOCK"
   
   request_templates = {
-    "application/json" = jsonencode({ statusCode = 200 })
+    "application/json" = var.mock_response_template
   }
 }
 
@@ -933,9 +927,9 @@ resource "aws_api_gateway_integration_response" "invoice_processed_options" {
   status_code = aws_api_gateway_method_response.invoice_processed_options.status_code
 
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
     "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
   }
 }
 

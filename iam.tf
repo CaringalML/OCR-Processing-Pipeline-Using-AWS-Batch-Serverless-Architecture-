@@ -3,13 +3,13 @@ resource "aws_iam_role" "lambda_execution" {
   name = "${var.project_name}-lambda-execution-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -21,19 +21,19 @@ resource "aws_iam_role_policy" "lambda_batch_policy" {
   role = aws_iam_role.lambda_execution.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "batch:SubmitJob",
           "batch:DescribeJobs",
           "batch:ListJobs"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -50,13 +50,13 @@ resource "aws_iam_role" "batch_service_role" {
   name = "${var.project_name}-batch-service-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "batch.amazonaws.com"
+          Service = var.batch_service_principal
         }
       }
     ]
@@ -65,7 +65,7 @@ resource "aws_iam_role" "batch_service_role" {
 
 resource "aws_iam_role_policy_attachment" "batch_service_role_policy" {
   role       = aws_iam_role.batch_service_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+  policy_arn = var.aws_batch_service_role_policy_arn
 }
 
 # ECS instance role for Batch
@@ -73,13 +73,13 @@ resource "aws_iam_role" "ecs_instance_role" {
   name = "${var.project_name}-ecs-instance-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "ec2.amazonaws.com"
+          Service = var.ec2_service_principal
         }
       }
     ]
@@ -88,7 +88,7 @@ resource "aws_iam_role" "ecs_instance_role" {
 
 resource "aws_iam_role_policy_attachment" "ecs_instance_role_policy" {
   role       = aws_iam_role.ecs_instance_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+  policy_arn = var.ecs_container_service_role_policy_arn
 }
 
 resource "aws_iam_instance_profile" "ecs_instance_profile" {
@@ -101,13 +101,13 @@ resource "aws_iam_role" "batch_task_execution_role" {
   name = "${var.project_name}-batch-task-execution-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "ecs-tasks.amazonaws.com"
+          Service = var.ecs_tasks_service_principal
         }
       }
     ]
@@ -116,7 +116,7 @@ resource "aws_iam_role" "batch_task_execution_role" {
 
 resource "aws_iam_role_policy_attachment" "batch_task_execution_role_policy" {
   role       = aws_iam_role.batch_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  policy_arn = var.ecs_task_execution_role_policy_arn
 }
 
 # Task role for Batch jobs
@@ -124,13 +124,13 @@ resource "aws_iam_role" "batch_task_role" {
   name = "${var.project_name}-batch-task-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "ecs-tasks.amazonaws.com"
+          Service = var.ecs_tasks_service_principal
         }
       }
     ]
@@ -142,19 +142,19 @@ resource "aws_iam_role_policy" "batch_task_policy" {
   role = aws_iam_role.batch_task_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:GetObject",
           "s3:HeadObject"
@@ -162,7 +162,7 @@ resource "aws_iam_role_policy" "batch_task_policy" {
         Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:UpdateItem",
@@ -174,14 +174,14 @@ resource "aws_iam_role_policy" "batch_task_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "textract:StartDocumentAnalysis",
           "textract:GetDocumentAnalysis",
           "textract:StartDocumentTextDetection",
           "textract:GetDocumentTextDetection"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       },
     ]
   })
@@ -192,13 +192,13 @@ resource "aws_iam_role" "uploader_role" {
   name = "${var.project_name}-${var.environment}-uploader-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -212,13 +212,13 @@ resource "aws_iam_role" "reader_role" {
   name = "${var.project_name}-${var.environment}-reader-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -232,13 +232,13 @@ resource "aws_iam_role" "search_role" {
   name = "${var.project_name}-${var.environment}-search-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -252,13 +252,13 @@ resource "aws_iam_role" "editor_role" {
   name = "${var.project_name}-${var.environment}-editor-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -272,13 +272,13 @@ resource "aws_iam_role" "short_batch_processor_role" {
   name = "${var.project_name}-${var.environment}-short-batch-processor-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -292,13 +292,13 @@ resource "aws_iam_role" "short_batch_submitter_role" {
   name = "${var.project_name}-${var.environment}-short-batch-submitter-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -312,13 +312,13 @@ resource "aws_iam_role" "sqs_processor_role" {
   name = "${var.project_name}-${var.environment}-sqs-processor-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -332,10 +332,10 @@ resource "aws_iam_policy" "uploader_policy" {
   name = "${var.project_name}-${var.environment}-uploader-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -344,7 +344,7 @@ resource "aws_iam_policy" "uploader_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:PutObject",
           "s3:PutObjectAcl",
@@ -353,7 +353,7 @@ resource "aws_iam_policy" "uploader_policy" {
         Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:PutItem",
           "dynamodb:GetItem",
@@ -363,7 +363,7 @@ resource "aws_iam_policy" "uploader_policy" {
       },
       # SQS - Send messages to processing queues
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:SendMessage",
           "sqs:GetQueueAttributes"
@@ -382,10 +382,10 @@ resource "aws_iam_policy" "reader_policy" {
   name = "${var.project_name}-${var.environment}-reader-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -394,7 +394,7 @@ resource "aws_iam_policy" "reader_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:GetItem",
@@ -415,10 +415,10 @@ resource "aws_iam_policy" "search_policy" {
   name = "${var.project_name}-${var.environment}-search-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -427,7 +427,7 @@ resource "aws_iam_policy" "search_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Scan",
           "dynamodb:Query",
@@ -448,10 +448,10 @@ resource "aws_iam_policy" "editor_policy" {
   name = "${var.project_name}-${var.environment}-editor-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -460,7 +460,7 @@ resource "aws_iam_policy" "editor_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:GetItem",
@@ -481,10 +481,10 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
   name = "${var.project_name}-${var.environment}-short-batch-submitter-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -493,7 +493,7 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:GetItem",
@@ -505,7 +505,7 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:SendMessage",
           "sqs:GetQueueAttributes"
@@ -515,7 +515,7 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:SendMessage"
         ]
@@ -530,10 +530,10 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
   name = "${var.project_name}-${var.environment}-short-batch-processor-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -542,14 +542,14 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:GetObject"
         ]
         Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:GetItem",
@@ -564,21 +564,21 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:PutObject"
         ]
         Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sns:Publish"
         ]
         Resource = aws_sns_topic.alerts.arn
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
@@ -598,10 +598,10 @@ resource "aws_iam_policy" "sqs_processor_policy" {
   name = "${var.project_name}-${var.environment}-sqs-processor-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -610,7 +610,7 @@ resource "aws_iam_policy" "sqs_processor_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
@@ -619,15 +619,15 @@ resource "aws_iam_policy" "sqs_processor_policy" {
         Resource = aws_sqs_queue.batch_queue.arn
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "batch:SubmitJob",
           "batch:DescribeJobs"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:UpdateItem",
           "dynamodb:GetItem",
@@ -680,13 +680,13 @@ resource "aws_iam_role" "batch_reconciliation_role" {
   name = "${var.project_name}-${var.environment}-batch-reconciliation-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -700,10 +700,10 @@ resource "aws_iam_policy" "batch_reconciliation_policy" {
   name = "${var.project_name}-${var.environment}-batch-reconciliation-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -712,7 +712,7 @@ resource "aws_iam_policy" "batch_reconciliation_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:UpdateItem",
           "dynamodb:GetItem",
@@ -721,11 +721,11 @@ resource "aws_iam_policy" "batch_reconciliation_policy" {
         Resource = aws_dynamodb_table.file_metadata.arn
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "batch:DescribeJobs"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       }
     ]
   })
@@ -741,13 +741,13 @@ resource "aws_iam_role" "dead_job_detector_role" {
   name = "${var.project_name}-${var.environment}-dead-job-detector-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -761,10 +761,10 @@ resource "aws_iam_policy" "dead_job_detector_policy" {
   name = "${var.project_name}-${var.environment}-dead-job-detector-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -773,7 +773,7 @@ resource "aws_iam_policy" "dead_job_detector_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Scan",
           "dynamodb:UpdateItem",
@@ -783,11 +783,11 @@ resource "aws_iam_policy" "dead_job_detector_policy" {
         Resource = aws_dynamodb_table.file_metadata.arn
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "batch:DescribeJobs"
         ]
-        Resource = "*"
+        Resource = var.iam_wildcard_resource
       }
     ]
   })
@@ -803,13 +803,13 @@ resource "aws_iam_role" "deleter_role" {
   name = "${var.project_name}-${var.environment}-file-deleter-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -823,10 +823,10 @@ resource "aws_iam_policy" "deleter_policy" {
   name = "${var.project_name}-${var.environment}-file-deleter-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -835,7 +835,7 @@ resource "aws_iam_policy" "deleter_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:GetItem",
           "dynamodb:Query",
@@ -847,7 +847,7 @@ resource "aws_iam_policy" "deleter_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:PutItem",
           "dynamodb:Query",
@@ -856,7 +856,7 @@ resource "aws_iam_policy" "deleter_policy" {
         Resource = aws_dynamodb_table.recycle_bin.arn
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:DeleteObject"
         ]
@@ -876,13 +876,13 @@ resource "aws_iam_role" "restorer_role" {
   name = "${var.project_name}-${var.environment}-file-restorer-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -896,10 +896,10 @@ resource "aws_iam_policy" "restorer_policy" {
   name = "${var.project_name}-${var.environment}-file-restorer-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -908,7 +908,7 @@ resource "aws_iam_policy" "restorer_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:PutItem",
           "dynamodb:Query"
@@ -919,7 +919,7 @@ resource "aws_iam_policy" "restorer_policy" {
         ]
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:DeleteItem"
@@ -940,13 +940,13 @@ resource "aws_iam_role" "recycle_bin_reader_role" {
   name = "${var.project_name}-${var.environment}-recycle-bin-reader-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -960,10 +960,10 @@ resource "aws_iam_policy" "recycle_bin_reader_policy" {
   name = "${var.project_name}-${var.environment}-recycle-bin-reader-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -972,7 +972,7 @@ resource "aws_iam_policy" "recycle_bin_reader_policy" {
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:Scan"
@@ -1003,13 +1003,13 @@ resource "aws_iam_role" "invoice_uploader_role" {
   name = "${var.project_name}-${var.environment}-invoice-uploader-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -1023,13 +1023,13 @@ resource "aws_iam_role" "invoice_processor_role" {
   name = "${var.project_name}-${var.environment}-invoice-processor-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -1043,13 +1043,13 @@ resource "aws_iam_role" "invoice_reader_role" {
   name = "${var.project_name}-${var.environment}-invoice-reader-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = var.lambda_service_principal
         }
       }
     ]
@@ -1063,11 +1063,11 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
   name = "${var.project_name}-${var.environment}-invoice-uploader-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       # CloudWatch Logs
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -1077,7 +1077,7 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
       },
       # S3 - Upload to bucket
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:PutObject",
           "s3:PutObjectAcl"
@@ -1086,7 +1086,7 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
       },
       # DynamoDB - Write invoice metadata to dedicated tables
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:PutItem",
           "dynamodb:UpdateItem"
@@ -1098,7 +1098,7 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
       },
       # SQS - Send messages to invoice queue
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:SendMessage",
           "sqs:GetQueueAttributes"
@@ -1114,11 +1114,11 @@ resource "aws_iam_policy" "invoice_processor_policy" {
   name = "${var.project_name}-${var.environment}-invoice-processor-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       # CloudWatch Logs
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -1128,14 +1128,14 @@ resource "aws_iam_policy" "invoice_processor_policy" {
       },
       # S3 - Read from upload bucket and write processed results
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:GetObject"
         ]
         Resource = "${aws_s3_bucket.upload_bucket.arn}/*"
       },
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "s3:PutObject"
         ]
@@ -1143,7 +1143,7 @@ resource "aws_iam_policy" "invoice_processor_policy" {
       },
       # DynamoDB - Read and write invoice metadata and results to dedicated tables
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:Query",
           "dynamodb:GetItem",
@@ -1160,7 +1160,7 @@ resource "aws_iam_policy" "invoice_processor_policy" {
       },
       # SNS - Send notifications
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sns:Publish"
         ]
@@ -1168,7 +1168,7 @@ resource "aws_iam_policy" "invoice_processor_policy" {
       },
       # SQS - Receive and delete messages from invoice queue
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
@@ -1188,11 +1188,11 @@ resource "aws_iam_policy" "invoice_reader_policy" {
   name = "${var.project_name}-${var.environment}-invoice-reader-policy"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       # CloudWatch Logs
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
@@ -1202,7 +1202,7 @@ resource "aws_iam_policy" "invoice_reader_policy" {
       },
       # DynamoDB - Read invoice metadata and results from dedicated tables
       {
-        Effect = "Allow"
+        Effect = var.iam_effect_allow
         Action = [
           "dynamodb:GetItem",
           "dynamodb:Query",

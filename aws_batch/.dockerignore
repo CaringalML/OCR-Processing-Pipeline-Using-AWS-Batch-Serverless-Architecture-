@@ -4,6 +4,8 @@
 *.tf
 *.tfstate*
 *.tfvars*
+*.tfplan
+tfplan
 .terraform/
 terraform.tfvars.example
 
@@ -14,9 +16,6 @@ lambda_layers/
 # Documentation files
 README.md
 *.md
-EDIT_FUNCTIONALITY.md
-ENDPOINTS.md
-PIPELINE_FIXES_SUMMARY.md
 
 # Git and version control
 .git/

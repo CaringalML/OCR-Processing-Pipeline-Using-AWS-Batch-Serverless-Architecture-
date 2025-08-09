@@ -6,7 +6,7 @@ resource "aws_iam_role" "cleanup_lambda_execution" {
   name = "${var.project_name}-cleanup-lambda-execution-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
         Action = "sts:AssumeRole"
@@ -25,7 +25,7 @@ resource "aws_iam_role_policy" "cleanup_lambda_policy" {
   role = aws_iam_role.cleanup_lambda_execution.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
         Effect = "Allow"
@@ -65,7 +65,7 @@ resource "aws_iam_role_policy" "cleanup_lambda_policy" {
 # CloudWatch Log Groups - Cleanup Processor (automated resource cleanup)
 resource "aws_cloudwatch_log_group" "cleanup_processor_logs" {
   name              = "/aws/lambda/${var.project_name}-auto-cleanup"
-  retention_in_days = 7  # 1 week retention
+  retention_in_days = var.cleanup_log_retention_days
   skip_destroy      = false
   tags              = merge(var.common_tags, {
     Purpose = "Automated resource cleanup logging"
@@ -305,18 +305,18 @@ resource "aws_lambda_function" "cleanup_function" {
   filename         = data.archive_file.cleanup_lambda_zip.output_path
   function_name    = "${var.project_name}-auto-cleanup"
   role             = aws_iam_role.cleanup_lambda_execution.arn
-  handler          = "cleanup_processor.lambda_handler"
-  runtime          = "python3.9"
-  timeout          = 300 # 5 minutes
-  memory_size      = 256
+  handler          = var.cleanup_lambda_handler
+  runtime          = var.cleanup_lambda_runtime
+  timeout          = var.cleanup_lambda_timeout
+  memory_size      = var.cleanup_lambda_memory
   source_code_hash = data.archive_file.cleanup_lambda_zip.output_base64sha256
 
   environment {
     variables = {
       BATCH_JOB_QUEUE   = aws_batch_job_queue.main.name
       CLEANUP_AGE_HOURS = var.cleanup_age_hours
-      LOG_LEVEL         = "INFO"
-      PROCESSING_TYPE   = "OCR"
+      LOG_LEVEL         = var.cleanup_log_level
+      PROCESSING_TYPE   = var.cleanup_processing_type
     }
   }
 
@@ -343,7 +343,7 @@ resource "aws_cloudwatch_event_rule" "cleanup_schedule" {
 # EventBridge Target
 resource "aws_cloudwatch_event_target" "cleanup_lambda_target" {
   rule      = aws_cloudwatch_event_rule.cleanup_schedule.name
-  target_id = "CleanupLambdaTarget"
+  target_id = var.cleanup_eventbridge_target_id
   arn       = aws_lambda_function.cleanup_function.arn
 }
 
@@ -359,13 +359,13 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 # CloudWatch Alarm for Cleanup Failures
 resource "aws_cloudwatch_metric_alarm" "cleanup_errors" {
   alarm_name          = "${var.project_name}-cleanup-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
+  comparison_operator = var.cleanup_alarm_comparison_operator
+  evaluation_periods  = var.cleanup_alarm_evaluation_periods
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "0"
+  period              = var.cleanup_alarm_period
+  statistic           = var.cleanup_alarm_statistic
+  threshold           = var.cleanup_alarm_threshold
   alarm_description   = "This metric monitors OCR processing cleanup lambda errors"
   alarm_actions       = []
 

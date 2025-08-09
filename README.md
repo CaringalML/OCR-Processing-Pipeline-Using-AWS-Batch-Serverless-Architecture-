@@ -12,29 +12,46 @@ A production-ready serverless OCR document processing pipeline with advanced fuz
 ```mermaid
 graph TD
     A[Client] --> B[API Gateway]
-    B --> C[Uploader Lambda]
-    B --> D[Search Lambda]
-    B --> E[Reader Lambda]
+    B --> C[S3 Uploader Lambda]
+    B --> D[Document Search Lambda] 
+    B --> E[Lambda Reader]
+    B --> F[OCR Editor Lambda]
+    B --> G[File Deleter Lambda]
+    B --> H[File Restorer Lambda]
+    B --> I[Recycle Bin Reader Lambda]
     
-    C --> F[S3 Bucket]
-    F --> G[EventBridge]
-    G --> H[SQS Queue]
-    H --> I[SQS Processor Lambda]
-    I --> J[AWS Batch]
-    J --> K[OCR Processing Container]
+    C --> J[S3 Upload Bucket]
+    C --> K[Direct SQS Message]
+    K --> L[Short Batch SQS Queue]
+    K --> M[Long Batch SQS Queue]
     
-    C --> L[DynamoDB Metadata]
-    K --> M[DynamoDB Results]
-    D --> L
-    D --> M
-    E --> L
-    E --> M
+    L --> N[Short Batch Processor Lambda]
+    M --> O[SQS to Batch Submitter Lambda]
+    O --> P[AWS Batch Job Queue]
+    P --> Q[OCR Processing Container]
     
-    F --> N[CloudFront CDN]
+    C --> R[DynamoDB File Metadata]
+    N --> S[DynamoDB Processing Results]
+    Q --> S
+    D --> R
+    D --> S
+    E --> R
+    E --> S
+    F --> R
+    F --> S
+    G --> R
+    H --> R
+    I --> R
     
-    O[Dead Letter Queue] --> H
-    P[SNS Alerts] --> O
-    Q[CloudWatch Monitoring] --> R[All Components]
+    J --> T[CloudFront CDN]
+    
+    U[Dead Letter Queue] --> L
+    U --> M
+    V[Batch Status Reconciliation Lambda] --> R
+    W[Dead Job Detector Lambda] --> P
+    X[Auto Cleanup Lambda] --> Y[Scheduled EventBridge]
+    Z[CloudWatch Monitoring] --> AA[All Components]
+    BB[SNS Alerts] --> Z
 ```
 
 ## ✨ Key Features
@@ -47,11 +64,13 @@ graph TD
 - **Flexible Queries**: Exact matching, partial matching, and topic-based discovery
 
 ### 📄 **Document Processing Pipeline**
-- **Intelligent OCR**: AWS Textract integration with confidence scoring
-- **Text Refinement**: Semantic processing for improved searchability
+- **Dual Processing Routes**: Smart routing based on file size (≤300KB: Lambda, >300KB: AWS Batch)
+- **Direct SQS Integration**: No EventBridge overhead for faster processing
+- **Intelligent OCR**: AWS Textract + Claude AI for enhanced text refinement
+- **Text Processing**: OCR extraction, refinement, and formatting
 - **Metadata Extraction**: Automatic publication, author, and subject detection
 - **Multi-format Support**: Images (JPEG, PNG), PDFs, and document formats
-- **Scalable Processing**: AWS Batch with auto-scaling containers
+- **Specialized Invoice Processing**: Dedicated Claude AI prompts for structured invoice data
 
 ### 🚀 **Production-Ready Architecture**
 - **Serverless First**: Lambda, DynamoDB, and managed services
@@ -430,7 +449,7 @@ OCR-AWS-Batch-Serverless-Python/
 │   ├── s3.tf                    # Storage and CDN
 │   ├── cloudwatch.tf            # Monitoring and logging
 │   ├── sqs.tf                   # Message queues
-│   ├── eventbridge.tf           # Event routing
+│   ├── eventbridge.tf           # Batch job monitoring & dead job detection
 │   ├── cleanup.tf               # Auto-cleanup system
 │   └── outputs.tf               # Output values
 │

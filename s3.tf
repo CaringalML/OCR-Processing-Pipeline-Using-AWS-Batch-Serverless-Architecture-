@@ -3,7 +3,7 @@ resource "aws_s3_bucket" "upload_bucket" {
   bucket = "${var.project_name}-${var.environment}-uploads"
 
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true
     ignore_changes = [
       bucket,
       tags["Name"]
@@ -21,7 +21,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "upload_bucket_enc
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm = var.s3_sse_algorithm
     }
   }
 
@@ -36,10 +36,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "upload_bucket_enc
 resource "aws_s3_bucket_public_access_block" "upload_bucket_pab" {
   bucket = aws_s3_bucket.upload_bucket.id
 
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+  block_public_acls       = var.s3_block_public_acls
+  block_public_policy     = var.s3_block_public_policy
+  ignore_public_acls      = var.s3_ignore_public_acls
+  restrict_public_buckets = var.s3_restrict_public_buckets
 
   lifecycle {
     ignore_changes = [
@@ -61,11 +61,11 @@ resource "aws_s3_bucket_cors_configuration" "upload_bucket_cors" {
   ]
 
   cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
-    allowed_origins = ["*"]
-    expose_headers  = ["ETag"]
-    max_age_seconds = 3000
+    allowed_headers = var.s3_cors_allowed_headers
+    allowed_methods = var.s3_cors_allowed_methods
+    allowed_origins = var.s3_cors_allowed_origins
+    expose_headers  = var.s3_cors_expose_headers
+    max_age_seconds = var.s3_cors_max_age_seconds
   }
 
   lifecycle {
@@ -87,68 +87,68 @@ resource "aws_s3_bucket_lifecycle_configuration" "upload_bucket_lifecycle" {
   # Rule for short-batch-files folder
   rule {
     id     = "short-batch-storage-transitions"
-    status = "Enabled"
+    status = var.s3_lifecycle_rule_status
 
     filter {
-      prefix = "short-batch-files/"
+      prefix = var.s3_short_batch_prefix
     }
 
     # Standard → Standard-IA (30 days)
     transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
+      days          = var.s3_transition_to_ia_days
+      storage_class = var.s3_storage_class_standard_ia
     }
 
     # Standard-IA → Glacier Instant Retrieval (365 days / 1 year)
     transition {
-      days          = 365
-      storage_class = "GLACIER_IR"
+      days          = var.s3_transition_to_glacier_ir_days
+      storage_class = var.s3_storage_class_glacier_ir
     }
 
     # Glacier IR → Glacier Flexible (1095 days / 3 years)
     transition {
-      days          = 1095
-      storage_class = "GLACIER"
+      days          = var.s3_transition_to_glacier_days
+      storage_class = var.s3_storage_class_glacier
     }
 
     # Glacier → Deep Archive (3650 days / 10 years)
     transition {
-      days          = 3650
-      storage_class = "DEEP_ARCHIVE"
+      days          = var.s3_transition_to_deep_archive_days
+      storage_class = var.s3_storage_class_deep_archive
     }
   }
 
   # Rule for long-batch-files folder
   rule {
     id     = "long-batch-storage-transitions"
-    status = "Enabled"
+    status = var.s3_lifecycle_rule_status
 
     filter {
-      prefix = "long-batch-files/"
+      prefix = var.s3_long_batch_prefix
     }
 
     # Standard → Standard-IA (30 days)
     transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
+      days          = var.s3_transition_to_ia_days
+      storage_class = var.s3_storage_class_standard_ia
     }
 
     # Standard-IA → Glacier Instant Retrieval (365 days / 1 year)
     transition {
-      days          = 365
-      storage_class = "GLACIER_IR"
+      days          = var.s3_transition_to_glacier_ir_days
+      storage_class = var.s3_storage_class_glacier_ir
     }
 
     # Glacier IR → Glacier Flexible (1095 days / 3 years)
     transition {
-      days          = 1095
-      storage_class = "GLACIER"
+      days          = var.s3_transition_to_glacier_days
+      storage_class = var.s3_storage_class_glacier
     }
 
     # Glacier → Deep Archive (3650 days / 10 years)
     transition {
-      days          = 3650
-      storage_class = "DEEP_ARCHIVE"
+      days          = var.s3_transition_to_deep_archive_days
+      storage_class = var.s3_storage_class_deep_archive
     }
   }
 
@@ -159,47 +159,34 @@ resource "aws_s3_bucket_lifecycle_configuration" "upload_bucket_lifecycle" {
   }
 }
 
-# S3 Bucket Event Notification to EventBridge
-resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket      = aws_s3_bucket.upload_bucket.id
-  eventbridge = true
-  
-  depends_on = [
-    aws_s3_bucket_public_access_block.upload_bucket_pab,
-    aws_s3_bucket_server_side_encryption_configuration.upload_bucket_encryption
-  ]
-
-  lifecycle {
-    ignore_changes = [
-      eventbridge
-    ]
-  }
-}
+# S3 Bucket Event Notification to EventBridge - REMOVED
+# Long batch processing now uses direct SQS messaging from uploader Lambda
+# No EventBridge rules consume S3 events, so this configuration is obsolete
 
 # S3 Bucket Policy for CloudFront OAC
 data "aws_iam_policy_document" "s3_bucket_policy" {
   statement {
-    actions   = ["s3:GetObject"]
+    actions   = var.s3_get_object_actions
     resources = ["${aws_s3_bucket.upload_bucket.arn}/*"]
 
     principals {
-      type        = "Service"
-      identifiers = ["cloudfront.amazonaws.com"]
+      type        = var.iam_principal_type_service
+      identifiers = [var.cloudfront_service_principal]
     }
 
     condition {
-      test     = "StringEquals"
-      variable = "AWS:SourceArn"
+      test     = var.iam_condition_test_string_equals
+      variable = var.iam_condition_variable_source_arn
       values   = [aws_cloudfront_distribution.s3_distribution.arn]
     }
   }
 
   statement {
-    actions   = ["s3:PutObject", "s3:PutObjectAcl"]
+    actions   = var.s3_put_object_actions
     resources = ["${aws_s3_bucket.upload_bucket.arn}/*"]
 
     principals {
-      type        = "AWS"
+      type        = var.iam_principal_type_aws
       identifiers = [aws_iam_role.uploader_role.arn]
     }
   }

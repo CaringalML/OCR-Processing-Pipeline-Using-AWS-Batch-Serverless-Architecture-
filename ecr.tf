@@ -1,14 +1,14 @@
 resource "aws_ecr_repository" "main" {
   name                 = "${var.project_name}-${var.environment}-app"
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true # Ensures images are deleted with the repo
+  image_tag_mutability = var.ecr_image_tag_mutability
+  force_delete         = var.ecr_force_delete # Ensures images are deleted with the repo
 
   image_scanning_configuration {
-    scan_on_push = true
+    scan_on_push = var.ecr_scan_on_push
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = var.ecr_encryption_type
   }
 
   lifecycle {
@@ -30,29 +30,29 @@ resource "aws_ecr_lifecycle_policy" "main" {
   policy = jsonencode({
     rules = [
       {
-        rulePriority = 1
-        description  = "Keep last 3 images tagged 'latest'"
+        rulePriority = var.ecr_lifecycle_tagged_rule_priority
+        description  = var.ecr_lifecycle_tagged_rule_description
         selection = {
-          tagStatus     = "tagged"
-          tagPrefixList = ["latest"]
-          countType     = "imageCountMoreThan"
-          countNumber   = 3
+          tagStatus     = var.ecr_lifecycle_tagged_status
+          tagPrefixList = var.ecr_lifecycle_tag_prefix_list
+          countType     = var.ecr_lifecycle_tagged_count_type
+          countNumber   = var.ecr_lifecycle_tagged_count_number
         }
         action = {
-          type = "expire"
+          type = var.ecr_lifecycle_action_type
         }
       },
       {
-        rulePriority = 2
-        description  = "Delete untagged images older than 1 day"
+        rulePriority = var.ecr_lifecycle_untagged_rule_priority
+        description  = var.ecr_lifecycle_untagged_rule_description
         selection = {
-          tagStatus   = "untagged"
-          countType   = "sinceImagePushed"
-          countUnit   = "days"
-          countNumber = 1
+          tagStatus   = var.ecr_lifecycle_untagged_status
+          countType   = var.ecr_lifecycle_untagged_count_type
+          countUnit   = var.ecr_lifecycle_untagged_count_unit
+          countNumber = var.ecr_lifecycle_untagged_count_number
         }
         action = {
-          type = "expire"
+          type = var.ecr_lifecycle_action_type
         }
       }
     ]

@@ -1,8 +1,8 @@
 # CloudWatch Log Groups - AWS Batch Jobs (OCR processing container logs)
 resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
   name              = "/aws/batch/${var.project_name}-${var.environment}-long-batch-processor"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "AWS Batch OCR processing container logs"
     Function = "aws_batch_ocr"
@@ -12,8 +12,8 @@ resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
 # CloudWatch Log Groups - API Gateway (REST API access logs)
 resource "aws_cloudwatch_log_group" "api_gateway_access_logs" {
   name              = "/aws/apigateway/${var.project_name}-${var.environment}-api-access"
-  retention_in_days = 7  # 1 week retention
-  skip_destroy      = false
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_skip_destroy
   tags              = merge(var.common_tags, {
     Purpose = "API Gateway access and error logging"
     Function = "api_gateway"
@@ -30,8 +30,8 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
         type   = "metric"
         x      = 0
         y      = 0
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
         properties = {
           metrics = [
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.uploader.function_name],
@@ -45,7 +45,7 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
             [".", "Invocations", ".", "."]
           ]
           period = 300
-          stat   = "Average"
+          stat   = var.cloudwatch_metric_stat_average
           region = var.aws_region
           title  = "Lambda Metrics"
         }
@@ -54,8 +54,8 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
         type   = "metric"
         x      = 0
         y      = 6
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
         properties = {
           metrics = [
             ["AWS/Batch", "SubmittedJobs", "JobQueue", aws_batch_job_queue.main.name],
@@ -74,8 +74,8 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
         type   = "metric"
         x      = 0
         y      = 12
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
         properties = {
           metrics = [
             ["AWS/ApiGateway", "Count", "ApiName", aws_api_gateway_rest_api.main.name],
@@ -84,7 +84,7 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
             [".", "5XXError", ".", "."]
           ]
           period = 300
-          stat   = "Average"
+          stat   = var.cloudwatch_metric_stat_average
           region = var.aws_region
           title  = "API Gateway Metrics"
         }
@@ -96,13 +96,13 @@ resource "aws_cloudwatch_dashboard" "ocr_processor_dashboard" {
 # CloudWatch Alarms
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   alarm_name          = "${var.project_name}-lambda-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
-  period              = "120"
-  statistic           = "Sum"
-  threshold           = "1"
+  period              = var.cloudwatch_alarm_period_medium
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_lambda_error_threshold
   alarm_description   = "This metric monitors lambda errors"
   alarm_actions       = []
 
@@ -113,13 +113,13 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 
 resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
   alarm_name          = "${var.project_name}-batch-failed-jobs"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_single
   metric_name         = "FailedJobs"
   namespace           = "AWS/Batch"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "0"
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_batch_failure_threshold
   alarm_description   = "This metric monitors batch job failures"
   alarm_actions       = []
 
@@ -144,7 +144,7 @@ resource "aws_sns_topic" "security_alerts" {
 # SNS Topic Subscription for security alerts email
 resource "aws_sns_topic_subscription" "security_email_alerts" {
   topic_arn = aws_sns_topic.security_alerts.arn
-  protocol  = "email"
+  protocol  = var.sns_email_protocol
   endpoint  = var.admin_alert_email
 }
 
@@ -155,13 +155,13 @@ resource "aws_cloudwatch_metric_alarm" "api_4xx_errors" {
   count = var.enable_rate_limiting ? 1 : 0
 
   alarm_name          = "${var.project_name}-${var.environment}-api-4xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "4XXError"
   namespace           = "AWS/ApiGateway"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "20"
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_api_4xx_threshold
   alarm_description   = "This metric monitors API Gateway 4XX errors (including rate limiting)"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -182,13 +182,13 @@ resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
   count = var.enable_rate_limiting ? 1 : 0
 
   alarm_name          = "${var.project_name}-${var.environment}-api-high-latency"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "Latency"
   namespace           = "AWS/ApiGateway"
-  period              = "300"
-  statistic           = "Average"
-  threshold           = "5000"  # 5 seconds
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_average
+  threshold           = var.cloudwatch_alarm_latency_threshold  # 5 seconds
   alarm_description   = "This metric monitors API Gateway latency"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -209,12 +209,12 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   count = var.enable_rate_limiting ? 1 : 0
 
   alarm_name          = "${var.project_name}-${var.environment}-api-request-spike"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "Count"
   namespace           = "AWS/ApiGateway"
-  period              = "300"
-  statistic           = "Sum"
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_sum
   threshold           = var.api_throttling_rate_limit * 300 * 0.8  # 80% of max capacity
   alarm_description   = "This metric monitors unusual request spikes that may indicate abuse"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
@@ -236,13 +236,13 @@ resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
   count = var.enable_rate_limiting ? 1 : 0
 
   alarm_name          = "${var.project_name}-${var.environment}-rate-limit-abuse"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_single
   metric_name         = "4XXError"
   namespace           = "AWS/ApiGateway"
-  period              = "60"  # 1 minute window
-  statistic           = "Sum"
-  threshold           = "50"  # More than 50 rate limit errors in 1 minute
+  period              = var.cloudwatch_alarm_period_short  # 1 minute window
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_rate_limit_threshold  # More than 50 rate limit errors in 1 minute
   alarm_description   = "Detects rapid rate limiting violations indicating potential abuse"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -264,13 +264,13 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx_errors" {
   count = var.enable_rate_limiting ? 1 : 0
 
   alarm_name          = "${var.project_name}-${var.environment}-api-5xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "5XXError"
   namespace           = "AWS/ApiGateway"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "10"
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_api_5xx_threshold
   alarm_description   = "This metric monitors API Gateway 5XX errors indicating system stress"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -289,13 +289,13 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx_errors" {
 # CloudWatch Alarm for Lambda function errors (potential attack vectors)
 resource "aws_cloudwatch_metric_alarm" "lambda_error_spike" {
   alarm_name          = "${var.project_name}-${var.environment}-lambda-error-spike"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
+  comparison_operator = var.cloudwatch_alarm_comparison_operator
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "20"
+  period              = var.cloudwatch_alarm_period_default
+  statistic           = var.cloudwatch_metric_stat_sum
+  threshold           = var.cloudwatch_alarm_api_4xx_threshold
   alarm_description   = "Detects unusual Lambda error spikes that may indicate attacks"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -323,8 +323,8 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
         type   = "metric"
         x      = 0
         y      = 0
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
 
         properties = {
           metrics = [
@@ -332,8 +332,8 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
             [".", "4XXError", ".", ".", ".", "."],
             [".", "5XXError", ".", ".", ".", "."]
           ]
-          view    = "timeSeries"
-          stacked = false
+          view    = var.cloudwatch_dashboard_view_timeseries
+          stacked = var.cloudwatch_dashboard_stacked
           region  = var.aws_region
           title   = "API Gateway Request Metrics"
           period  = 300
@@ -344,16 +344,16 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
         type   = "metric"
         x      = 12
         y      = 0
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
 
         properties = {
           metrics = [
             ["AWS/ApiGateway", "Latency", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name],
             [".", "IntegrationLatency", ".", ".", ".", "."]
           ]
-          view    = "timeSeries"
-          stacked = false
+          view    = var.cloudwatch_dashboard_view_timeseries
+          stacked = var.cloudwatch_dashboard_stacked
           region  = var.aws_region
           title   = "API Gateway Latency Metrics"
           period  = 300
@@ -364,16 +364,16 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
         type   = "metric"
         x      = 0
         y      = 6
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
 
         properties = {
           metrics = [
             ["AWS/ApiGateway", "Count", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name, "Method", "POST", "Resource", "/upload"],
             [".", ".", ".", ".", ".", ".", ".", "GET", ".", "/processed"]
           ]
-          view    = "timeSeries"
-          stacked = false
+          view    = var.cloudwatch_dashboard_view_timeseries
+          stacked = var.cloudwatch_dashboard_stacked
           region  = var.aws_region
           title   = "Method-specific Request Counts"
           period  = 300
@@ -384,14 +384,14 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
         type   = "number"
         x      = 12
         y      = 6
-        width  = 12
-        height = 6
+        width  = var.cloudwatch_dashboard_widget_width
+        height = var.cloudwatch_dashboard_widget_height
 
         properties = {
           metrics = [
             ["AWS/ApiGateway", "4XXError", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name]
           ]
-          view    = "singleValue"
+          view    = var.cloudwatch_dashboard_view_single_value
           region  = var.aws_region
           title   = "Rate Limiting Events (4XX Errors)"
           period  = 300

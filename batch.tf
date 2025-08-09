@@ -1,12 +1,12 @@
 resource "aws_batch_compute_environment" "main" {
   compute_environment_name = "${var.project_name}-${var.environment}-compute-env"
-  type                     = "MANAGED"
-  state                    = "ENABLED"
+  type                     = var.batch_compute_environment_type
+  state                    = var.batch_compute_environment_state
   service_role             = aws_iam_role.batch_service_role.arn
 
   compute_resources {
-    type               = "FARGATE"
-    max_vcpus          = 256
+    type               = var.batch_compute_resources_type
+    max_vcpus          = var.batch_max_vcpus
     security_group_ids = [aws_security_group.batch.id]
     subnets            = aws_subnet.private[*].id
   }
@@ -18,11 +18,11 @@ resource "aws_batch_compute_environment" "main" {
 
 resource "aws_batch_job_queue" "main" {
   name     = "${var.project_name}-${var.environment}-job-queue"
-  state    = "ENABLED"
-  priority = 1
+  state    = var.batch_job_queue_state
+  priority = var.batch_job_queue_priority
 
   compute_environment_order {
-    order               = 1
+    order               = var.batch_compute_environment_order
     compute_environment = aws_batch_compute_environment.main.arn
   }
 
@@ -33,9 +33,9 @@ resource "aws_batch_job_queue" "main" {
 
 resource "aws_batch_job_definition" "main" {
   name = "${var.project_name}-${var.environment}-job-def"
-  type = "container"
+  type = var.batch_job_definition_type
 
-  platform_capabilities = ["FARGATE"]
+  platform_capabilities = var.batch_platform_capabilities
 
   container_properties = jsonencode({
     # Note: Update this image URL after manually pushing to ECR
@@ -45,33 +45,33 @@ resource "aws_batch_job_definition" "main" {
     resourceRequirements = [
       {
         type  = "VCPU"
-        value = "0.25"
+        value = var.batch_container_vcpu
       },
       {
         type  = "MEMORY"
-        value = "512"
+        value = var.batch_container_memory
       }
     ]
 
     networkConfiguration = {
-      assignPublicIp = "DISABLED"
+      assignPublicIp = var.batch_assign_public_ip
     }
 
     executionRoleArn = aws_iam_role.batch_task_execution_role.arn
     jobRoleArn       = aws_iam_role.batch_task_role.arn
 
     logConfiguration = {
-      logDriver = "awslogs"
+      logDriver = var.batch_log_driver
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.aws_batch_ocr_logs.name
         "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "batch"
+        "awslogs-stream-prefix" = var.batch_log_stream_prefix
       }
     }
   })
 
   retry_strategy {
-    attempts = 1
+    attempts = var.batch_retry_attempts
   }
 
   timeout {

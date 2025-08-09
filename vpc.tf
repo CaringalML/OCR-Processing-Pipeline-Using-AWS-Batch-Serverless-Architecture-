@@ -1,11 +1,11 @@
 data "aws_availability_zones" "available" {
-  state = "available"
+  state = var.vpc_availability_zone_state
 }
 
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+  enable_dns_hostnames = var.vpc_enable_dns_hostnames
+  enable_dns_support   = var.vpc_enable_dns_support
 
   tags = {
     Name = "${var.project_name}-vpc"
@@ -26,7 +26,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
   availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = var.vpc_map_public_ip_on_launch
 
   tags = {
     Name = "${var.project_name}-public-subnet-${count.index + 1}"
@@ -49,7 +49,7 @@ resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block = var.vpc_default_route_cidr
     gateway_id = aws_internet_gateway.main.id
   }
 
@@ -90,18 +90,18 @@ resource "aws_security_group" "vpc_endpoints" {
 
   ingress {
     description = "HTTPS from VPC"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    from_port   = var.vpc_https_port
+    to_port     = var.vpc_https_port
+    protocol    = var.vpc_protocol_tcp
     cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
     description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port   = var.vpc_all_ports_start
+    to_port     = var.vpc_all_ports_end
+    protocol    = var.vpc_protocol_all
+    cidr_blocks = [var.vpc_default_route_cidr]
   }
 
   tags = {
@@ -121,10 +121,10 @@ resource "aws_security_group" "batch" {
 
   egress {
     description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port   = var.vpc_all_ports_start
+    to_port     = var.vpc_all_ports_end
+    protocol    = var.vpc_protocol_all
+    cidr_blocks = [var.vpc_default_route_cidr]
   }
 
   tags = {
@@ -140,21 +140,16 @@ resource "aws_security_group" "batch" {
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
-  vpc_endpoint_type = "Gateway"
+  vpc_endpoint_type = var.vpc_endpoint_type_gateway
   route_table_ids   = aws_route_table.private[*].id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:ListBucket",
-          "s3:HeadObject"
-        ]
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_s3_actions
         Resource = [
           "arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket/*",
           "arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket",
@@ -174,23 +169,17 @@ resource "aws_vpc_endpoint" "s3" {
 resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
-  vpc_endpoint_type = "Gateway"
+  vpc_endpoint_type = var.vpc_endpoint_type_gateway
   route_table_ids   = aws_route_table.private[*].id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "dynamodb:Query",
-          "dynamodb:UpdateItem",
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Scan"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_dynamodb_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -204,24 +193,19 @@ resource "aws_vpc_endpoint" "dynamodb" {
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_ecr_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -235,26 +219,19 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 resource "aws_vpc_endpoint" "ecr_api" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:DescribeRepositories",
-          "ecr:DescribeImages",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_ecr_api_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -268,25 +245,19 @@ resource "aws_vpc_endpoint" "ecr_api" {
 resource "aws_vpc_endpoint" "logs" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.logs"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "logs:DescribeLogGroups",
-          "logs:DescribeLogStreams"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_logs_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -300,27 +271,19 @@ resource "aws_vpc_endpoint" "logs" {
 resource "aws_vpc_endpoint" "ecs" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "ecs:CreateCluster",
-          "ecs:DescribeClusters",
-          "ecs:RegisterTaskDefinition",
-          "ecs:RunTask",
-          "ecs:StopTask",
-          "ecs:DescribeTasks",
-          "ecs:ListTasks"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_ecs_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -334,10 +297,10 @@ resource "aws_vpc_endpoint" "ecs" {
 resource "aws_vpc_endpoint" "ecs_agent" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs-agent"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
     Name = "${var.project_name}-ecs-agent-endpoint"
@@ -348,10 +311,10 @@ resource "aws_vpc_endpoint" "ecs_agent" {
 resource "aws_vpc_endpoint" "ecs_telemetry" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs-telemetry"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
     Name = "${var.project_name}-ecs-telemetry-endpoint"
@@ -362,24 +325,19 @@ resource "aws_vpc_endpoint" "ecs_telemetry" {
 resource "aws_vpc_endpoint" "textract" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.textract"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "textract:StartDocumentAnalysis",
-          "textract:GetDocumentAnalysis",
-          "textract:StartDocumentTextDetection",
-          "textract:GetDocumentTextDetection"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_textract_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -393,26 +351,19 @@ resource "aws_vpc_endpoint" "textract" {
 resource "aws_vpc_endpoint" "comprehend" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.comprehend"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = var.iam_policy_version
     Statement = [
       {
-        Effect    = "Allow"
-        Principal = "*"
-        Action = [
-          "comprehend:DetectDominantLanguage",
-          "comprehend:DetectEntities",
-          "comprehend:DetectKeyPhrases",
-          "comprehend:DetectSentiment",
-          "comprehend:DetectSyntax",
-          "comprehend:DetectPiiEntities"
-        ]
-        Resource = "*"
+        Effect    = var.iam_effect_allow
+        Principal = var.vpc_iam_principal_wildcard
+        Action = var.vpc_comprehend_actions
+        Resource = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -428,10 +379,10 @@ resource "aws_vpc_endpoint" "ssm" {
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ssm"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
     Name = "${var.project_name}-ssm-endpoint"
@@ -443,10 +394,10 @@ resource "aws_vpc_endpoint" "ssm_messages" {
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ssmmessages"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
     Name = "${var.project_name}-ssm-messages-endpoint"
@@ -458,10 +409,10 @@ resource "aws_vpc_endpoint" "ec2_messages" {
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ec2messages"
-  vpc_endpoint_type   = "Interface"
+  vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
     Name = "${var.project_name}-ec2-messages-endpoint"
