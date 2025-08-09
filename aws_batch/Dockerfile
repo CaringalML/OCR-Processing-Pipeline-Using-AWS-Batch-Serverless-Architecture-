@@ -1,14 +1,15 @@
 # Multi-stage build for faster and smaller images
-# Stage 1: Build stage with full Python image for compiling dependencies
-FROM python:3.12-slim as builder
+# Stage 1: Build stage with Alpine to match runtime
+FROM python:3.12-alpine3.20 as builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install build dependencies for Alpine
+RUN apk add --no-cache \
     gcc \
     g++ \
-    build-essential \
+    musl-dev \
     python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+    linux-headers \
+    build-base
 
 # Set working directory
 WORKDIR /app
@@ -43,12 +44,12 @@ RUN echo "=== ENHANCEMENT SETUP COMPLETE ==="
 # Stage 2: Runtime stage with minimal Alpine image
 FROM python:3.12-alpine3.20
 
-# Install only runtime dependencies
+# Install runtime dependencies including what's needed for compiled Python extensions
 RUN apk add --no-cache \
     libstdc++ \
     libgomp \
-    gcc \
-    musl-dev \
+    libgcc \
+    libc6-compat \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
@@ -56,6 +57,15 @@ WORKDIR /app
 
 # Copy virtual environment from builder stage
 COPY --from=builder /opt/venv /opt/venv
+
+# Set environment variables early
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
+
+# Verify core dependencies work in runtime environment
+RUN python -c "import boto3; import regex; import ftfy; print('✅ All core dependencies verified in runtime stage')"
 
 # Copy application code
 COPY . .
@@ -67,12 +77,6 @@ RUN addgroup -g 1001 -S python && \
 
 # Switch to non-root user
 USER python
-
-# Set environment variables
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONPATH=/app
 
 # Command to run the application
 CMD ["python", "index.py"]
