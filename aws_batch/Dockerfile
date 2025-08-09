@@ -30,33 +30,28 @@ RUN pip install --no-cache-dir \
 
 # === ENHANCED LIBRARIES (SAFE ADDITIONS) ===
 # Pre-download AI models for offline use (with error handling)
-RUN python -c "
-try:
-    print('Downloading spaCy model...')
-    import subprocess
-    subprocess.run(['python', '-m', 'spacy', 'download', 'en_core_web_sm'], check=False)
-    print('spaCy model download completed or skipped')
-except Exception as e:
-    print(f'spaCy model download failed (non-critical): {e}')
-
-try:
-    print('Downloading transformers model...')
-    from transformers import pipeline
-    pipeline('text2text-generation', model='facebook/bart-base')
-    print('Transformers model cached successfully')
-except Exception as e:
-    print(f'Transformers model download failed (non-critical): {e}')
-
-try:
-    print('Downloading sentence-transformers model...')
-    from sentence_transformers import SentenceTransformer
-    SentenceTransformer('all-MiniLM-L6-v2')
-    print('Sentence-transformers model cached successfully')
-except Exception as e:
-    print(f'Sentence-transformers model download failed (non-critical): {e}')
-
-print('=== ENHANCEMENT SETUP COMPLETE ===')
-"
+RUN python -c "try:\
+    print('Downloading spaCy model...'); \
+    import subprocess; \
+    subprocess.run(['python', '-m', 'spacy', 'download', 'en_core_web_sm'], check=False); \
+    print('spaCy model download completed or skipped'); \
+except Exception as e: \
+    print(f'spaCy model download failed (non-critical): {e}'); \
+try: \
+    print('Downloading transformers model...'); \
+    from transformers import pipeline; \
+    pipeline('text2text-generation', model='facebook/bart-base'); \
+    print('Transformers model cached successfully'); \
+except Exception as e: \
+    print(f'Transformers model download failed (non-critical): {e}'); \
+try: \
+    print('Downloading sentence-transformers model...'); \
+    from sentence_transformers import SentenceTransformer; \
+    SentenceTransformer('all-MiniLM-L6-v2'); \
+    print('Sentence-transformers model cached successfully'); \
+except Exception as e: \
+    print(f'Sentence-transformers model download failed (non-critical): {e}'); \
+print('=== ENHANCEMENT SETUP COMPLETE ===')"
 
 # Stage 2: Runtime stage with minimal Alpine image
 FROM python:3.12-alpine3.20
