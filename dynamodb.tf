@@ -6,7 +6,7 @@ resource "aws_dynamodb_table" "file_metadata" {
   range_key    = var.dynamodb_file_metadata_range_key
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       name,
       billing_mode,

@@ -3,7 +3,7 @@ resource "aws_s3_bucket" "upload_bucket" {
   bucket = "${var.project_name}-${var.environment}-uploads"
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       bucket,
       tags["Name"]
