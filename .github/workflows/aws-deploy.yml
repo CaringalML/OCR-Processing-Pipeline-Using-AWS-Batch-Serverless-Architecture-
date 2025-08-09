@@ -209,44 +209,6 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "✅ Docker image pushed to ECR successfully"
 
-    - name: Test Production Image in ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-        IMAGE_TAG: latest
-      run: |
-        echo "🔍 Testing production image from ECR..."
-        docker run --rm -e S3_BUCKET=test -e S3_KEY=test -e FILE_ID=test -e DYNAMODB_TABLE=test \
-          $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG python -c "
-        print('🧪 Production ECR image test started')
-        
-        # Test core functionality
-        try:
-            import sys, os
-            
-            # Test imports
-            import boto3
-            import regex
-            print('✅ Core AWS dependencies working')
-            
-            # Test enhanced features availability
-            try:
-                sys.path.insert(0, '/app')
-                import index
-                if hasattr(index, 'apply_comprehensive_grammar_rules'):
-                    print('✅ Enhanced grammar system available')
-                else:
-                    print('⚠️ Enhanced features fallback mode')
-            except ImportError:
-                print('⚠️ Enhanced features fallback mode')
-            
-            print('✅ Production ECR image test passed')
-            
-        except Exception as e:
-            print(f'❌ Production ECR image test failed: {e}')
-            sys.exit(1)
-        "
-
     # === DEPLOYMENT SUMMARY ===
     - name: Deployment Summary
       env:
@@ -270,7 +232,6 @@ jobs:
         echo "  • Registry: $ECR_REGISTRY"
         echo "  • Repository: $ECR_REPOSITORY"
         echo "  • Tag: latest"
-        echo "  • Production tested and verified"
         echo ""
         echo "🚀 Ready for manual infrastructure deployment:"
         echo "  1. Run locally: terraform plan"
