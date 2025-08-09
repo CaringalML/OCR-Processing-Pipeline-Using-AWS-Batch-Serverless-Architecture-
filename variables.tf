@@ -219,345 +219,736 @@ variable "cloudfront_price_class" {
 
 # EventBridge variables removed - Long batch now uses direct SQS triggering
 
-# ========================================
-# API GATEWAY RATE LIMITING CONFIGURATION
-# ========================================
+# =============================================================================
+# TERRAFORM VARIABLES FOR OCR DOCUMENT PROCESSING SYSTEM
+# =============================================================================
+#
+# This file defines all configurable parameters for the serverless OCR document
+# processing and search system. The infrastructure supports intelligent document
+# analysis, semantic search, and enterprise-grade document management.
+#
+# SYSTEM OVERVIEW:
+# - Dual processing paths: Lambda (≤300KB) and AWS Batch (>300KB files)  
+# - Three-tier API access: Public, Registered (API key), Premium (high limits)
+# - Advanced search: Fuzzy matching, semantic processing, multi-field queries
+# - Enterprise features: Rate limiting, monitoring, automated cleanup, CDN
+# - Cost optimized: Pay-per-use, VPC endpoints, intelligent lifecycle policies
+#
+# VARIABLE ORGANIZATION:
+# The variables are organized into logical sections for easy navigation:
+# 1. Core Project Settings (naming, regions, environments)
+# 2. Networking (VPC, subnets, security groups)
+# 3. Processing Services (Batch, Lambda, API Gateway)
+# 4. Storage & Database (S3, DynamoDB, CloudFront)  
+# 5. Monitoring & Operations (CloudWatch, SNS, cleanup)
+# 6. Security & Access Control (IAM, rate limiting, API keys)
+#
+# DEPLOYMENT RECOMMENDATIONS:
+# - Review all default values before deploying to production
+# - Customize common_tags for your organization's tagging strategy
+# - Adjust rate limits based on expected traffic patterns
+# - Configure admin_alert_email for operational notifications
+# - Consider regional data residency requirements when setting aws_region
+#
+# =============================================================================
+# CORE PROJECT CONFIGURATION
+# =============================================================================
+# These variables define the fundamental settings for the OCR processing system.
+# They control the overall project naming, regional deployment, and environment
+# setup that affects all infrastructure components.
 
-# Enable/disable rate limiting
-variable "enable_rate_limiting" {
-  description = "Enable rate limiting for API Gateway"
+variable "aws_region" {
+  description = "AWS region where all infrastructure will be deployed. Affects costs, latency, and service availability."
+  type        = string
+  default     = "ap-southeast-2"
+}
+
+variable "project_name" {
+  description = "Base name used for all AWS resources. Used in resource naming convention: {project_name}-{environment}-{service}"
+  type        = string
+  default     = "ocr-processor"
+}
+
+variable "environment" {
+  description = "Environment identifier (dev/staging/prod). Used in resource naming and tagging for cost allocation and organization."
+  type        = string
+  default     = "batch"
+}
+
+variable "api_stage_name" {
+  description = "API Gateway deployment stage name. Appears in API URLs: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}"
+  type        = string
+  default     = "batch"
+}
+
+# =============================================================================
+# NETWORKING CONFIGURATION
+# =============================================================================
+# These variables control the VPC and subnet configuration for the entire system.
+# The OCR system uses a multi-tier architecture with public subnets for NAT gateways
+# and private subnets for compute resources like AWS Batch and Lambda functions.
+
+variable "vpc_cidr" {
+  description = "Primary CIDR block for the VPC. Must be large enough to accommodate all subnets and future growth."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets (NAT gateways, ALBs). These subnets have internet gateway routes."
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+}
+
+variable "private_subnet_cidrs" {
+  description = "CIDR blocks for private subnets (Batch compute, Lambda functions). Internet access via NAT gateway only."
+  type        = list(string)
+  default     = ["10.0.10.0/24", "10.0.20.0/24"]
+}
+
+# =============================================================================
+# AWS BATCH CONFIGURATION
+# =============================================================================
+# These variables configure the AWS Batch service for processing large files (>300KB).
+# Batch provides scalable container-based compute for CPU-intensive OCR tasks.
+
+variable "batch_compute_environment_name" {
+  description = "Name for the AWS Batch compute environment. Houses the EC2/Fargate instances for job execution."
+  type        = string
+  default     = "ocr-processor-compute-env"
+}
+
+variable "batch_job_queue_name" {
+  description = "Name for the AWS Batch job queue. Jobs are submitted to this queue and executed on the compute environment."
+  type        = string
+  default     = "ocr-processor-job-queue"
+}
+
+variable "batch_job_definition_name" {
+  description = "Name for the AWS Batch job definition. Defines the Docker container, CPU/memory, and execution parameters."
+  type        = string
+  default     = "ocr-processor-job-def"
+}
+
+# =============================================================================
+# API GATEWAY CONFIGURATION
+# =============================================================================
+# These variables configure the main API Gateway that serves as the entry point
+# for all client requests. The system uses a unified API with multiple endpoints.
+
+variable "api_gateway_name" {
+  description = "Name for the main API Gateway REST API. This is the primary entry point for all client interactions."
+  type        = string
+  default     = "ocr-processor-api"
+}
+
+variable "lambda_function_name" {
+  description = "Base name for Lambda functions. Individual functions append their specific purpose (e.g., 'batch-trigger')."
+  type        = string
+  default     = "ocr-processor-batch-trigger"
+}
+
+# =============================================================================
+# AUTOMATED CLEANUP SYSTEM
+# =============================================================================
+# These variables configure the automated cleanup system that prevents cost overruns
+# by cleaning up old processing jobs, failed tasks, and temporary resources.
+
+variable "cleanup_age_hours" {
+  description = "Age in hours after which completed/failed jobs are eligible for cleanup. Balances storage costs with debugging needs."
+  type        = number
+  default     = 24
+  validation {
+    condition     = var.cleanup_age_hours > 0 && var.cleanup_age_hours <= 168
+    error_message = "Cleanup age must be between 1 and 168 hours (1 week). Values outside this range may impact operations or cost management."
+  }
+}
+
+variable "cleanup_schedule_expression" {
+  description = "CloudWatch Events schedule for cleanup execution. Use rate() for regular intervals or cron() for specific times."
+  type        = string
+  default     = "rate(6 hours)"
+  validation {
+    condition     = can(regex("^(rate\\([0-9]+ (minute|minutes|hour|hours|day|days)\\)|cron\\(.+\\))$", var.cleanup_schedule_expression))
+    error_message = "Schedule expression must be in rate() or cron() format. Examples: 'rate(6 hours)', 'cron(0 2 * * ? *)'."
+  }
+}
+
+variable "enable_auto_cleanup" {
+  description = "Enable/disable the automated cleanup system. Recommended for production to control costs and resource usage."
   type        = bool
   default     = true
 }
 
-# Stage-level throttling (affects all methods)
+# Cleanup Lambda function resource configuration
+variable "cleanup_lambda_timeout" {
+  description = "Timeout for cleanup Lambda function in seconds. Should be sufficient for cleanup operations across all services."
+  type        = number
+  default     = 300
+  validation {
+    condition     = var.cleanup_lambda_timeout >= 60 && var.cleanup_lambda_timeout <= 900
+    error_message = "Lambda timeout must be between 60 and 900 seconds. Lower values may cause timeouts, higher values increase costs."
+  }
+}
+
+variable "cleanup_lambda_memory" {
+  description = "Memory allocation for cleanup Lambda function in MB. Higher memory provides more CPU power for faster cleanup operations."
+  type        = number
+  default     = 256
+  validation {
+    condition     = var.cleanup_lambda_memory >= 128 && var.cleanup_lambda_memory <= 3008
+    error_message = "Lambda memory must be between 128 and 3008 MB. Higher memory increases costs but improves performance."
+  }
+}
+
+variable "cleanup_log_retention_days" {
+  description = "Number of days to retain cleanup Lambda logs. Longer retention aids debugging but increases storage costs."
+  type        = number
+  default     = 14
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653], var.cleanup_log_retention_days)
+    error_message = "Log retention must be one of the valid CloudWatch retention periods to ensure proper cost management."
+  }
+}
+
+# =============================================================================
+# VPC ENDPOINTS CONFIGURATION
+# =============================================================================
+# VPC endpoints reduce data transfer costs and improve security by keeping traffic
+# within the AWS network instead of routing through the internet.
+
+variable "enable_ssm_endpoints" {
+  description = "Enable SSM VPC endpoints for debugging/troubleshooting batch containers. Adds cost but improves operational capabilities."
+  type        = bool
+  default     = false
+}
+
+# =============================================================================
+# BATCH JOB PROCESSING CONFIGURATION
+# =============================================================================
+# These variables control the execution behavior of long-running batch jobs,
+# including timeouts and cleanup policies specific to resource-intensive tasks.
+
+variable "batch_job_timeout_hours" {
+  description = "Maximum execution time for batch jobs in hours. Jobs exceeding this limit are terminated to prevent runaway costs."
+  type        = number
+  default     = 24
+  validation {
+    condition     = var.batch_job_timeout_hours >= 1 && var.batch_job_timeout_hours <= 168
+    error_message = "Batch job timeout must be between 1 and 168 hours (1 week) to balance processing needs with cost control."
+  }
+}
+
+variable "long_running_cleanup_age_hours" {
+  description = "Cleanup age for long-running jobs (should exceed batch_job_timeout_hours). Ensures completed jobs have cleanup buffer time."
+  type        = number
+  default     = 48 # 2 days - longer than job timeout
+}
+
+# =============================================================================
+# RESOURCE TAGGING STRATEGY
+# =============================================================================
+# Consistent tagging enables cost allocation, resource management, and
+# operational visibility across the entire infrastructure.
+
+variable "common_tags" {
+  description = "Standard tags applied to all AWS resources. Essential for cost tracking, compliance, and resource management."
+  type        = map(string)
+  default = {
+    Project     = "ocr-processor"        # Groups all related resources
+    Environment = "batch"                # Distinguishes dev/staging/prod
+    ManagedBy   = "terraform"           # Indicates infrastructure as code
+    Purpose     = "document-processing" # Business function identifier
+    Owner       = "your-team"           # Responsible team/person
+    CostCenter  = "engineering"         # Budget allocation
+  }
+}
+
+# =============================================================================
+# EXTERNAL SERVICE INTEGRATION
+# =============================================================================
+# Configuration for third-party services and APIs used by the OCR system.
+
+variable "anthropic_api_key" {
+  description = "API key for Anthropic Claude AI service. Used for intelligent text processing and refinement of OCR results."
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# FILE PROCESSING CONFIGURATION
+# =============================================================================
+# These variables control file upload limits, processing thresholds, and
+# storage bucket configuration for the document processing pipeline.
+
+variable "upload_bucket_prefix" {
+  description = "Prefix for the S3 upload bucket name. Full bucket name becomes: {prefix}-{project_name}-{environment}-{random_suffix}"
+  type        = string
+  default     = "file-processing"
+}
+
+variable "max_file_size_mb" {
+  description = "Maximum file size for upload in MB. Larger files are rejected to control processing costs and API Gateway limits."
+  type        = number
+  default     = 100
+  validation {
+    condition     = var.max_file_size_mb > 0 && var.max_file_size_mb <= 1000
+    error_message = "Max file size must be between 1 and 1000 MB to balance functionality with cost and performance."
+  }
+}
+
+# SQS configuration note: Queue-specific settings are now hardcoded in sqs.tf
+# for optimal performance per processing type:
+# - Long batch: 16min visibility timeout, 2 retries, long polling for efficiency
+# - Short batch: 20min visibility timeout, 3 retries, short polling for responsiveness  
+# - Invoice: 30min visibility timeout, 3 retries, short polling for business priority
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+# DynamoDB settings for metadata storage, processing results, and system state management.
+
+variable "dynamodb_billing_mode" {
+  description = "DynamoDB billing mode. PAY_PER_REQUEST for variable workloads, PROVISIONED for predictable traffic patterns."
+  type        = string
+  default     = "PAY_PER_REQUEST"
+  validation {
+    condition     = contains(["PAY_PER_REQUEST", "PROVISIONED"], var.dynamodb_billing_mode)
+    error_message = "DynamoDB billing mode must be either PAY_PER_REQUEST or PROVISIONED."
+  }
+}
+
+# =============================================================================
+# CONTENT DELIVERY NETWORK (CDN) CONFIGURATION
+# =============================================================================
+# CloudFront distribution settings for global file delivery and caching.
+
+variable "cloudfront_price_class" {
+  description = "CloudFront price class determines global edge location coverage. Higher classes increase cost but improve performance."
+  type        = string
+  default     = "PriceClass_100"
+  validation {
+    condition     = contains(["PriceClass_All", "PriceClass_200", "PriceClass_100"], var.cloudfront_price_class)
+    error_message = "CloudFront price class must be PriceClass_All (most expensive, global), PriceClass_200 (medium cost), or PriceClass_100 (lowest cost, US/Europe only)."
+  }
+}
+
+# EventBridge variables removed - The system now uses direct SQS messaging from
+# the uploader Lambda for improved performance and reduced complexity.
+
+# ========================================
+# API GATEWAY RATE LIMITING CONFIGURATION
+# ========================================
+# Comprehensive rate limiting protects the system from abuse and ensures fair resource
+# allocation across different user tiers. This implements a three-tier access model.
+
+# =============================================================================
+# RATE LIMITING CONTROL
+# =============================================================================
+# Master switch for the entire rate limiting system
+
+variable "enable_rate_limiting" {
+  description = "Master toggle for API Gateway rate limiting. When disabled, removes all throttling but may expose system to abuse."
+  type        = bool
+  default     = true
+}
+
+# =============================================================================
+# STAGE-LEVEL THROTTLING (GLOBAL LIMITS)
+# =============================================================================
+# These limits apply to ALL API methods and override individual method settings
+# if they exceed these values. Acts as a system-wide safety net.
+
 variable "api_throttling_rate_limit" {
-  description = "API Gateway stage-level throttling rate limit (requests per second)"
+  description = "Stage-level sustained request rate limit (requests/second). This is the maximum steady-state request rate across ALL API methods."
   type        = number
   default     = 1000
   validation {
     condition     = var.api_throttling_rate_limit >= 1 && var.api_throttling_rate_limit <= 10000
-    error_message = "API throttling rate limit must be between 1 and 10,000 requests per second."
+    error_message = "API throttling rate limit must be between 1 and 10,000 requests per second to balance protection with functionality."
   }
 }
 
 variable "api_throttling_burst_limit" {
-  description = "API Gateway stage-level throttling burst limit"
+  description = "Stage-level burst capacity. Allows short-term traffic spikes above the rate limit using a token bucket algorithm."
   type        = number
   default     = 2000
   validation {
     condition     = var.api_throttling_burst_limit >= 1 && var.api_throttling_burst_limit <= 20000
-    error_message = "API throttling burst limit must be between 1 and 20,000. Note: burst limit should be >= rate limit."
+    error_message = "API throttling burst limit must be between 1 and 20,000. Should be >= rate limit to allow for traffic spikes."
   }
 }
 
-# Public usage plan (no API key required)
+# =============================================================================
+# USAGE PLAN CONFIGURATION (TIERED ACCESS)
+# =============================================================================
+# Three-tier access model: Public (no auth), Registered (API key), Premium (high limits)
+# Each tier has different rate limits, burst capacities, and daily quotas.
+
+# PUBLIC TIER: No authentication required, lowest limits
 variable "public_rate_limit" {
-  description = "Public usage plan rate limit (requests per second)"
+  description = "Public tier sustained rate limit (requests/second). No API key required - protects against basic abuse."
   type        = number
   default     = 10
   validation {
     condition     = var.public_rate_limit >= 1 && var.public_rate_limit <= 100
-    error_message = "Public rate limit must be between 1 and 100 requests per second."
+    error_message = "Public rate limit should be conservative (1-100 req/sec) to prevent abuse while allowing legitimate usage."
   }
 }
 
 variable "public_burst_limit" {
-  description = "Public usage plan burst limit"
+  description = "Public tier burst capacity. Allows brief spikes in anonymous traffic for legitimate users."
   type        = number
   default     = 20
   validation {
     condition     = var.public_burst_limit >= 1 && var.public_burst_limit <= 200
-    error_message = "Public burst limit must be between 1 and 200. Note: burst limit should be >= rate limit (default: 10)."
+    error_message = "Public burst limit should be 1-200. Must be >= rate limit to be effective."
   }
 }
 
 variable "public_quota_limit" {
-  description = "Public usage plan quota limit (requests per day)"
+  description = "Public tier daily quota (requests/day). Prevents sustained abuse over longer time periods."
   type        = number
   default     = 1000
   validation {
     condition     = var.public_quota_limit >= 100 && var.public_quota_limit <= 100000
-    error_message = "Public quota limit must be between 100 and 100,000 requests per day."
+    error_message = "Public quota should balance accessibility with abuse prevention (100-100,000 requests/day)."
   }
 }
 
-# Registered user usage plan (with API key)
+# REGISTERED TIER: API key required, moderate limits
 variable "registered_rate_limit" {
-  description = "Registered user rate limit (requests per second)"
+  description = "Registered tier rate limit (requests/second). Requires API key authentication for higher limits."
   type        = number
   default     = 50
   validation {
     condition     = var.registered_rate_limit >= 10 && var.registered_rate_limit <= 500
-    error_message = "Registered user rate limit must be between 10 and 500 requests per second."
+    error_message = "Registered rate limit should be 10-500 req/sec, providing meaningful upgrade over public tier."
   }
 }
 
 variable "registered_burst_limit" {
-  description = "Registered user burst limit"
+  description = "Registered tier burst capacity. Higher burst allowance for authenticated users with legitimate traffic spikes."
   type        = number
   default     = 100
   validation {
     condition     = var.registered_burst_limit >= 1 && var.registered_burst_limit <= 1000
-    error_message = "Registered user burst limit must be between 1 and 1,000. Note: burst limit should be >= rate limit (default: 50)."
+    error_message = "Registered burst limit should be 1-1,000. Must be >= rate limit for effectiveness."
   }
 }
 
 variable "registered_quota_limit" {
-  description = "Registered user quota limit (requests per day)"
+  description = "Registered tier daily quota (requests/day). Generous limit for regular business use."
   type        = number
   default     = 10000
   validation {
     condition     = var.registered_quota_limit >= 1000 && var.registered_quota_limit <= 1000000
-    error_message = "Registered user quota limit must be between 1,000 and 1,000,000 requests per day."
+    error_message = "Registered quota should be 1,000-1,000,000 requests/day for business usage patterns."
   }
 }
 
-# Premium usage plan (highest limits)
+# PREMIUM TIER: Highest limits for enterprise customers
 variable "premium_rate_limit" {
-  description = "Premium user rate limit (requests per second)"
+  description = "Premium tier rate limit (requests/second). Enterprise-grade limits for high-volume customers."
   type        = number
   default     = 200
   validation {
     condition     = var.premium_rate_limit >= 50 && var.premium_rate_limit <= 1000
-    error_message = "Premium user rate limit must be between 50 and 1,000 requests per second."
+    error_message = "Premium rate limit should be 50-1,000 req/sec for enterprise-level usage."
   }
 }
 
 variable "premium_burst_limit" {
-  description = "Premium user burst limit"
+  description = "Premium tier burst capacity. Maximum burst allowance for enterprise traffic patterns."
   type        = number
   default     = 400
   validation {
     condition     = var.premium_burst_limit >= 1 && var.premium_burst_limit <= 2000
-    error_message = "Premium user burst limit must be between 1 and 2,000. Note: burst limit should be >= rate limit (default: 200)."
+    error_message = "Premium burst limit should be 1-2,000. Must accommodate enterprise traffic spikes."
   }
 }
 
 variable "premium_quota_limit" {
-  description = "Premium user quota limit (requests per day)"
+  description = "Premium tier daily quota (requests/day). Enterprise-scale daily processing limits."
   type        = number
   default     = 100000
   validation {
     condition     = var.premium_quota_limit >= 10000 && var.premium_quota_limit <= 10000000
-    error_message = "Premium user quota limit must be between 10,000 and 10,000,000 requests per day."
+    error_message = "Premium quota should be 10,000-10,000,000 requests/day for enterprise workloads."
   }
 }
 
-# Method-level throttling overrides
+# =============================================================================
+# METHOD-LEVEL THROTTLING (SPECIFIC ENDPOINT OVERRIDES)
+# =============================================================================
+# These settings override usage plan limits for specific API methods.
+# Used to further restrict resource-intensive endpoints like file uploads.
+
 variable "upload_method_rate_limit" {
-  description = "Upload method specific rate limit (requests per second) - 0 to use stage default"
+  description = "Upload endpoint rate limit (req/sec). Lower than general limits due to processing overhead. 0 = use stage default."
   type        = number
   default     = 5
   validation {
     condition     = var.upload_method_rate_limit >= 0 && var.upload_method_rate_limit <= 100
-    error_message = "Upload method rate limit must be between 0 and 100 requests per second."
+    error_message = "Upload method rate limit should be 0-100 req/sec. Lower values protect backend processing capacity."
   }
 }
 
 variable "upload_method_burst_limit" {
-  description = "Upload method specific burst limit - 0 to use stage default"
+  description = "Upload endpoint burst capacity. Limited burst for file upload spikes. 0 = use stage default."
   type        = number
   default     = 10
   validation {
     condition     = var.upload_method_burst_limit >= 0 && var.upload_method_burst_limit <= 200
-    error_message = "Upload method burst limit must be between 0 and 200."
+    error_message = "Upload burst limit should be 0-200. Conservative values prevent overwhelming processing pipeline."
   }
 }
 
 variable "processed_method_rate_limit" {
-  description = "Processed method specific rate limit (requests per second) - 0 to use stage default"
+  description = "Processed files endpoint rate limit (req/sec). Higher limits for read operations. 0 = use stage default."
   type        = number
   default     = 20
   validation {
     condition     = var.processed_method_rate_limit >= 0 && var.processed_method_rate_limit <= 200
-    error_message = "Processed method rate limit must be between 0 and 200 requests per second."
+    error_message = "Processed method rate limit should be 0-200 req/sec. Read operations can handle higher throughput."
   }
 }
 
 variable "processed_method_burst_limit" {
-  description = "Processed method specific burst limit - 0 to use stage default"
+  description = "Processed files endpoint burst capacity. Higher burst for result retrieval. 0 = use stage default."
   type        = number
   default     = 40
   validation {
     condition     = var.processed_method_burst_limit >= 0 && var.processed_method_burst_limit <= 400
-    error_message = "Processed method burst limit must be between 0 and 400."
+    error_message = "Processed burst limit should be 0-400. Read operations can handle traffic spikes better."
   }
 }
 
-# API Key management
+# =============================================================================
+# API KEY MANAGEMENT
+# =============================================================================
+# Controls automatic creation of API keys for testing and development purposes.
+
 variable "create_default_api_keys" {
-  description = "Create default API keys for testing and demo purposes"
+  description = "Auto-create demo API keys for testing registered/premium tiers. Disable in production for security."
   type        = bool
   default     = true
 }
 
 variable "api_key_names" {
-  description = "Names for default API keys to create"
+  description = "Names for default API keys to create. Used for development and demonstration purposes only."
   type        = list(string)
   default     = ["demo-registered-user", "demo-premium-user"]
   validation {
     condition     = length(var.api_key_names) <= 10
-    error_message = "Maximum 10 API keys can be created by default."
+    error_message = "Maximum 10 API keys can be auto-created to prevent key sprawl and security issues."
   }
 }
 
+# =============================================================================
+# LAMBDA LAYER CONFIGURATION
+# =============================================================================
+# Controls cross-account access for Lambda layers (advanced use cases).
+
 variable "allow_cross_account_layer_access" {
-  description = "Allow cross-account access to Lambda layers"
+  description = "Allow other AWS accounts to use Lambda layers from this deployment. Enable for shared service architectures."
   type        = bool
   default     = false
 }
 
-# Admin notification email for DLQ alerts
+# =============================================================================
+# ADMINISTRATIVE CONFIGURATION
+# =============================================================================
+# System administration and alerting configuration.
+
 variable "admin_alert_email" {
-  description = "Email address to receive DLQ and other critical alerts"
+  description = "Email address for critical system alerts (DLQ messages, failures). Should be monitored 24/7 in production."
   type        = string
   default     = "lawrencecaringal5@gmail.com"
   validation {
     condition     = can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.admin_alert_email))
-    error_message = "Must be a valid email address."
+    error_message = "Must be a valid email address for receiving critical system alerts."
   }
 }
 
-# ========================================
-# API GATEWAY CONFIGURATION VARIABLES
-# ========================================
+# =============================================================================
+# API GATEWAY ENDPOINT CONFIGURATION
+# =============================================================================
+# These variables control the API Gateway setup including endpoints, media types,
+# URL structure, and integration patterns used throughout the OCR system.
 
-# API Gateway endpoint configuration
 variable "api_gateway_endpoint_types" {
-  description = "List of endpoint types for API Gateway"
+  description = "API Gateway endpoint types. REGIONAL for lower latency, EDGE for global distribution, PRIVATE for VPC-only access."
   type        = list(string)
   default     = ["REGIONAL"]
   validation {
     condition     = alltrue([for t in var.api_gateway_endpoint_types : contains(["EDGE", "REGIONAL", "PRIVATE"], t)])
-    error_message = "Endpoint types must be EDGE, REGIONAL, or PRIVATE."
+    error_message = "Endpoint types must be EDGE (CloudFront integration), REGIONAL (direct regional access), or PRIVATE (VPC only)."
   }
 }
 
-# Binary media types supported by API Gateway
+# =============================================================================
+# BINARY MEDIA TYPE SUPPORT
+# =============================================================================
+# Defines which content types API Gateway treats as binary data (not text).
+# Essential for file upload functionality.
+
 variable "api_gateway_binary_media_types" {
-  description = "List of binary media types supported by API Gateway"
+  description = "Binary media types for file uploads. API Gateway treats these as binary data rather than attempting text encoding."
   type        = list(string)
   default = [
-    "multipart/form-data",
-    "image/*",
-    "application/pdf",
-    "application/zip",
-    "application/octet-stream"
+    "multipart/form-data",     # Form-based file uploads
+    "image/*",                 # All image formats (JPEG, PNG, etc.)
+    "application/pdf",         # PDF documents
+    "application/zip",         # Archive files
+    "application/octet-stream" # Generic binary data
   ]
 }
 
-# API Gateway path segments
+# =============================================================================
+# API GATEWAY URL STRUCTURE CONFIGURATION  
+# =============================================================================
+# These variables define the URL path structure for all API endpoints.
+# The system uses a hierarchical structure: /processing-type/action/
+# Example URLs:
+# - /long-batch/upload     - Upload file for batch processing
+# - /short-batch/processed - Get processed short batch results  
+# - /invoices/search       - Search processed invoices
+
 variable "api_path_long_batch" {
-  description = "Path segment for long batch endpoints"
+  description = "Path segment for long batch processing endpoints (files >300KB processed via AWS Batch)"
   type        = string
   default     = "long-batch"
 }
 
 variable "api_path_short_batch" {
-  description = "Path segment for short batch endpoints"
+  description = "Path segment for short batch processing endpoints (files ≤300KB processed via Lambda)"
   type        = string
   default     = "short-batch"
 }
 
 variable "api_path_upload" {
-  description = "Path segment for upload endpoints"
+  description = "Path segment for file upload actions. Combined with processing type (e.g., /long-batch/upload)"
   type        = string
   default     = "upload"
 }
 
 variable "api_path_process" {
-  description = "Path segment for process endpoints"
+  description = "Path segment for processing trigger actions (manual processing initiation)"
   type        = string
   default     = "process"
 }
 
 variable "api_path_processed" {
-  description = "Path segment for processed endpoints"
+  description = "Path segment for retrieving processed results (GET operations for completed files)"
   type        = string
   default     = "processed"
 }
 
 variable "api_path_search" {
-  description = "Path segment for search endpoints"
+  description = "Path segment for document search functionality (fuzzy search across OCR content)"
   type        = string
   default     = "search"
 }
 
 variable "api_path_edit" {
-  description = "Path segment for edit endpoints"
+  description = "Path segment for editing processed document content (OCR correction capabilities)"
   type        = string
   default     = "edit"
 }
 
 variable "api_path_delete" {
-  description = "Path segment for delete endpoints"
+  description = "Path segment for file deletion actions (moves files to recycle bin)"
   type        = string
   default     = "delete"
 }
 
 variable "api_path_recycle_bin" {
-  description = "Path segment for recycle bin endpoints"
+  description = "Path segment for recycle bin operations (manage soft-deleted files)"
   type        = string
   default     = "recycle-bin"
 }
 
 variable "api_path_restore" {
-  description = "Path segment for restore endpoints"
+  description = "Path segment for file restoration actions (recover from recycle bin)"
   type        = string
   default     = "restore"
 }
 
 variable "api_path_invoices" {
-  description = "Path segment for invoice endpoints"
+  description = "Path segment for invoice-specific processing endpoints (specialized OCR for invoice data)"
   type        = string
   default     = "invoices"
 }
 
-# API Gateway integration configuration
+# =============================================================================
+# API GATEWAY INTEGRATION CONFIGURATION
+# =============================================================================
+# Controls how API Gateway integrates with backend services (primarily Lambda functions).
+
 variable "api_integration_type" {
-  description = "API Gateway integration type"
+  description = "API Gateway integration type. AWS_PROXY for Lambda proxy integration (recommended for serverless)."
   type        = string
   default     = "AWS_PROXY"
   validation {
     condition     = contains(["AWS", "AWS_PROXY", "HTTP", "HTTP_PROXY", "MOCK"], var.api_integration_type)
-    error_message = "Integration type must be AWS, AWS_PROXY, HTTP, HTTP_PROXY, or MOCK."
+    error_message = "Integration type must be AWS, AWS_PROXY (Lambda proxy), HTTP, HTTP_PROXY, or MOCK."
   }
 }
 
 variable "api_integration_http_method" {
-  description = "HTTP method for API Gateway integrations"
+  description = "HTTP method for API Gateway backend integrations. POST is standard for Lambda invocations."
   type        = string
   default     = "POST"
   validation {
     condition     = contains(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], var.api_integration_http_method)
-    error_message = "HTTP method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS."
+    error_message = "HTTP method must be a valid HTTP verb."
   }
 }
 
-# CORS configuration
+# =============================================================================
+# CORS (Cross-Origin Resource Sharing) CONFIGURATION
+# =============================================================================
+# Enables web browsers to access the API from different domains.
+
 variable "cors_allowed_headers" {
-  description = "CORS allowed headers"
+  description = "CORS allowed headers for browser requests. Includes standard auth and content headers."
   type        = string
   default     = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
 }
 
 variable "cors_allowed_origin" {
-  description = "CORS allowed origin"
+  description = "CORS allowed origin. '*' allows all origins (use specific domains in production for security)."
   type        = string
   default     = "'*'"
 }
 
-# Mock integration response
+# =============================================================================
+# MOCK INTEGRATION RESPONSE
+# =============================================================================
+# Template response for API Gateway mock integrations (used for OPTIONS requests).
+
 variable "mock_response_template" {
-  description = "Mock integration response template"
+  description = "Mock integration response template for CORS OPTIONS requests."
   type        = string
   default     = "{\"statusCode\": 200}"
 }
 
-# ========================================
+# =============================================================================
 # AWS BATCH CONFIGURATION VARIABLES
-# ========================================
+# =============================================================================
+# AWS Batch is used for processing large files (>300KB) that require significant
+# compute resources. These variables configure the compute environment, job queue,
+# job definitions, and container specifications for OCR processing workloads.
+# 
+# Key components:
+# - Compute Environment: Manages the underlying EC2/Fargate infrastructure
+# - Job Queue: Queues jobs for execution on the compute environment  
+# - Job Definition: Defines container image, CPU/memory, and execution parameters
+# - Platform Capabilities: Determines whether to use Fargate or EC2 instances
+#
+# The batch system scales automatically based on job demand and integrates with
+# VPC private subnets for security and cost optimization via VPC endpoints.
 
 # Batch compute environment configuration
 variable "batch_compute_environment_type" {
@@ -1019,9 +1410,23 @@ variable "cloudfront_error_response_page_path" {
   default     = "/404.html"
 }
 
-# ========================================
-# CLOUDWATCH CONFIGURATION VARIABLES
-# ========================================
+# =============================================================================
+# CLOUDWATCH MONITORING & ALERTING CONFIGURATION
+# =============================================================================
+# CloudWatch provides comprehensive monitoring, logging, and alerting for the entire
+# OCR processing pipeline. These variables configure log retention, dashboards,
+# metrics collection, and alarm thresholds for operational visibility.
+#
+# Key monitoring areas:
+# - Lambda function performance and errors
+# - API Gateway request rates and latency  
+# - Batch job success/failure rates
+# - SQS queue depth and message age
+# - DynamoDB read/write capacity utilization
+# - Dead letter queue alerts for failed processing
+#
+# The monitoring system provides proactive alerting to prevent service degradation
+# and enables rapid troubleshooting when issues occur.
 
 # CloudWatch Log Group configuration
 variable "cloudwatch_log_retention_days" {
@@ -1215,9 +1620,22 @@ variable "sns_email_protocol" {
   }
 }
 
-# ========================================
-# DYNAMODB CONFIGURATION VARIABLES
-# ========================================
+# =============================================================================
+# DYNAMODB DATABASE CONFIGURATION
+# =============================================================================
+# DynamoDB serves as the primary database for the OCR system, storing file metadata,
+# processing results, recycle bin records, and budget tracking information.
+# All tables use pay-per-request billing for cost optimization.
+#
+# Table structure:
+# - File Metadata: Stores upload info, file paths, processing status
+# - Processing Results: Contains OCR text, refined content, search metadata  
+# - Recycle Bin: Tracks soft-deleted files with TTL for automatic cleanup
+# - Budget Tracking: Monitors API usage costs and limits per user/key
+#
+# Global Secondary Indexes (GSIs) enable efficient querying by status, bucket,
+# deletion date, and other access patterns. TTL attributes automatically clean
+# up expired records to control storage costs.
 
 # DynamoDB table key configurations
 variable "dynamodb_file_metadata_hash_key" {
@@ -1670,8 +2088,21 @@ variable "iam_wildcard_resource" {
 }
 
 # =============================================================================
-# LAMBDA CONFIGURATION
+# LAMBDA FUNCTIONS CONFIGURATION
 # =============================================================================
+# Lambda functions power the serverless processing pipeline, handling file uploads,
+# OCR processing for small files, API requests, and system maintenance tasks.
+# These variables configure runtimes, timeouts, memory allocation, and logging.
+#
+# Function categories:
+# - API Handlers: Process API Gateway requests (upload, search, edit, delete)
+# - Short Batch Processor: OCR processing for files ≤300KB  
+# - System Functions: Cleanup, monitoring, dead job detection
+# - Integration Functions: SQS-to-Batch submission, status reconciliation
+#
+# Memory and timeout settings are optimized for each function's workload profile,
+# balancing performance with cost efficiency. All functions use environment
+# variables for configuration to support different deployment environments.
 
 variable "lambda_runtime_python39" {
   description = "Python 3.9 runtime for Lambda functions"
