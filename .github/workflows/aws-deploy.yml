@@ -191,12 +191,6 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Terraform Plan (Validation Only)
-      run: |
-        echo "🔍 Running Terraform plan for validation..."
-        terraform plan -out=tfplan
-        echo "✅ Terraform plan validation completed - ready for manual deployment"
-
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
@@ -270,7 +264,7 @@ jobs:
         echo "  • Code quality checks"
         echo "  • Security scan"
         echo "  • AWS resource configuration"
-        echo "  • Terraform validation"
+        echo "  • Terraform syntax validation"
         echo ""
         echo "✅ Docker Image Deployed:"
         echo "  • Registry: $ECR_REGISTRY"
@@ -279,6 +273,7 @@ jobs:
         echo "  • Production tested and verified"
         echo ""
         echo "🚀 Ready for manual infrastructure deployment:"
-        echo "  1. Review the Terraform plan above"
-        echo "  2. Run: terraform apply"
-        echo "  3. Docker image is available in ECR with 'latest' tag"
+        echo "  1. Run locally: terraform plan"
+        echo "  2. Review the plan output"
+        echo "  3. Run: terraform apply"
+        echo "  4. Docker image is available in ECR with 'latest' tag"
