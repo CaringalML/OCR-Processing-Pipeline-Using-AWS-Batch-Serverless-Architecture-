@@ -27,6 +27,49 @@ from datetime import datetime
 from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
 
+def format_duration(duration_seconds):
+    """Format duration in seconds to human-readable format"""
+    if not duration_seconds:
+        return "0s"
+    
+    # Handle case where duration is already a formatted string (e.g., "139.58 seconds")
+    if isinstance(duration_seconds, str):
+        # If it's already formatted, return as-is
+        if 'seconds' in duration_seconds or 'minutes' in duration_seconds or 'hours' in duration_seconds:
+            # Extract numeric part and reformat consistently
+            import re
+            match = re.search(r'(\d+\.?\d*)', duration_seconds)
+            if match:
+                numeric_value = float(match.group(1))
+                if 'seconds' in duration_seconds:
+                    return f"{numeric_value:.1f}s"
+                elif 'minutes' in duration_seconds:
+                    return f"{numeric_value:.1f}m"
+                elif 'hours' in duration_seconds:
+                    return f"{numeric_value:.1f}h"
+            # Fallback: return original string if parsing fails
+            return duration_seconds
+        else:
+            # Try to convert string to float
+            try:
+                duration = float(duration_seconds)
+            except (ValueError, TypeError):
+                return str(duration_seconds)
+    else:
+        duration = float(duration_seconds)
+    
+    if duration < 60:
+        # Less than 1 minute - show in seconds with 1 decimal place
+        return f"{duration:.1f}s"
+    elif duration < 3600:
+        # Less than 1 hour - show in minutes with 1 decimal place
+        minutes = duration / 60
+        return f"{minutes:.1f}m"
+    else:
+        # 1 hour or more - show in hours with 1 decimal place
+        hours = duration / 3600
+        return f"{hours:.1f}h"
+
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -413,7 +456,7 @@ def lambda_handler(event, context):
                     upload_time = datetime.fromisoformat(file_metadata['upload_timestamp'].replace('Z', '+00:00'))
                     processed_time = datetime.fromisoformat(file_metadata['processed_at'].replace('Z', '+00:00'))
                     duration_seconds = (processed_time - upload_time).total_seconds()
-                    processing_duration = f"{duration_seconds:.2f} seconds"
+                    processing_duration = format_duration(duration_seconds)
                 except Exception as e:
                     logger.warning(f"Could not calculate processing duration: {e}")
                     processing_duration = "Unknown"
@@ -555,7 +598,7 @@ def lambda_handler(event, context):
                         upload_time = datetime.fromisoformat(item['upload_timestamp'].replace('Z', '+00:00'))
                         processed_time = datetime.fromisoformat(item['processed_at'].replace('Z', '+00:00'))
                         duration_seconds = (processed_time - upload_time).total_seconds()
-                        processing_duration = f"{duration_seconds:.2f} seconds"
+                        processing_duration = format_duration(duration_seconds)
                     except Exception as e:
                         logger.warning(f"Could not calculate processing duration: {e}")
                         processing_duration = "Unknown"

@@ -88,6 +88,49 @@ def get_anthropic_client():
     
     return _anthropic_client
 
+def format_duration(duration_seconds):
+    """Format duration in seconds to human-readable format"""
+    if not duration_seconds:
+        return "0s"
+    
+    # Handle case where duration is already a formatted string (e.g., "139.58 seconds")
+    if isinstance(duration_seconds, str):
+        # If it's already formatted, return as-is
+        if 'seconds' in duration_seconds or 'minutes' in duration_seconds or 'hours' in duration_seconds:
+            # Extract numeric part and reformat consistently
+            import re
+            match = re.search(r'(\d+\.?\d*)', duration_seconds)
+            if match:
+                numeric_value = float(match.group(1))
+                if 'seconds' in duration_seconds:
+                    return f"{numeric_value:.1f}s"
+                elif 'minutes' in duration_seconds:
+                    return f"{numeric_value:.1f}m"
+                elif 'hours' in duration_seconds:
+                    return f"{numeric_value:.1f}h"
+            # Fallback: return original string if parsing fails
+            return duration_seconds
+        else:
+            # Try to convert string to float
+            try:
+                duration = float(duration_seconds)
+            except (ValueError, TypeError):
+                return str(duration_seconds)
+    else:
+        duration = float(duration_seconds)
+    
+    if duration < 60:
+        # Less than 1 minute - show in seconds with 1 decimal place
+        return f"{duration:.1f}s"
+    elif duration < 3600:
+        # Less than 1 hour - show in minutes with 1 decimal place
+        minutes = duration / 60
+        return f"{minutes:.1f}m"
+    else:
+        # 1 hour or more - show in hours with 1 decimal place
+        hours = duration / 3600
+        return f"{hours:.1f}h"
+
 # Budget tracking - Updated for Claude 4 pricing
 COST_PER_1K_TOKENS = {
     'input': 0.003,  # $3 per million input tokens
@@ -1144,6 +1187,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             'formatted_text': ocr_result['formatted_text'],    # Exact OCR text without \n
             'refined_text': ocr_result['refined_text'],        # Grammar/punctuation improved
             'processing_time': ocr_result['processing_time'],
+            'processing_duration': format_duration(ocr_result['processing_time']),
             'input_tokens': ocr_result['input_tokens'],
             'output_tokens': ocr_result['output_tokens'],
             'cost': ocr_result['cost'],

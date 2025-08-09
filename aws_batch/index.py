@@ -82,6 +82,49 @@ def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
         }
         print(json.dumps(log_entry))
 
+def format_duration(duration_seconds):
+    """Format duration in seconds to human-readable format"""
+    if not duration_seconds:
+        return "0s"
+    
+    # Handle case where duration is already a formatted string (e.g., "139.58 seconds")
+    if isinstance(duration_seconds, str):
+        # If it's already formatted, return as-is
+        if 'seconds' in duration_seconds or 'minutes' in duration_seconds or 'hours' in duration_seconds:
+            # Extract numeric part and reformat consistently
+            import re
+            match = re.search(r'(\d+\.?\d*)', duration_seconds)
+            if match:
+                numeric_value = float(match.group(1))
+                if 'seconds' in duration_seconds:
+                    return f"{numeric_value:.1f}s"
+                elif 'minutes' in duration_seconds:
+                    return f"{numeric_value:.1f}m"
+                elif 'hours' in duration_seconds:
+                    return f"{numeric_value:.1f}h"
+            # Fallback: return original string if parsing fails
+            return duration_seconds
+        else:
+            # Try to convert string to float
+            try:
+                duration = float(duration_seconds)
+            except (ValueError, TypeError):
+                return str(duration_seconds)
+    else:
+        duration = float(duration_seconds)
+    
+    if duration < 60:
+        # Less than 1 minute - show in seconds with 1 decimal place
+        return f"{duration:.1f}s"
+    elif duration < 3600:
+        # Less than 1 hour - show in minutes with 1 decimal place
+        minutes = duration / 60
+        return f"{minutes:.1f}m"
+    else:
+        # 1 hour or more - show in hours with 1 decimal place
+        hours = duration / 3600
+        return f"{hours:.1f}h"
+
 
 # Startup logging (minimal in production)
 if IS_DEV or LOG_LEVEL == 'DEBUG':
@@ -1026,7 +1069,7 @@ def process_s3_file() -> Dict[str, Any]:
             'processed_at': datetime.now(timezone.utc).isoformat(),
             'file_size': file_size,
             'content_type': content_type,
-            'processing_duration': f'{total_processing_time:.2f} seconds',
+            'processing_duration': format_duration(total_processing_time),
             'extracted_text': extracted_data['text'],
             'formatted_text': formatted_text_data.get('formatted', extracted_data['text']),
             'refined_text': refined_text_data.get('refined_text', formatted_text_data.get('formatted', extracted_data['text'])),
@@ -1062,8 +1105,8 @@ def process_s3_file() -> Dict[str, Any]:
                 'processor_version': '2.7.0',  # Updated version with comprehensive dash handling
                 'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown'),
                 'textract_job_id': extracted_data['jobId'],
-                'textract_duration': f'{textract_time:.2f} seconds',
-                'comprehend_duration': f"{comprehend_data.get('processingTime', 0):.2f} seconds" if comprehend_data.get('processingTime') else 'N/A',
+                'textract_duration': format_duration(textract_time),
+                'comprehend_duration': format_duration(comprehend_data.get('processingTime', 0)) if comprehend_data.get('processingTime') else 'N/A',
                 'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE,
                 'text_refinement_enabled': SPACY_AVAILABLE,
                 'natural_flow_enabled': True,
