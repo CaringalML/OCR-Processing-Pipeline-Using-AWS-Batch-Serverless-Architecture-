@@ -14,7 +14,7 @@ resource "aws_api_gateway_rest_api" "main" {
   binary_media_types = var.api_gateway_binary_media_types
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-api"
+    Name    = "${var.project_name}-api"
     Purpose = "Unified file processing API"
   })
 }
@@ -183,8 +183,8 @@ resource "aws_api_gateway_integration" "upload_post" {
   http_method = aws_api_gateway_method.upload_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.uploader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
 # Lambda Permission for Upload
@@ -211,8 +211,8 @@ resource "aws_api_gateway_integration" "processed_get" {
   http_method = aws_api_gateway_method.processed_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.reader.invoke_arn
 }
 
 # Lambda Permission for Processed
@@ -239,8 +239,8 @@ resource "aws_api_gateway_integration" "search_get" {
   http_method = aws_api_gateway_method.search_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.search.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.search.invoke_arn
 }
 
 # Lambda Permission for Search
@@ -267,8 +267,8 @@ resource "aws_api_gateway_integration" "edit_post" {
   http_method = aws_api_gateway_method.edit_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.editor.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.editor.invoke_arn
 }
 
 # Lambda Permission for Edit
@@ -295,8 +295,8 @@ resource "aws_api_gateway_integration" "delete_post" {
   http_method = aws_api_gateway_method.delete_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.deleter.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.deleter.invoke_arn
 }
 
 # Lambda Permission for Delete
@@ -323,8 +323,8 @@ resource "aws_api_gateway_integration" "recycle_bin_get" {
   http_method = aws_api_gateway_method.recycle_bin_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
 # Lambda Permission for Recycle Bin
@@ -351,8 +351,8 @@ resource "aws_api_gateway_integration" "restore_post" {
   http_method = aws_api_gateway_method.restore_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.restorer.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.restorer.invoke_arn
 }
 
 # Lambda Permission for Restore
@@ -496,8 +496,8 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
   http_method = aws_api_gateway_method.long_batch_upload_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.uploader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
 # Long Batch Process POST Method
@@ -515,8 +515,8 @@ resource "aws_api_gateway_integration" "long_batch_process_post" {
   http_method = aws_api_gateway_method.long_batch_process_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.sqs_batch_processor.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.sqs_batch_processor.invoke_arn
 }
 
 # Long Batch Processed GET Method
@@ -534,8 +534,8 @@ resource "aws_api_gateway_integration" "long_batch_processed_get" {
   http_method = aws_api_gateway_method.long_batch_processed_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.reader.invoke_arn
 }
 
 # Long Batch Search GET Method
@@ -553,8 +553,8 @@ resource "aws_api_gateway_integration" "long_batch_search_get" {
   http_method = aws_api_gateway_method.long_batch_search_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.search.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.search.invoke_arn
 }
 
 # Long Batch Edit PUT Method
@@ -572,8 +572,8 @@ resource "aws_api_gateway_integration" "long_batch_edit_put" {
   http_method = aws_api_gateway_method.long_batch_edit_put.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.editor.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.editor.invoke_arn
 }
 
 # Long Batch Delete Method
@@ -591,8 +591,8 @@ resource "aws_api_gateway_integration" "long_batch_delete_delete" {
   http_method = aws_api_gateway_method.long_batch_delete_delete.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.deleter.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.deleter.invoke_arn
 }
 
 # Long Batch Recycle Bin GET Method
@@ -610,8 +610,8 @@ resource "aws_api_gateway_integration" "long_batch_recycle_bin_get" {
   http_method = aws_api_gateway_method.long_batch_recycle_bin_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
 # Long Batch Restore POST Method
@@ -629,8 +629,8 @@ resource "aws_api_gateway_integration" "long_batch_restore_post" {
   http_method = aws_api_gateway_method.long_batch_restore_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.restorer.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.restorer.invoke_arn
 }
 
 # ========================================
@@ -652,8 +652,8 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
   http_method = aws_api_gateway_method.short_batch_upload_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.uploader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
 # Short Batch Process POST Method
@@ -671,8 +671,8 @@ resource "aws_api_gateway_integration" "short_batch_process_post" {
   http_method = aws_api_gateway_method.short_batch_process_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.short_batch_submitter.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.short_batch_submitter.invoke_arn
 }
 
 # Short Batch Processed GET Method
@@ -690,8 +690,8 @@ resource "aws_api_gateway_integration" "short_batch_processed_get" {
   http_method = aws_api_gateway_method.short_batch_processed_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.reader.invoke_arn
 }
 
 # Short Batch Search GET Method
@@ -709,8 +709,8 @@ resource "aws_api_gateway_integration" "short_batch_search_get" {
   http_method = aws_api_gateway_method.short_batch_search_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.search.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.search.invoke_arn
 }
 
 # Short Batch Edit PUT Method
@@ -728,8 +728,8 @@ resource "aws_api_gateway_integration" "short_batch_edit_put" {
   http_method = aws_api_gateway_method.short_batch_edit_put.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.editor.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.editor.invoke_arn
 }
 
 # Short Batch Delete Method
@@ -747,8 +747,8 @@ resource "aws_api_gateway_integration" "short_batch_delete_delete" {
   http_method = aws_api_gateway_method.short_batch_delete_delete.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.deleter.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.deleter.invoke_arn
 }
 
 # Short Batch Recycle Bin GET Method
@@ -766,8 +766,8 @@ resource "aws_api_gateway_integration" "short_batch_recycle_bin_get" {
   http_method = aws_api_gateway_method.short_batch_recycle_bin_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.recycle_bin_reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
 # Short Batch Restore POST Method
@@ -785,8 +785,8 @@ resource "aws_api_gateway_integration" "short_batch_restore_post" {
   http_method = aws_api_gateway_method.short_batch_restore_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.restorer.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.restorer.invoke_arn
 }
 
 # ========================================
@@ -808,8 +808,8 @@ resource "aws_api_gateway_integration" "invoice_upload_post" {
   http_method = aws_api_gateway_method.invoice_upload_post.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.invoice_uploader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.invoice_uploader.invoke_arn
 }
 
 # Invoice Upload OPTIONS Method (for CORS)
@@ -827,7 +827,7 @@ resource "aws_api_gateway_integration" "invoice_upload_options" {
   http_method = aws_api_gateway_method.invoice_upload_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = var.mock_response_template
   }
@@ -876,8 +876,8 @@ resource "aws_api_gateway_integration" "invoice_processed_get" {
   http_method = aws_api_gateway_method.invoice_processed_get.http_method
 
   integration_http_method = var.api_integration_http_method
-  type                   = var.api_integration_type
-  uri                    = aws_lambda_function.invoice_reader.invoke_arn
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.invoice_reader.invoke_arn
 }
 
 # Invoice Processed OPTIONS Method (for CORS)
@@ -895,7 +895,7 @@ resource "aws_api_gateway_integration" "invoice_processed_options" {
   http_method = aws_api_gateway_method.invoice_processed_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = var.mock_response_template
   }

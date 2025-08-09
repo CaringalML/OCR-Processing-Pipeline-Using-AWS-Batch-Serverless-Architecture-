@@ -28,18 +28,18 @@ resource "aws_sqs_queue" "batch_queue" {
   name                       = "${var.project_name}-${var.environment}-batch-queue"
   delay_seconds              = var.sqs_delay_seconds
   max_message_size           = var.sqs_max_message_size
-  message_retention_seconds  = var.sqs_message_retention_long # 14 days
-  receive_wait_time_seconds  = var.sqs_receive_wait_time_long_polling      # Long polling enabled for efficiency
-  visibility_timeout_seconds = var.sqs_visibility_timeout_batch     # 16 minutes (AWS Batch timeout + buffer)
+  message_retention_seconds  = var.sqs_message_retention_long         # 14 days
+  receive_wait_time_seconds  = var.sqs_receive_wait_time_long_polling # Long polling enabled for efficiency
+  visibility_timeout_seconds = var.sqs_visibility_timeout_batch       # 16 minutes (AWS Batch timeout + buffer)
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.batch_dlq.arn
-    maxReceiveCount     = var.sqs_max_receive_count_standard  # Only 2 retries before DLQ
+    maxReceiveCount     = var.sqs_max_receive_count_standard # Only 2 retries before DLQ
   })
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-batch-queue"
-    Type = "Long-Batch Processing"
+    Name         = "${var.project_name}-${var.environment}-batch-queue"
+    Type         = "Long-Batch Processing"
     Architecture = "Direct-SQS-Trigger"
   })
 }
@@ -104,7 +104,7 @@ resource "aws_sqs_queue" "short_batch_dlq" {
   visibility_timeout_seconds = var.sqs_visibility_timeout_standard
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-short-batch-dlq"
+    Name    = "${var.project_name}-${var.environment}-short-batch-dlq"
     Purpose = "Dead letter queue for failed short batch processing"
   })
 }
@@ -114,17 +114,17 @@ resource "aws_sqs_queue" "short_batch_queue" {
   name                       = "${var.project_name}-${var.environment}-short-batch-queue"
   delay_seconds              = var.sqs_delay_seconds
   max_message_size           = var.sqs_max_message_size
-  message_retention_seconds  = var.sqs_message_retention_short  # 1 day (shorter than long batch)
-  receive_wait_time_seconds  = var.sqs_receive_wait_time_short_polling      # Short polling for immediate processing
-  visibility_timeout_seconds = var.sqs_visibility_timeout_short_batch   # 20 minutes (higher for reliability)
+  message_retention_seconds  = var.sqs_message_retention_short         # 1 day (shorter than long batch)
+  receive_wait_time_seconds  = var.sqs_receive_wait_time_short_polling # Short polling for immediate processing
+  visibility_timeout_seconds = var.sqs_visibility_timeout_short_batch  # 20 minutes (higher for reliability)
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.short_batch_dlq.arn
-    maxReceiveCount     = var.sqs_max_receive_count_high  # Try 3 times before sending to DLQ
+    maxReceiveCount     = var.sqs_max_receive_count_high # Try 3 times before sending to DLQ
   })
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-short-batch-queue"
+    Name    = "${var.project_name}-${var.environment}-short-batch-queue"
     Purpose = "Queue for short batch Lambda processing with short polling for speed"
   })
 }
@@ -315,7 +315,7 @@ resource "aws_sqs_queue" "invoice_dlq" {
   visibility_timeout_seconds = var.sqs_visibility_timeout_standard
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-invoice-dlq"
+    Name    = "${var.project_name}-${var.environment}-invoice-dlq"
     Purpose = "Dead letter queue for failed invoice processing"
   })
 }
@@ -325,17 +325,17 @@ resource "aws_sqs_queue" "invoice_queue" {
   name                       = "${var.project_name}-${var.environment}-invoice-queue"
   delay_seconds              = var.sqs_delay_seconds
   max_message_size           = var.sqs_max_message_size
-  message_retention_seconds  = 86400  # 1 day
-  receive_wait_time_seconds  = var.sqs_receive_wait_time_short_polling      # Short polling for immediate processing
-  visibility_timeout_seconds = var.sqs_visibility_timeout_invoice   # 30 minutes for invoice processing
+  message_retention_seconds  = 86400                                   # 1 day
+  receive_wait_time_seconds  = var.sqs_receive_wait_time_short_polling # Short polling for immediate processing
+  visibility_timeout_seconds = var.sqs_visibility_timeout_invoice      # 30 minutes for invoice processing
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.invoice_dlq.arn
-    maxReceiveCount     = var.sqs_max_receive_count_high  # Try 3 times before sending to DLQ
+    maxReceiveCount     = var.sqs_max_receive_count_high # Try 3 times before sending to DLQ
   })
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-invoice-queue"
+    Name    = "${var.project_name}-${var.environment}-invoice-queue"
     Purpose = "Queue for specialized invoice OCR processing with Claude AI"
   })
 }

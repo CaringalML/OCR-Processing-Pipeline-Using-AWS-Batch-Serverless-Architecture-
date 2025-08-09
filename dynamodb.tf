@@ -151,7 +151,7 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "ocr-budget-tracking"
+    Name    = "ocr-budget-tracking"
     Purpose = "Track Claude API usage costs for OCR processing"
   })
 }

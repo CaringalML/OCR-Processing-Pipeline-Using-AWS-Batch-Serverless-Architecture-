@@ -14,7 +14,7 @@ resource "aws_cloudwatch_event_rule" "batch_job_state_change_rule" {
     source      = var.eventbridge_batch_event_source
     detail-type = var.eventbridge_batch_detail_type
     detail = {
-      jobQueue = [aws_batch_job_queue.main.arn]
+      jobQueue  = [aws_batch_job_queue.main.arn]
       jobStatus = var.eventbridge_batch_job_status
     }
   })

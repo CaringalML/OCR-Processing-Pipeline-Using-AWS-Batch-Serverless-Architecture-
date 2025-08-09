@@ -1,6 +1,42 @@
+# Core AWS dependencies (EXISTING - DO NOT MODIFY)
 boto3>=1.34.0
 botocore>=1.34.0
 requests>=2.31.0
 regex>=2022.10.31
-spacy>=3.7.0,<3.8.0
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
+# === ENHANCEMENT PHASE 1: ESSENTIAL FOUNDATION ===
+# OCR cleanup and performance optimization
+ftfy==6.1.1                    # Fix OCR encoding issues
+anyascii==0.3.2               # ASCII transliteration (MIT license)
+polars==0.20.2                # High-performance text processing
+rapidfuzz==3.6.1              # Fast fuzzy string matching
+orjson==3.9.10                # Fast JSON serialization
+
+# === PHASE 2: ADVANCED TEXT PROCESSING ===
+# Professional grammar and spell checking
+language-tool-python==2.7.1   # Advanced grammar correction
+pyenchant==3.2.2              # Native spell checking
+jellyfish==1.0.3              # String similarity algorithms
+
+# === PHASE 3: EMAIL/URL PROCESSING ===
+# Robust email and URL handling
+email-validator==2.1.0        # Email validation and normalization
+furl==2.1.3                   # Advanced URL parsing
+validators==0.22.0            # Universal validation library
+tldextract==5.1.1            # Domain component extraction
+urlextract==1.8.0             # URL extraction from text
+
+# === PHASE 4: SPECIALIZED UTILITIES ===
+# Text normalization and date processing
+word2number==1.1              # Convert written numbers to digits
+python-dateutil==2.8.2       # Intelligent date parsing
+
+# === PHASE 5: AI ENHANCEMENT (OPTIONAL) ===
+# Advanced AI models for text correction
+transformers==4.36.2          # State-of-the-art text models
+torch==2.1.2                 # AI model backend
+sentence-transformers==2.2.2  # Semantic text analysis
+
+# === PHASE 6: NLP RESTORATION (OPTIONAL) ===
+# Advanced linguistic processing
+spacy==3.7.2                  # Industrial NLP engine

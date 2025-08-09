@@ -3,8 +3,8 @@ resource "aws_cloudwatch_log_group" "aws_batch_ocr_logs" {
   name              = "/aws/batch/${var.project_name}-${var.environment}-long-batch-processor"
   retention_in_days = var.cloudwatch_log_retention_days
   skip_destroy      = var.cloudwatch_skip_destroy
-  tags              = merge(var.common_tags, {
-    Purpose = "AWS Batch OCR processing container logs"
+  tags = merge(var.common_tags, {
+    Purpose  = "AWS Batch OCR processing container logs"
     Function = "aws_batch_ocr"
   })
 }
@@ -14,8 +14,8 @@ resource "aws_cloudwatch_log_group" "api_gateway_access_logs" {
   name              = "/aws/apigateway/${var.project_name}-${var.environment}-api-access"
   retention_in_days = var.cloudwatch_log_retention_days
   skip_destroy      = var.cloudwatch_skip_destroy
-  tags              = merge(var.common_tags, {
-    Purpose = "API Gateway access and error logging"
+  tags = merge(var.common_tags, {
+    Purpose  = "API Gateway access and error logging"
     Function = "api_gateway"
   })
 }
@@ -136,7 +136,7 @@ resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
 resource "aws_sns_topic" "security_alerts" {
   name = "${var.project_name}-${var.environment}-security-alerts"
   tags = merge(var.common_tags, {
-    Purpose = "Security and rate limiting notifications"
+    Purpose   = "Security and rate limiting notifications"
     AlertType = "Security"
   })
 }
@@ -188,7 +188,7 @@ resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
   namespace           = "AWS/ApiGateway"
   period              = var.cloudwatch_alarm_period_default
   statistic           = var.cloudwatch_metric_stat_average
-  threshold           = var.cloudwatch_alarm_latency_threshold  # 5 seconds
+  threshold           = var.cloudwatch_alarm_latency_threshold # 5 seconds
   alarm_description   = "This metric monitors API Gateway latency"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -215,7 +215,7 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   namespace           = "AWS/ApiGateway"
   period              = var.cloudwatch_alarm_period_default
   statistic           = var.cloudwatch_metric_stat_sum
-  threshold           = var.api_throttling_rate_limit * 300 * 0.8  # 80% of max capacity
+  threshold           = var.api_throttling_rate_limit * 300 * 0.8 # 80% of max capacity
   alarm_description   = "This metric monitors unusual request spikes that may indicate abuse"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -240,9 +240,9 @@ resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
   evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_single
   metric_name         = "4XXError"
   namespace           = "AWS/ApiGateway"
-  period              = var.cloudwatch_alarm_period_short  # 1 minute window
+  period              = var.cloudwatch_alarm_period_short # 1 minute window
   statistic           = var.cloudwatch_metric_stat_sum
-  threshold           = var.cloudwatch_alarm_rate_limit_threshold  # More than 50 rate limit errors in 1 minute
+  threshold           = var.cloudwatch_alarm_rate_limit_threshold # More than 50 rate limit errors in 1 minute
   alarm_description   = "Detects rapid rate limiting violations indicating potential abuse"
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   ok_actions          = [aws_sns_topic.security_alerts.arn]
@@ -253,8 +253,8 @@ resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
   }
 
   tags = merge(var.common_tags, {
-    AlarmType = "Security"
-    Severity  = "High"
+    AlarmType   = "Security"
+    Severity    = "High"
     ThreatLevel = "Suspicious"
   })
 }
@@ -391,11 +391,11 @@ resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
           metrics = [
             ["AWS/ApiGateway", "4XXError", "ApiName", aws_api_gateway_rest_api.main.name, "Stage", aws_api_gateway_stage.main.stage_name]
           ]
-          view    = var.cloudwatch_dashboard_view_single_value
-          region  = var.aws_region
-          title   = "Rate Limiting Events (4XX Errors)"
-          period  = 300
-          stat    = "Sum"
+          view   = var.cloudwatch_dashboard_view_single_value
+          region = var.aws_region
+          title  = "Rate Limiting Events (4XX Errors)"
+          period = 300
+          stat   = "Sum"
         }
       }
     ]

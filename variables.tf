@@ -235,8 +235,8 @@ variable "common_tags" {
   description = "Standard tags applied to all AWS resources. Essential for cost tracking, compliance, and resource management."
   type        = map(string)
   default = {
-    Project     = "ocr-processor"        # Groups all related resources
-    Environment = "batch"                # Distinguishes dev/staging/prod
+    Project     = "ocr-processor"       # Groups all related resources
+    Environment = "batch"               # Distinguishes dev/staging/prod
     ManagedBy   = "terraform"           # Indicates infrastructure as code
     Purpose     = "document-processing" # Business function identifier
     Owner       = "your-team"           # Responsible team/person
@@ -892,7 +892,7 @@ variable "batch_retry_attempts" {
 variable "cleanup_lambda_runtime" {
   description = "Runtime for cleanup Lambda function"
   type        = string
-  default     = "python3.9"
+  default     = "python3.12"
   validation {
     condition     = contains(["python3.8", "python3.9", "python3.10", "python3.11", "python3.12"], var.cleanup_lambda_runtime)
     error_message = "Lambda runtime must be a supported Python version."
@@ -1884,16 +1884,14 @@ variable "iam_wildcard_resource" {
 # balancing performance with cost efficiency. All functions use environment
 # variables for configuration to support different deployment environments.
 
-variable "lambda_runtime_python39" {
-  description = "Python 3.9 runtime for Lambda functions"
-  type        = string
-  default     = "python3.9"
-}
-
-variable "lambda_runtime_python312" {
-  description = "Python 3.12 runtime for Lambda functions"
+variable "lambda_runtime" {
+  description = "Python runtime for Lambda functions"
   type        = string
   default     = "python3.12"
+  validation {
+    condition     = contains(["python3.10", "python3.11", "python3.12"], var.lambda_runtime)
+    error_message = "Lambda runtime must be a supported Python version (3.10, 3.11, or 3.12)."
+  }
 }
 
 variable "lambda_timeout_standard" {
@@ -2463,9 +2461,9 @@ variable "vpc_iam_resource_wildcard" {
 variable "vpc_s3_actions" {
   description = "S3 actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "s3:GetObject",
-    "s3:PutObject", 
+    "s3:PutObject",
     "s3:ListBucket",
     "s3:HeadObject"
   ]
@@ -2474,7 +2472,7 @@ variable "vpc_s3_actions" {
 variable "vpc_dynamodb_actions" {
   description = "DynamoDB actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "dynamodb:Query",
     "dynamodb:UpdateItem",
     "dynamodb:PutItem",
@@ -2486,7 +2484,7 @@ variable "vpc_dynamodb_actions" {
 variable "vpc_ecr_actions" {
   description = "ECR actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "ecr:GetAuthorizationToken",
     "ecr:BatchCheckLayerAvailability",
     "ecr:GetDownloadUrlForLayer",
@@ -2497,7 +2495,7 @@ variable "vpc_ecr_actions" {
 variable "vpc_ecr_api_actions" {
   description = "ECR API actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "ecr:GetAuthorizationToken",
     "ecr:DescribeRepositories",
     "ecr:DescribeImages",
@@ -2510,7 +2508,7 @@ variable "vpc_ecr_api_actions" {
 variable "vpc_logs_actions" {
   description = "CloudWatch Logs actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
@@ -2522,7 +2520,7 @@ variable "vpc_logs_actions" {
 variable "vpc_ecs_actions" {
   description = "ECS actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "ecs:CreateCluster",
     "ecs:DescribeClusters",
     "ecs:RegisterTaskDefinition",
@@ -2536,7 +2534,7 @@ variable "vpc_ecs_actions" {
 variable "vpc_textract_actions" {
   description = "Textract actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "textract:StartDocumentAnalysis",
     "textract:GetDocumentAnalysis",
     "textract:StartDocumentTextDetection",
@@ -2547,7 +2545,7 @@ variable "vpc_textract_actions" {
 variable "vpc_comprehend_actions" {
   description = "Comprehend actions for VPC endpoint policies"
   type        = list(string)
-  default     = [
+  default = [
     "comprehend:DetectDominantLanguage",
     "comprehend:DetectEntities",
     "comprehend:DetectKeyPhrases",

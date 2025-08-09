@@ -54,7 +54,7 @@ resource "aws_s3_bucket_public_access_block" "upload_bucket_pab" {
 # S3 Bucket CORS Configuration for uploads
 resource "aws_s3_bucket_cors_configuration" "upload_bucket_cors" {
   bucket = aws_s3_bucket.upload_bucket.id
-  
+
   depends_on = [
     aws_s3_bucket_public_access_block.upload_bucket_pab,
     aws_s3_bucket_server_side_encryption_configuration.upload_bucket_encryption
@@ -78,7 +78,7 @@ resource "aws_s3_bucket_cors_configuration" "upload_bucket_cors" {
 # S3 Bucket Lifecycle Rule
 resource "aws_s3_bucket_lifecycle_configuration" "upload_bucket_lifecycle" {
   bucket = aws_s3_bucket.upload_bucket.id
-  
+
   depends_on = [
     aws_s3_bucket_public_access_block.upload_bucket_pab,
     aws_s3_bucket_server_side_encryption_configuration.upload_bucket_encryption

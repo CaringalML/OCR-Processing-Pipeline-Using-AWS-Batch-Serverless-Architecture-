@@ -149,7 +149,7 @@ resource "aws_vpc_endpoint" "s3" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_s3_actions
+        Action    = var.vpc_s3_actions
         Resource = [
           "arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket/*",
           "arn:aws:s3:::prod-${var.aws_region}-starport-layer-bucket",
@@ -178,8 +178,8 @@ resource "aws_vpc_endpoint" "dynamodb" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_dynamodb_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_dynamodb_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -204,8 +204,8 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_ecr_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_ecr_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -230,8 +230,8 @@ resource "aws_vpc_endpoint" "ecr_api" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_ecr_api_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_ecr_api_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -256,8 +256,8 @@ resource "aws_vpc_endpoint" "logs" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_logs_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_logs_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -282,8 +282,8 @@ resource "aws_vpc_endpoint" "ecs" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_ecs_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_ecs_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -336,8 +336,8 @@ resource "aws_vpc_endpoint" "textract" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_textract_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_textract_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })
@@ -362,8 +362,8 @@ resource "aws_vpc_endpoint" "comprehend" {
       {
         Effect    = var.iam_effect_allow
         Principal = var.vpc_iam_principal_wildcard
-        Action = var.vpc_comprehend_actions
-        Resource = var.vpc_iam_resource_wildcard
+        Action    = var.vpc_comprehend_actions
+        Resource  = var.vpc_iam_resource_wildcard
       }
     ]
   })

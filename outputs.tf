@@ -3,18 +3,18 @@ output "api_gateway" {
   description = "Unified API Gateway with environment stages"
   value = {
     base_url = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}"
-    
+
     # Unified/General Endpoints (combines both batch types)
     unified_endpoints = {
-      smart_upload    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
-      all_processed   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
-      search_all      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
-      edit            = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/edit"
-      delete          = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/delete/{fileId}"
-      recycle_bin     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
-      restore         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/restore/{fileId}"
+      smart_upload  = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
+      all_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
+      search_all    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
+      edit          = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/edit"
+      delete        = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/delete/{fileId}"
+      recycle_bin   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
+      restore       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/restore/{fileId}"
     }
-    
+
     long_batch_endpoints = {
       upload      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload"
       process     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process"
@@ -25,7 +25,7 @@ output "api_gateway" {
       recycle_bin = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/recycle-bin"
       restore     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/restore/{fileId}"
     }
-    
+
     short_batch_endpoints = {
       upload      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload"
       process     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/process"
@@ -35,7 +35,7 @@ output "api_gateway" {
       delete      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/delete/{fileId}"
       recycle_bin = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/recycle-bin"
       restore     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/restore/{fileId}"
-      
+
       # Invoice Processing Endpoints
       invoice_upload    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload"
       invoice_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed"
@@ -47,12 +47,12 @@ output "api_gateway" {
 output "storage" {
   description = "Storage resources information"
   value = {
-    upload_bucket_name     = aws_s3_bucket.upload_bucket.id
-    upload_bucket_arn      = aws_s3_bucket.upload_bucket.arn
-    cloudfront_domain      = aws_cloudfront_distribution.s3_distribution.domain_name
-    cloudfront_url         = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
-    cloudfront_id          = aws_cloudfront_distribution.s3_distribution.id
-    cloudfront_status      = aws_cloudfront_distribution.s3_distribution.status
+    upload_bucket_name = aws_s3_bucket.upload_bucket.id
+    upload_bucket_arn  = aws_s3_bucket.upload_bucket.arn
+    cloudfront_domain  = aws_cloudfront_distribution.s3_distribution.domain_name
+    cloudfront_url     = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
+    cloudfront_id      = aws_cloudfront_distribution.s3_distribution.id
+    cloudfront_status  = aws_cloudfront_distribution.s3_distribution.status
   }
 }
 
@@ -72,87 +72,87 @@ output "lambda_functions" {
   description = "All Lambda function information"
   value = {
     uploader = {
-      name         = aws_lambda_function.uploader.function_name
-      arn          = aws_lambda_function.uploader.arn
-      invoke_arn   = aws_lambda_function.uploader.invoke_arn
-      memory_size  = aws_lambda_function.uploader.memory_size
-      timeout      = aws_lambda_function.uploader.timeout
+      name        = aws_lambda_function.uploader.function_name
+      arn         = aws_lambda_function.uploader.arn
+      invoke_arn  = aws_lambda_function.uploader.invoke_arn
+      memory_size = aws_lambda_function.uploader.memory_size
+      timeout     = aws_lambda_function.uploader.timeout
     }
     reader = {
-      name         = aws_lambda_function.reader.function_name
-      arn          = aws_lambda_function.reader.arn
-      invoke_arn   = aws_lambda_function.reader.invoke_arn
-      memory_size  = aws_lambda_function.reader.memory_size
-      timeout      = aws_lambda_function.reader.timeout
+      name        = aws_lambda_function.reader.function_name
+      arn         = aws_lambda_function.reader.arn
+      invoke_arn  = aws_lambda_function.reader.invoke_arn
+      memory_size = aws_lambda_function.reader.memory_size
+      timeout     = aws_lambda_function.reader.timeout
     }
     search = {
-      name         = aws_lambda_function.search.function_name
-      arn          = aws_lambda_function.search.arn
-      invoke_arn   = aws_lambda_function.search.invoke_arn
-      memory_size  = aws_lambda_function.search.memory_size
-      timeout      = aws_lambda_function.search.timeout
+      name        = aws_lambda_function.search.function_name
+      arn         = aws_lambda_function.search.arn
+      invoke_arn  = aws_lambda_function.search.invoke_arn
+      memory_size = aws_lambda_function.search.memory_size
+      timeout     = aws_lambda_function.search.timeout
     }
     editor = {
-      name         = aws_lambda_function.editor.function_name
-      arn          = aws_lambda_function.editor.arn
-      invoke_arn   = aws_lambda_function.editor.invoke_arn
-      memory_size  = aws_lambda_function.editor.memory_size
-      timeout      = aws_lambda_function.editor.timeout
+      name        = aws_lambda_function.editor.function_name
+      arn         = aws_lambda_function.editor.arn
+      invoke_arn  = aws_lambda_function.editor.invoke_arn
+      memory_size = aws_lambda_function.editor.memory_size
+      timeout     = aws_lambda_function.editor.timeout
     }
     short_batch_processor = {
-      name         = aws_lambda_function.short_batch_processor.function_name
-      arn          = aws_lambda_function.short_batch_processor.arn
-      invoke_arn   = aws_lambda_function.short_batch_processor.invoke_arn
-      memory_size  = aws_lambda_function.short_batch_processor.memory_size
-      timeout      = aws_lambda_function.short_batch_processor.timeout
+      name        = aws_lambda_function.short_batch_processor.function_name
+      arn         = aws_lambda_function.short_batch_processor.arn
+      invoke_arn  = aws_lambda_function.short_batch_processor.invoke_arn
+      memory_size = aws_lambda_function.short_batch_processor.memory_size
+      timeout     = aws_lambda_function.short_batch_processor.timeout
     }
     sqs_processor = {
-      name         = aws_lambda_function.sqs_batch_processor.function_name
-      arn          = aws_lambda_function.sqs_batch_processor.arn
-      invoke_arn   = aws_lambda_function.sqs_batch_processor.invoke_arn
-      memory_size  = aws_lambda_function.sqs_batch_processor.memory_size
-      timeout      = aws_lambda_function.sqs_batch_processor.timeout
+      name        = aws_lambda_function.sqs_batch_processor.function_name
+      arn         = aws_lambda_function.sqs_batch_processor.arn
+      invoke_arn  = aws_lambda_function.sqs_batch_processor.invoke_arn
+      memory_size = aws_lambda_function.sqs_batch_processor.memory_size
+      timeout     = aws_lambda_function.sqs_batch_processor.timeout
     }
     batch_reconciliation = {
-      name         = aws_lambda_function.batch_status_reconciliation.function_name
-      arn          = aws_lambda_function.batch_status_reconciliation.arn
-      memory_size  = aws_lambda_function.batch_status_reconciliation.memory_size
-      timeout      = aws_lambda_function.batch_status_reconciliation.timeout
+      name        = aws_lambda_function.batch_status_reconciliation.function_name
+      arn         = aws_lambda_function.batch_status_reconciliation.arn
+      memory_size = aws_lambda_function.batch_status_reconciliation.memory_size
+      timeout     = aws_lambda_function.batch_status_reconciliation.timeout
     }
     dead_job_detector = {
-      name         = aws_lambda_function.dead_job_detector.function_name
-      arn          = aws_lambda_function.dead_job_detector.arn
-      memory_size  = aws_lambda_function.dead_job_detector.memory_size
-      timeout      = aws_lambda_function.dead_job_detector.timeout
+      name        = aws_lambda_function.dead_job_detector.function_name
+      arn         = aws_lambda_function.dead_job_detector.arn
+      memory_size = aws_lambda_function.dead_job_detector.memory_size
+      timeout     = aws_lambda_function.dead_job_detector.timeout
     }
     deleter = {
-      name         = aws_lambda_function.deleter.function_name
-      arn          = aws_lambda_function.deleter.arn
-      invoke_arn   = aws_lambda_function.deleter.invoke_arn
-      memory_size  = aws_lambda_function.deleter.memory_size
-      timeout      = aws_lambda_function.deleter.timeout
+      name        = aws_lambda_function.deleter.function_name
+      arn         = aws_lambda_function.deleter.arn
+      invoke_arn  = aws_lambda_function.deleter.invoke_arn
+      memory_size = aws_lambda_function.deleter.memory_size
+      timeout     = aws_lambda_function.deleter.timeout
     }
     restorer = {
-      name         = aws_lambda_function.restorer.function_name
-      arn          = aws_lambda_function.restorer.arn
-      invoke_arn   = aws_lambda_function.restorer.invoke_arn
-      memory_size  = aws_lambda_function.restorer.memory_size
-      timeout      = aws_lambda_function.restorer.timeout
+      name        = aws_lambda_function.restorer.function_name
+      arn         = aws_lambda_function.restorer.arn
+      invoke_arn  = aws_lambda_function.restorer.invoke_arn
+      memory_size = aws_lambda_function.restorer.memory_size
+      timeout     = aws_lambda_function.restorer.timeout
     }
     recycle_bin_reader = {
-      name         = aws_lambda_function.recycle_bin_reader.function_name
-      arn          = aws_lambda_function.recycle_bin_reader.arn
-      invoke_arn   = aws_lambda_function.recycle_bin_reader.invoke_arn
-      memory_size  = aws_lambda_function.recycle_bin_reader.memory_size
-      timeout      = aws_lambda_function.recycle_bin_reader.timeout
+      name        = aws_lambda_function.recycle_bin_reader.function_name
+      arn         = aws_lambda_function.recycle_bin_reader.arn
+      invoke_arn  = aws_lambda_function.recycle_bin_reader.invoke_arn
+      memory_size = aws_lambda_function.recycle_bin_reader.memory_size
+      timeout     = aws_lambda_function.recycle_bin_reader.timeout
     }
-# long_batch_uploader and short_batch_uploader removed - functionality consolidated into s3_uploader
+    # long_batch_uploader and short_batch_uploader removed - functionality consolidated into s3_uploader
     short_batch_submitter = {
-      name         = aws_lambda_function.short_batch_submitter.function_name
-      arn          = aws_lambda_function.short_batch_submitter.arn
-      invoke_arn   = aws_lambda_function.short_batch_submitter.invoke_arn
-      memory_size  = aws_lambda_function.short_batch_submitter.memory_size
-      timeout      = aws_lambda_function.short_batch_submitter.timeout
+      name        = aws_lambda_function.short_batch_submitter.function_name
+      arn         = aws_lambda_function.short_batch_submitter.arn
+      invoke_arn  = aws_lambda_function.short_batch_submitter.invoke_arn
+      memory_size = aws_lambda_function.short_batch_submitter.memory_size
+      timeout     = aws_lambda_function.short_batch_submitter.timeout
     }
   }
 }
@@ -238,20 +238,20 @@ output "networking" {
 output "cloudwatch_logs" {
   description = "CloudWatch log groups"
   value = {
-    s3_uploader          = aws_cloudwatch_log_group.s3_uploader_logs.name
-    lambda_reader        = aws_cloudwatch_log_group.lambda_reader_logs.name
-    document_search      = aws_cloudwatch_log_group.document_search_logs.name
-    sqs_to_batch         = aws_cloudwatch_log_group.sqs_to_batch_submitter_logs.name
-    batch_reconciliation = aws_cloudwatch_log_group.batch_status_reconciliation_logs.name
-    dead_job_detector    = aws_cloudwatch_log_group.dead_job_detector_logs.name
-    file_deleter         = aws_cloudwatch_log_group.file_deleter_logs.name
-    file_restorer        = aws_cloudwatch_log_group.file_restorer_logs.name
-    recycle_bin_reader   = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
+    s3_uploader           = aws_cloudwatch_log_group.s3_uploader_logs.name
+    lambda_reader         = aws_cloudwatch_log_group.lambda_reader_logs.name
+    document_search       = aws_cloudwatch_log_group.document_search_logs.name
+    sqs_to_batch          = aws_cloudwatch_log_group.sqs_to_batch_submitter_logs.name
+    batch_reconciliation  = aws_cloudwatch_log_group.batch_status_reconciliation_logs.name
+    dead_job_detector     = aws_cloudwatch_log_group.dead_job_detector_logs.name
+    file_deleter          = aws_cloudwatch_log_group.file_deleter_logs.name
+    file_restorer         = aws_cloudwatch_log_group.file_restorer_logs.name
+    recycle_bin_reader    = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
     short_batch_processor = aws_cloudwatch_log_group.short_batch_processor_logs.name
-# long_batch_uploader and short_batch_uploader logs removed - functionality consolidated into s3_uploader
+    # long_batch_uploader and short_batch_uploader logs removed - functionality consolidated into s3_uploader
     short_batch_submitter = aws_cloudwatch_log_group.short_batch_submitter_logs.name
-    ocr_editor           = aws_cloudwatch_log_group.ocr_editor_logs.name
-    cleanup_processor    = aws_cloudwatch_log_group.cleanup_processor_logs.name
+    ocr_editor            = aws_cloudwatch_log_group.ocr_editor_logs.name
+    cleanup_processor     = aws_cloudwatch_log_group.cleanup_processor_logs.name
   }
 }
 
@@ -275,11 +275,11 @@ output "monitoring" {
       }
     }
     alert_thresholds = {
-      dlq_any_messages       = "Immediately (> 0 messages)"
-      dlq_high_count_long    = "More than 10 messages"
-      dlq_high_count_short   = "More than 5 messages"
-      dlq_age_long_batch     = "Messages older than 1 hour"
-      dlq_age_short_batch    = "Messages older than 30 minutes"
+      dlq_any_messages     = "Immediately (> 0 messages)"
+      dlq_high_count_long  = "More than 10 messages"
+      dlq_high_count_short = "More than 5 messages"
+      dlq_age_long_batch   = "Messages older than 1 hour"
+      dlq_age_short_batch  = "Messages older than 30 minutes"
     }
   }
 }
@@ -312,7 +312,7 @@ output "deployment_commands" {
   description = "Essential deployment commands"
   value = {
     ecr_login = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${aws_ecr_repository.main.repository_url}"
-    
+
     docker_build = <<-EOT
       cd aws_batch
       docker build -t ${aws_ecr_repository.main.name} .
@@ -328,53 +328,53 @@ output "api_examples" {
   value = {
     # Unified Endpoints Examples (combines both batch types)
     unified_search_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?q=electric+cars'"
-    
+
     unified_get_all_processed = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed'"
-    
+
     unified_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?fileId=YOUR_FILE_ID'"
-    
+
     # Smart routing upload (size-based decision)
     smart_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload' -F 'file=@document.pdf'"
-    
+
     # Long Batch Examples
     long_batch_search = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/search?q=electric+cars'"
-    
+
     long_batch_process = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
-    
+
     long_batch_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/processed?fileId=YOUR_FILE_ID'"
-    
+
     # Short Batch Examples  
     short_batch_search = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/search?q=electrik+kars&fuzzy=true&fuzzyThreshold=80'"
-    
+
     short_batch_process = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
-    
+
     short_batch_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/processed?fileId=YOUR_FILE_ID'"
-    
+
     # Upload examples (dedicated endpoints for forced routing)
     long_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload' -F 'file=@document.pdf'"
-    
+
     short_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload' -F 'file=@document.pdf'"
-    
+
     # Invoice Processing Examples (OCR extracts all data automatically)
     invoice_upload_simple = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf'"
-    
+
     invoice_upload_with_options = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf' -F 'description=Monthly invoice' -F 'priority=urgent'"
-    
+
     invoice_get_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed'"
-    
+
     invoice_get_with_limit = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?limit=5000'"
-    
+
     invoice_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?fileId=YOUR_INVOICE_ID'"
-    
+
     invoice_search_vendor = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?vendorName=ABC+Company'"
-    
+
     invoice_search_number = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?invoiceNumber=INV-001'"
-    
+
     # Common operations (available on both APIs)
     delete_file = "curl -X DELETE 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/delete/YOUR_FILE_ID'"
-    
+
     list_recycle_bin = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/recycle-bin'"
-    
+
     restore_file = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/restore/YOUR_FILE_ID'"
   }
 }
@@ -391,7 +391,7 @@ output "cost_summary" {
       "Fargate Spot for batch processing",
       "CloudFront PriceClass_100 for cost-effective CDN"
     ]
-    
+
     estimated_monthly_costs = {
       vpc_endpoints = "$43.20"
       cloudfront    = "$1-10 (usage based)"
@@ -400,7 +400,7 @@ output "cost_summary" {
       lambda        = "$0.20 per million requests"
       batch_fargate = "$0.04 per vCPU hour"
     }
-    
+
     annual_savings = "$900-1,260 vs traditional EC2/RDS setup"
   }
 }
@@ -409,15 +409,15 @@ output "cost_summary" {
 output "architecture" {
   description = "System architecture overview"
   value = {
-    upload_flow        = "Smart Router → Size-based routing OR Forced routing via dedicated endpoints"
-    long_batch_flow    = "Long Batch Upload → Direct to long-batch-files → AWS Batch → DynamoDB"
-    short_batch_flow   = "Short Batch Upload → Direct to short-batch-files → Lambda → Claude AI OCR → DynamoDB"
-    smart_routing      = "Generic Upload (/upload) → Smart Router → Size/type-based decision → Appropriate processing pipeline"
-    unified_retrieval  = "Unified Processed (/processed) → Reader Lambda → Combines both batch types → CloudFront CDN"
-    search_flow        = "Search APIs (/search, /long-batch/search, /short-batch/search) → Search Lambda → DynamoDB (Fuzzy Search)"
-    delete_flow        = "Delete APIs → Deleter Lambda → Recycle Bin → TTL (30 days)"
-    restore_flow       = "Restore APIs → Restorer Lambda → DynamoDB (Restore)"
-    
+    upload_flow       = "Smart Router → Size-based routing OR Forced routing via dedicated endpoints"
+    long_batch_flow   = "Long Batch Upload → Direct to long-batch-files → AWS Batch → DynamoDB"
+    short_batch_flow  = "Short Batch Upload → Direct to short-batch-files → Lambda → Claude AI OCR → DynamoDB"
+    smart_routing     = "Generic Upload (/upload) → Smart Router → Size/type-based decision → Appropriate processing pipeline"
+    unified_retrieval = "Unified Processed (/processed) → Reader Lambda → Combines both batch types → CloudFront CDN"
+    search_flow       = "Search APIs (/search, /long-batch/search, /short-batch/search) → Search Lambda → DynamoDB (Fuzzy Search)"
+    delete_flow       = "Delete APIs → Deleter Lambda → Recycle Bin → TTL (30 days)"
+    restore_flow      = "Restore APIs → Restorer Lambda → DynamoDB (Restore)"
+
     key_features = [
       "Dual API architecture (Long & Short batch)",
       "Smart routing based on file size and type",
@@ -435,7 +435,7 @@ output "architecture" {
       "Recycle bin with 30-day retention",
       "Soft delete and restore functionality"
     ]
-    
+
     invoice_processing = {
       flow = "Invoice Upload → S3 Invoice Folder → SQS → Claude AI OCR → Comprehensive Extraction → DynamoDB"
       features = [
@@ -451,24 +451,24 @@ output "architecture" {
         "Advanced search by any extracted field",
         "Structured JSON output for easy integration"
       ]
-      
+
       field_categories = {
-        business_info = "15 fields: name, address, contact, tax details, logo detection"
-        client_info = "11 fields: complete customer information and addresses"  
-        invoice_details = "8 fields: numbers, dates, references, types"
+        business_info     = "15 fields: name, address, contact, tax details, logo detection"
+        client_info       = "11 fields: complete customer information and addresses"
+        invoice_details   = "8 fields: numbers, dates, references, types"
         financial_summary = "12 fields: totals, taxes, discounts, currency"
-        line_items = "9 fields per item: descriptions, quantities, pricing, categories"
-        payment_info = "8 fields: terms, methods, banking details"
-        additional_info = "7 fields: notes, signatures, authorization"
+        line_items        = "9 fields per item: descriptions, quantities, pricing, categories"
+        payment_info      = "8 fields: terms, methods, banking details"
+        additional_info   = "7 fields: notes, signatures, authorization"
         document_metadata = "7 fields: quality, confidence, validation"
       }
-      
-      supported_formats = ["PDF", "PNG", "JPG", "JPEG"]
-      max_file_size = "10MB"
-      processing_time = "10-30 seconds"
-      confidence_scoring = "High/Medium/Low with quality assessment"
+
+      supported_formats        = ["PDF", "PNG", "JPG", "JPEG"]
+      max_file_size            = "10MB"
+      processing_time          = "10-30 seconds"
+      confidence_scoring       = "High/Medium/Low with quality assessment"
       total_extractable_fields = "60+ structured fields"
-      currency_support = "Multi-currency with symbol and code detection"
+      currency_support         = "Multi-currency with symbol and code detection"
     }
   }
 }
@@ -477,11 +477,11 @@ output "architecture" {
 output "environment" {
   description = "Deployment environment details"
   value = {
-    environment      = var.environment
-    project_name     = var.project_name
-    aws_region       = var.aws_region
-    aws_account_id   = data.aws_caller_identity.current.account_id
-    deployment_time  = timestamp()
+    environment     = var.environment
+    project_name    = var.project_name
+    aws_region      = var.aws_region
+    aws_account_id  = data.aws_caller_identity.current.account_id
+    deployment_time = timestamp()
   }
 }
 
@@ -495,11 +495,11 @@ output "troubleshooting" {
       | sort @timestamp desc
       | limit 20
     EOT
-    
+
     check_batch_jobs = "aws batch list-jobs --job-queue ${aws_batch_job_queue.main.name} --job-status FAILED"
-    
+
     check_dlq = "aws sqs receive-message --queue-url ${aws_sqs_queue.batch_dlq.url}"
-    
+
     lambda_errors = "aws logs tail /aws/lambda/${var.project_name}-${var.environment}-* --follow --filter-pattern ERROR"
   }
 }
@@ -509,21 +509,21 @@ output "security" {
   description = "Security configuration summary"
   value = {
     encryption = {
-      s3_buckets       = "AES-256 encryption enabled"
-      dynamodb_tables  = "Encryption at rest enabled"
-      cloudfront       = "HTTPS only with TLS 1.2+"
+      s3_buckets      = "AES-256 encryption enabled"
+      dynamodb_tables = "Encryption at rest enabled"
+      cloudfront      = "HTTPS only with TLS 1.2+"
     }
-    
+
     access_control = {
-      s3_public_access = "Blocked"
+      s3_public_access   = "Blocked"
       api_authentication = var.enable_rate_limiting ? "API keys required for higher limits" : "Public access"
-      cloudfront_oai   = "Origin Access Identity configured"
+      cloudfront_oai     = "Origin Access Identity configured"
     }
-    
+
     network_security = {
-      vpc_isolation    = "Private subnets for compute"
-      security_groups  = "Least privilege rules"
-      vpc_endpoints    = "Private AWS service access"
+      vpc_isolation   = "Private subnets for compute"
+      security_groups = "Least privilege rules"
+      vpc_endpoints   = "Private AWS service access"
     }
   }
 }
