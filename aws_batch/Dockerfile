@@ -41,7 +41,7 @@ except Exception as e:\
 try:\
     print('Downloading transformers model...');\
     from transformers import pipeline;\
-    pipeline('text2text-generation', model='facebook/bart-large-cnn');\
+    pipeline('text2text-generation', model='facebook/bart-base');\
     print('Transformers model cached successfully');\
 except Exception as e:\
     print(f'Transformers model download failed (non-critical): {e}');\

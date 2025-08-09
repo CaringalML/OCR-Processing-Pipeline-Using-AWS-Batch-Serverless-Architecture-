@@ -33,10 +33,10 @@ python-dateutil==2.8.2       # Intelligent date parsing
 
 # === PHASE 5: AI ENHANCEMENT (OPTIONAL) ===
 # Advanced AI models for text correction
-transformers==4.36.2          # State-of-the-art text models
-torch==2.1.2                 # AI model backend
-sentence-transformers==2.2.2  # Semantic text analysis
+transformers==4.42.4          # State-of-the-art text models
+torch==2.4.1                 # AI model backend
+sentence-transformers==3.0.1  # Semantic text analysis
 
 # === PHASE 6: NLP RESTORATION (OPTIONAL) ===
 # Advanced linguistic processing
-spacy==3.7.2                  # Industrial NLP engine
+spacy==3.7.6                  # Industrial NLP engine
