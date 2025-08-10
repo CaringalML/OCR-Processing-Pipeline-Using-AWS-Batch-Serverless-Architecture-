@@ -110,14 +110,6 @@ comprehend_client = boto3.client('comprehend')
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 IS_DEV = os.getenv('PYTHON_ENV') == 'development'
 
-# === ENHANCEMENT FEATURE FLAGS ===
-# Environment variables to control enhanced features
-ENHANCED_EMAIL_URL_PROCESSING = os.getenv('ENHANCED_EMAIL_URL_PROCESSING', 'true').lower() == 'true'
-ENHANCED_GRAMMAR_PROCESSING = os.getenv('ENHANCED_GRAMMAR_PROCESSING', 'true').lower() == 'true'
-ENHANCED_AI_MODELS = os.getenv('ENHANCED_AI_MODELS', 'true').lower() == 'true'  # AI models enabled by default
-ENHANCED_FUZZY_MATCHING = os.getenv('ENHANCED_FUZZY_MATCHING', 'true').lower() == 'true'
-ENHANCED_OCR_CLEANUP = os.getenv('ENHANCED_OCR_CLEANUP', 'true').lower() == 'true'
-
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -143,7 +135,28 @@ def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
             'fileId': os.getenv('FILE_ID'),
             **data
         }
-        print(json.dumps(log_entry))
+        
+        if IS_DEV:
+            # Pretty print for development
+            print(f"[{log_entry['level']}] {log_entry['message']}")
+            if data:
+                for k, v in data.items():
+                    print(f"  {k}: {v}")
+        else:
+            # JSON structured logging for production/AWS CloudWatch
+            print(json.dumps(log_entry, default=str, separators=(',', ':')))
+            
+        # Also log to Python logger for CloudWatch integration
+        getattr(logger, level.lower(), logger.info)(message)
+
+# === ENHANCEMENT FEATURE FLAGS ===
+# Environment variables to control enhanced features
+ENHANCED_EMAIL_URL_PROCESSING = os.getenv('ENHANCED_EMAIL_URL_PROCESSING', 'true').lower() == 'true'
+ENHANCED_GRAMMAR_PROCESSING = os.getenv('ENHANCED_GRAMMAR_PROCESSING', 'true').lower() == 'true'
+ENHANCED_AI_MODELS = os.getenv('ENHANCED_AI_MODELS', 'true').lower() == 'true'  # AI models enabled by default
+ENHANCED_FUZZY_MATCHING = os.getenv('ENHANCED_FUZZY_MATCHING', 'true').lower() == 'true'
+ENHANCED_OCR_CLEANUP = os.getenv('ENHANCED_OCR_CLEANUP', 'true').lower() == 'true'
+
 
 # Log enhancement feature flags after log function is defined
 log('INFO', 'Enhancement feature flags', {
