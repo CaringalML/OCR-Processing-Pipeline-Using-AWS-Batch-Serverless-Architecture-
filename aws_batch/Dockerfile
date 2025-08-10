@@ -25,7 +25,13 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt ./
 
-# Install only essential dependencies (minimal footprint)
+# Install Python build tools and dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-distutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -37,8 +43,8 @@ ENV PYTHONPATH=/app
 # AWS Batch specific optimizations
 ENV MALLOC_ARENA_MAX=2
 
-# Verify all dependencies
-RUN python -c "from spellchecker import SpellChecker; import boto3, json, re, regex, ftfy, rapidfuzz, email_validator, furl, language_tool_python; print('✅ All OCR processing dependencies verified')"
+# Verify core dependencies (skip language_tool_python to avoid download during build)
+RUN python -c "from spellchecker import SpellChecker; import boto3, json, re, regex, ftfy, rapidfuzz, email_validator, furl; print('✅ Core OCR dependencies verified')"
 
 # Copy application code (single file)
 COPY index.py ./
