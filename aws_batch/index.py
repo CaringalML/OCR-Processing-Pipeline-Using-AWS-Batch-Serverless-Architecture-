@@ -19,6 +19,50 @@ from decimal import Decimal, InvalidOperation
 import boto3
 from botocore.exceptions import ClientError
 
+# === LOGGING SETUP ===
+# Production logging (reduced verbosity, structured format)
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+IS_DEV = os.getenv('PYTHON_ENV') == 'development'
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format='%(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
+    """Structured logging function"""
+    if data is None:
+        data = {}
+    
+    levels = {'ERROR': 40, 'WARN': 30, 'INFO': 20, 'DEBUG': 10}
+    current_level = levels.get(LOG_LEVEL, 20)
+    
+    if levels.get(level.upper(), 20) >= current_level:
+        log_entry = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'level': level.upper(),
+            'message': message,
+            'batchJobId': os.getenv('AWS_BATCH_JOB_ID'),
+            'fileId': os.getenv('FILE_ID'),
+            **data
+        }
+        
+        if IS_DEV:
+            # Pretty print for development
+            print(f"[{log_entry['level']}] {log_entry['message']}")
+            if data:
+                for k, v in data.items():
+                    print(f"  {k}: {v}")
+        else:
+            # JSON structured logging for production/AWS CloudWatch
+            print(json.dumps(log_entry, default=str, separators=(',', ':')))
+            
+        # Also log to Python logger for CloudWatch integration
+        getattr(logger, level.lower(), logger.info)(message)
+
 # === ENHANCED TEXT CORRECTION LIBRARIES ===
 # Original TextBlob disabled for compliance - keeping flag for backward compatibility
 TEXTBLOB_AVAILABLE = False
@@ -105,49 +149,6 @@ s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
 textract_client = boto3.client('textract')
 comprehend_client = boto3.client('comprehend')
-
-# Production logging (reduced verbosity, structured format)
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
-IS_DEV = os.getenv('PYTHON_ENV') == 'development'
-
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format='%(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
-    """Structured logging function"""
-    if data is None:
-        data = {}
-    
-    levels = {'ERROR': 40, 'WARN': 30, 'INFO': 20, 'DEBUG': 10}
-    current_level = levels.get(LOG_LEVEL, 20)
-    
-    if levels.get(level.upper(), 20) >= current_level:
-        log_entry = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'level': level.upper(),
-            'message': message,
-            'batchJobId': os.getenv('AWS_BATCH_JOB_ID'),
-            'fileId': os.getenv('FILE_ID'),
-            **data
-        }
-        
-        if IS_DEV:
-            # Pretty print for development
-            print(f"[{log_entry['level']}] {log_entry['message']}")
-            if data:
-                for k, v in data.items():
-                    print(f"  {k}: {v}")
-        else:
-            # JSON structured logging for production/AWS CloudWatch
-            print(json.dumps(log_entry, default=str, separators=(',', ':')))
-            
-        # Also log to Python logger for CloudWatch integration
-        getattr(logger, level.lower(), logger.info)(message)
 
 # === ENHANCEMENT FEATURE FLAGS ===
 # Environment variables to control enhanced features
