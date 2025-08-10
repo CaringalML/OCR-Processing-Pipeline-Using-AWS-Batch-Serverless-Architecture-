@@ -3,34 +3,6 @@
 OCR Processing Pipeline - Batch Processing Only
 Converts documents to text using AWS Textract and analyzes with AWS Comprehend
 Enhanced with natural flow punctuation, comprehensive grammar refinement, and QuillBot-compliant colon fixes
-
-CONFIGURATION:
-All configuration is centralized in the CONFIGURATION SECTION below.
-Set environment variables to override defaults:
-
-REQUIRED ENVIRONMENT VARIABLES:
-- S3_BUCKET: S3 bucket containing the file to process
-- S3_KEY: S3 object key (file path) to process  
-- FILE_ID: Unique identifier for this file processing job
-- DYNAMODB_TABLE: DynamoDB table name for storing processing results
-
-OPTIONAL CONFIGURATION:
-- LOG_LEVEL: DEBUG, INFO, WARN, ERROR (default: INFO)
-- PYTHON_ENV: Set to 'development' for pretty logs (default: production JSON)
-- TEXTRACT_TIMEOUT_MINUTES: Max wait time for Textract (default: 10)
-- TEXT_PROCESSING_TIMEOUT_SECONDS: Max time for text processing (default: 60)
-- BASIC_TEXT_CLEANUP: Enable basic text cleanup (default: true)
-- PATTERN_BASED_CORRECTIONS: Enable grammar fixes (default: true)
-
-PERFORMANCE OPTIMIZATIONS:
-- Uses only built-in Python libraries (no ML/AI dependencies)
-- ~90% faster processing (seconds vs minutes)
-- ~95% smaller container (~200MB vs 2GB+)
-- ~90% lower memory usage (~128MB vs 2GB+)  
-- Scales to millions of concurrent documents
-- Suitable for high-frequency batch processing
-
-See CONFIGURATION SECTION below for all available options.
 """
 
 import json
@@ -42,314 +14,43 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Union
 import re
-try:
-    import regex
-    # Use enhanced regex for better performance
-    re = regex
-    ENHANCED_REGEX = True
-except ImportError:
-    # Fall back to built-in re
-    ENHANCED_REGEX = False
-
 from decimal import Decimal, InvalidOperation
 
 import boto3
 from botocore.exceptions import ClientError
 
-# ================================================================================================
-# FAST TEXT PROCESSING - BUILT-IN PYTHON ONLY
-# ================================================================================================
+# Text correction libraries
+try:
+    from textblob import TextBlob
+    TEXTBLOB_AVAILABLE = True
+except ImportError:
+    TEXTBLOB_AVAILABLE = False
+    print('WARN: TextBlob not available - text correction disabled')
 
-def fast_ocr_cleanup(text: str) -> Dict[str, Any]:
-    """Enhanced OCR cleanup using available libraries"""
-    if not text or not text.strip():
-        return {'cleaned_text': text, 'fixes_applied': 0}
-    
-    original_text = text
-    fixes_applied = 0
-    
-    # Step 1: Use ftfy for encoding fixes (if available)
-    if FTFY_AVAILABLE:
-        cleaned = ftfy.fix_text(text)
-        if cleaned != text:
-            text = cleaned
-            fixes_applied += 1
-    
-    # Step 2: Fix common OCR character mistakes
-    ocr_fixes = {
-        # Most common OCR errors
-        r'\bl\b': 'I',  # isolated 'l' to 'I'
-        r'\bO\b': '0',  # isolated 'O' to '0' 
-        r'rn': 'm',     # 'rn' to 'm'
-        r'[|!]': 'l',   # vertical bars to 'l'
-        r'(?<=[a-z])I(?=[a-z])': 'l',  # 'I' between lowercase to 'l'
-        
-        # Punctuation fixes
-        r'\.{3,}': '...',  # Multiple dots to ellipsis
-        r'\s+([.!?])': r'\1',  # Space before punctuation
-        r'([.!?])([A-Z])': r'\1 \2',  # Missing space after punctuation
-    }
-    
-    for pattern, replacement in ocr_fixes.items():
-        new_text = re.sub(pattern, replacement, text)
-        if new_text != text:
-            fixes_applied += 1
-            text = new_text
-    
-    # Step 3: Normalize whitespace
-    normalized = ' '.join(text.split())
-    if normalized != text:
-        text = normalized
-        fixes_applied += 1
-    
-    return {
-        'cleaned_text': text,
-        'fixes_applied': fixes_applied,
-        'original_length': len(original_text),
-        'cleaned_length': len(text)
-    }
+try:
+    import spellchecker
+    from spellchecker import SpellChecker
+    SPELLCHECKER_AVAILABLE = True
+except ImportError:
+    SPELLCHECKER_AVAILABLE = False
+    print('WARN: PySpellChecker not available - advanced spell checking disabled')
 
+try:
+    import spacy
+    # Try to load the English model
+    nlp = spacy.load("en_core_web_sm")
+    SPACY_AVAILABLE = True
+except (ImportError, OSError):
+    SPACY_AVAILABLE = False
+    nlp = None
+    print('WARN: spaCy not available - advanced NLP text refinement disabled')
 
-def fast_grammar_fixes(text: str) -> Dict[str, Any]:
-    """Enhanced grammar and spell corrections using available libraries"""
-    if not text or not text.strip():
-        return {'corrected_text': text, 'fixes_applied': 0}
-    
-    original_text = text
-    fixes_applied = 0
-    
-    # Step 1: Advanced grammar correction (if available)
-    if LANGUAGE_TOOL_AVAILABLE and grammar_tool:
-        try:
-            # Limit text length to avoid timeouts (language-tool can be slow on long texts)
-            text_to_check = text[:2000] if len(text) > 2000 else text
-            matches = grammar_tool.check(text_to_check)
-            if matches:
-                # Apply corrections from end to start to maintain positions
-                for match in reversed(matches[:10]):  # Limit to top 10 corrections for performance
-                    if match.replacements:
-                        replacement = match.replacements[0]
-                        text = text[:match.offset] + replacement + text[match.offset + match.errorLength:]
-                        fixes_applied += 1
-        except Exception as e:
-            log('WARN', f'Language tool error: {e}')
-            # Fall back to spell checking if language tool fails
-    
-    # Step 2: Spell checking (if available)
-    elif SPELLCHECKER_AVAILABLE and spell_checker:
-        words = text.split()
-        corrected_words = []
-        for word in words:
-            # Extract just the alphabetic part for spell checking
-            clean_word = re.sub(r'[^a-zA-Z]', '', word.lower())
-            if clean_word and len(clean_word) > 2:
-                if clean_word not in spell_checker:
-                    # Get most likely correction
-                    candidates = spell_checker.candidates(clean_word)
-                    if candidates:
-                        best_correction = list(candidates)[0]
-                        # Replace the word while preserving punctuation/capitalization
-                        if word[0].isupper():
-                            best_correction = best_correction.capitalize()
-                        corrected_word = re.sub(re.escape(clean_word), best_correction, word.lower())
-                        corrected_words.append(corrected_word)
-                        fixes_applied += 1
-                    else:
-                        corrected_words.append(word)
-                else:
-                    corrected_words.append(word)
-            else:
-                corrected_words.append(word)
-        text = ' '.join(corrected_words)
-    
-    # Step 3: Grammar pattern fixes (ordered by frequency/impact)
-    grammar_patterns = [
-        # Capitalization
-        (r'(?:^|[.!?]\s+)([a-z])', lambda m: m.group(0)[:-1] + m.group(1).upper()),
-        
-        # Article fixes
-        (r'\ba\s+([aeiouAEIOU])', r'an \1'),  # 'a' before vowels to 'an'
-        (r'\ban\s+([bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ])', r'a \1'),  # 'an' before consonants to 'a'
-        
-        # Common word fixes
-        (r'\bthier\b', 'their'),
-        (r'\brecieve\b', 'receive'),
-        (r'\boccur(?:r)?ed\b', 'occurred'),
-        (r'\bseperate\b', 'separate'),
-        
-        # Punctuation spacing
-        (r'\s*,\s*', ', '),
-        (r'\s*:\s*', ': '),
-        (r'\s*;\s*', '; '),
-        
-        # Double words
-        (r'\b(\w+)\s+\1\b', r'\1'),  # Remove duplicate words
-    ]
-    
-    for pattern, replacement in grammar_patterns:
-        if callable(replacement):
-            new_text = re.sub(pattern, replacement, text)
-        else:
-            new_text = re.sub(pattern, replacement, text)
-        
-        if new_text != text:
-            fixes_applied += 1
-            text = new_text
-    
-    return {
-        'corrected_text': text,
-        'fixes_applied': fixes_applied,
-        'original_length': len(original_text),
-        'corrected_length': len(text)
-    }
+# Initialize AWS clients
+s3_client = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb')
+textract_client = boto3.client('textract')
+comprehend_client = boto3.client('comprehend')
 
-
-def fast_sentence_cleanup(text: str) -> Dict[str, Any]:
-    """Fast sentence-level cleanup and formatting"""
-    if not text or not text.strip():
-        return {'formatted_text': text, 'improvements': 0}
-    
-    improvements = 0
-    
-    # Fix sentence endings
-    sentences = re.split(r'[.!?]+', text)
-    cleaned_sentences = []
-    
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if sentence:
-            # Ensure proper capitalization
-            sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
-            cleaned_sentences.append(sentence)
-    
-    # Rejoin with proper punctuation
-    if cleaned_sentences:
-        formatted_text = '. '.join(cleaned_sentences)
-        if not formatted_text.endswith('.'):
-            formatted_text += '.'
-        improvements = len(cleaned_sentences)
-    else:
-        formatted_text = text
-    
-    return {
-        'formatted_text': formatted_text,
-        'improvements': improvements,
-        'sentence_count': len(cleaned_sentences),
-        'original_length': len(text),
-        'formatted_length': len(formatted_text)
-    }
-
-
-def process_text_fast(text: str, enable_cleanup: bool = True, enable_grammar: bool = True) -> Dict[str, Any]:
-    """Main fast text processing function - combines all optimizations"""
-    if not text or not text.strip():
-        return {
-            'processed_text': text,
-            'total_improvements': 0,
-            'processing_time_ms': 0,
-            'processing_steps': []
-        }
-    
-    start_time = time.time()
-    
-    processed_text = text
-    total_improvements = 0
-    processing_steps = []
-    
-    # Step 1: OCR cleanup (if enabled)
-    if enable_cleanup:
-        ocr_result = fast_ocr_cleanup(processed_text)
-        processed_text = ocr_result['cleaned_text']
-        total_improvements += ocr_result['fixes_applied']
-        processing_steps.append(f"OCR cleanup: {ocr_result['fixes_applied']} fixes")
-    
-    # Step 2: Grammar fixes (if enabled)  
-    if enable_grammar:
-        grammar_result = fast_grammar_fixes(processed_text)
-        processed_text = grammar_result['corrected_text']
-        total_improvements += grammar_result['fixes_applied']
-        processing_steps.append(f"Grammar fixes: {grammar_result['fixes_applied']} fixes")
-    
-    # Step 3: Sentence formatting
-    sentence_result = fast_sentence_cleanup(processed_text)
-    processed_text = sentence_result['formatted_text']
-    total_improvements += sentence_result['improvements']
-    processing_steps.append(f"Sentence formatting: {sentence_result['improvements']} improvements")
-    
-    processing_time_ms = (time.time() - start_time) * 1000
-    
-    return {
-        'processed_text': processed_text,
-        'total_improvements': total_improvements,
-        'processing_time_ms': round(processing_time_ms, 2),
-        'processing_steps': processing_steps,
-        'original_length': len(text),
-        'processed_length': len(processed_text),
-        'efficiency_score': total_improvements / max(1, processing_time_ms / 1000),  # improvements per second
-        'method': 'fast_rule_based'
-    }
-
-
-def extract_emails_and_urls(text: str) -> Dict[str, List[str]]:
-    """Enhanced email and URL extraction using available libraries"""
-    if not text:
-        return {'emails': [], 'urls': [], 'email_count': 0, 'url_count': 0}
-    
-    emails = []
-    urls = []
-    
-    # Extract emails with advanced validation (if available)
-    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    potential_emails = re.findall(email_pattern, text)
-    
-    for email in potential_emails:
-        if EMAIL_VALIDATOR_AVAILABLE:
-            try:
-                # Use advanced email validation
-                validated = validate_email(email)
-                emails.append(validated.email)
-            except EmailNotValidError:
-                # Skip invalid emails
-                pass
-        else:
-            # Use basic validation
-            emails.append(email)
-    
-    # Extract URLs with advanced parsing (if available)
-    url_patterns = [
-        r'https?://[^\s<>"\'`]+',
-        r'www\.[^\s<>"\'`]+',
-        r'ftp://[^\s<>"\'`]+'
-    ]
-    
-    for pattern in url_patterns:
-        potential_urls = re.findall(pattern, text)
-        for url in potential_urls:
-            if FURL_AVAILABLE:
-                try:
-                    # Use advanced URL parsing for validation
-                    parsed = furl(url)
-                    if parsed.host:  # Valid URL with host
-                        urls.append(str(parsed.url))
-                except:
-                    # Skip invalid URLs
-                    pass
-            else:
-                # Use basic validation
-                urls.append(url)
-    
-    # Remove duplicates while preserving order
-    emails = list(dict.fromkeys(emails))
-    urls = list(dict.fromkeys(urls))
-    
-    return {
-        'emails': emails,
-        'urls': urls,
-        'email_count': len(emails),
-        'url_count': len(urls)
-    }
-
-# === LOGGING SETUP ===
 # Production logging (reduced verbosity, structured format)
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 IS_DEV = os.getenv('PYTHON_ENV') == 'development'
@@ -379,180 +80,7 @@ def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
             'fileId': os.getenv('FILE_ID'),
             **data
         }
-        
-        if IS_DEV:
-            # Pretty print for development
-            print(f"[{log_entry['level']}] {log_entry['message']}")
-            if data:
-                for k, v in data.items():
-                    print(f"  {k}: {v}")
-        else:
-            # JSON structured logging for production/AWS CloudWatch
-            print(json.dumps(log_entry, default=str, separators=(',', ':')))
-            
-        # Also log to Python logger for CloudWatch integration
-        log_method = getattr(logger, level.lower(), logger.info)
-        if level.upper() == 'WARN':
-            log_method = logger.warning
-        log_method(message)
-
-# ================================================================================================
-# BALANCED LIBRARIES - FAST + QUALITY
-# ================================================================================================
-# Using lightweight but effective libraries for quality text processing
-
-# Enhanced text processing libraries (lightweight but powerful)
-try:
-    import ftfy
-    FTFY_AVAILABLE = True
-    log('INFO', 'ftfy loaded - OCR encoding fixes enabled')
-except ImportError:
-    FTFY_AVAILABLE = False
-    log('WARN', 'ftfy not available - using basic text cleanup')
-
-try:
-    from rapidfuzz import fuzz, process
-    RAPIDFUZZ_AVAILABLE = True
-    log('INFO', 'rapidfuzz loaded - fuzzy matching enabled')
-except ImportError:
-    RAPIDFUZZ_AVAILABLE = False
-    log('WARN', 'rapidfuzz not available - using basic matching')
-
-try:
-    from spellchecker import SpellChecker
-    SPELLCHECKER_AVAILABLE = True
-    spell_checker = SpellChecker()
-    log('INFO', 'pyspellchecker loaded - spell checking enabled')
-except ImportError:
-    SPELLCHECKER_AVAILABLE = False
-    spell_checker = None
-    log('WARN', 'pyspellchecker not available - using basic spell fixes')
-
-try:
-    from email_validator import validate_email, EmailNotValidError
-    EMAIL_VALIDATOR_AVAILABLE = True
-    log('INFO', 'email-validator loaded - advanced email validation enabled')
-except ImportError:
-    EMAIL_VALIDATOR_AVAILABLE = False
-    log('WARN', 'email-validator not available - using regex validation')
-
-try:
-    import language_tool_python
-    # Initialize with minimal configuration for faster startup
-    grammar_tool = language_tool_python.LanguageTool('en-US', config={'cacheSize': 1000, 'maxErrors': 10})
-    LANGUAGE_TOOL_AVAILABLE = True
-    log('INFO', 'language-tool-python loaded - advanced grammar correction enabled')
-except ImportError as e:
-    LANGUAGE_TOOL_AVAILABLE = False
-    grammar_tool = None
-    log('WARN', f'language-tool-python not available - using basic grammar fixes: {e}')
-except Exception as e:
-    LANGUAGE_TOOL_AVAILABLE = False
-    grammar_tool = None
-    log('WARN', f'language-tool-python initialization failed - using basic grammar fixes: {e}')
-
-try:
-    from furl import furl
-    FURL_AVAILABLE = True
-    log('INFO', 'furl loaded - advanced URL parsing enabled')
-except ImportError:
-    FURL_AVAILABLE = False
-    log('WARN', 'furl not available - using basic URL parsing')
-
-# Performance optimized text processing enabled
-BALANCED_TEXT_PROCESSING = True
-log('INFO', 'Balanced text processing: fast performance + quality libraries')
-
-# Initialize AWS clients
-s3_client = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb')
-textract_client = boto3.client('textract')
-comprehend_client = boto3.client('comprehend')
-
-# ================================================================================================
-# CONFIGURATION SECTION
-# ================================================================================================
-# All configuration is centralized here. Set environment variables to override defaults.
-
-# === REQUIRED ENVIRONMENT VARIABLES ===
-# These must be set for the application to work:
-# - S3_BUCKET: S3 bucket containing the file to process
-# - S3_KEY: S3 object key (file path) to process
-# - FILE_ID: Unique identifier for this file processing job
-# - DYNAMODB_TABLE: DynamoDB table name for storing processing results
-# - AWS_BATCH_JOB_ID: (Set automatically by AWS Batch) Unique job identifier
-
-# === LOGGING CONFIGURATION ===
-# LOG_LEVEL: Controls logging verbosity (DEBUG, INFO, WARN, ERROR)
-# PYTHON_ENV: Set to 'development' for pretty-printed logs, otherwise uses JSON format
-# Default: INFO level, production JSON format
-
-# === PROCESSING TIMEOUT CONFIGURATION ===
-TEXTRACT_TIMEOUT_MINUTES = int(os.getenv('TEXTRACT_TIMEOUT_MINUTES', '10'))  # Max time to wait for Textract
-TEXT_PROCESSING_TIMEOUT_SECONDS = int(os.getenv('TEXT_PROCESSING_TIMEOUT_SECONDS', '60'))  # Max time for text processing (fast)
-
-# === PROCESSING MODE CONFIGURATION ===
-# Streamlined for maximum performance and scalability
-
-# Fast text processing (always enabled - no heavy dependencies)
-FAST_RULE_BASED_PROCESSING = True
-# Uses: Built-in regex, string methods, and efficient algorithms
-
-# Basic cleanup and formatting (lightweight)
-BASIC_TEXT_CLEANUP = os.getenv('BASIC_TEXT_CLEANUP', 'true').lower() == 'true'
-# Enables: Basic OCR cleanup, whitespace normalization, punctuation fixes
-
-# Pattern-based corrections (fast and reliable)
-PATTERN_BASED_CORRECTIONS = os.getenv('PATTERN_BASED_CORRECTIONS', 'true').lower() == 'true'
-# Enables: Regex-based grammar fixes, common OCR error corrections
-
-# === TEXT PROCESSING CONFIGURATION ===
-BATCH_PROCESSING_SIZE = int(os.getenv('BATCH_PROCESSING_SIZE', '1000'))  # Characters to process per batch for efficiency
-LOG_PROCESSING_STEPS = os.getenv('LOG_PROCESSING_STEPS', 'true').lower() == 'true'  # Log each processing step
-
-# === AWS SERVICE CONFIGURATION ===
-# Textract configuration
-TEXTRACT_MAX_ATTEMPTS = int(os.getenv('TEXTRACT_MAX_ATTEMPTS', '120'))  # Max polling attempts (5s each = 10 min)
-TEXTRACT_POLL_INTERVAL = int(os.getenv('TEXTRACT_POLL_INTERVAL', '5'))  # Seconds between status checks
-
-# Comprehend configuration  
-COMPREHEND_BATCH_SIZE = int(os.getenv('COMPREHEND_BATCH_SIZE', '25'))  # Max items per Comprehend batch request
-
-# === QUALITY CONTROL CONFIGURATION ===
-MIN_CONFIDENCE_THRESHOLD = float(os.getenv('MIN_CONFIDENCE_THRESHOLD', '0.8'))  # Min OCR confidence to accept text
-MIN_TEXT_LENGTH = int(os.getenv('MIN_TEXT_LENGTH', '10'))  # Min characters required to process text
-MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', '100000'))  # Max characters to process (safety limit)
-
-# ================================================================================================
-# CONFIGURATION LOGGING
-# ================================================================================================
-
-# Log all configuration settings for debugging and monitoring
-log('INFO', 'Streamlined OCR Processing Pipeline Configuration', {
-    # Processing mode
-    'fast_rule_based_processing': FAST_RULE_BASED_PROCESSING,
-    'basic_text_cleanup': BASIC_TEXT_CLEANUP,
-    'pattern_based_corrections': PATTERN_BASED_CORRECTIONS,
-    
-    # Timeout settings
-    'textract_timeout_minutes': TEXTRACT_TIMEOUT_MINUTES,
-    'text_processing_timeout_seconds': TEXT_PROCESSING_TIMEOUT_SECONDS,
-    
-    # Processing settings
-    'batch_processing_size': BATCH_PROCESSING_SIZE,
-    'log_processing_steps': LOG_PROCESSING_STEPS,
-    'textract_max_attempts': TEXTRACT_MAX_ATTEMPTS,
-    'textract_poll_interval': TEXTRACT_POLL_INTERVAL,
-    
-    # Quality control
-    'min_confidence_threshold': MIN_CONFIDENCE_THRESHOLD,
-    'min_text_length': MIN_TEXT_LENGTH,
-    'max_text_length': MAX_TEXT_LENGTH,
-    
-    # Performance
-    'libraries': 'Python built-ins + boto3 only',
-    'optimized_for': 'high throughput, low latency, millions of documents'
-})
+        print(json.dumps(log_entry))
 
 def format_duration(duration_seconds):
     """Format duration in seconds to human-readable format"""
@@ -697,95 +225,7 @@ def safe_decimal_conversion(value: Union[float, int, str]) -> Decimal:
         return Decimal('0')
 
 
-def apply_enhanced_url_email_fixes(text: str) -> Dict[str, Any]:
-    """
-    ENHANCED: Advanced URL and email fixes with professional libraries
-    Falls back to original regex-based system if libraries unavailable
-    """
-    if not text or not text.strip():
-        return {
-            'fixed_text': text,
-            'url_email_fixes': 0,
-            'fixes_applied': [],
-            'method': 'none'
-        }
-    
-    # Check feature flag - if disabled, use original system
-    if not ENHANCED_EMAIL_URL_PROCESSING:
-        return apply_original_url_email_fixes(text)
-    
-    fixed_text = text
-    fixes_applied = []
-    url_email_fixes = 0
-    method_used = 'basic_regex'  # Default fallback
-    
-    # PHASE 1: Enhanced email validation and fixing
-    if EMAIL_VALIDATOR_AVAILABLE:
-        method_used = 'enhanced_professional'
-        before_email = fixed_text
-        
-        # Extract potential emails with advanced regex
-        import re
-        potential_emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', fixed_text)
-        
-        for email in potential_emails:
-            try:
-                validated = validate_email(email)
-                clean_email = validated.email
-                if clean_email != email:
-                    fixed_text = fixed_text.replace(email, clean_email)
-                    url_email_fixes += 1
-                    fixes_applied.append(f"Professional email validation: {email} -> {clean_email}")
-            except EmailNotValidError:
-                # Keep original email if validation fails
-                pass
-                
-        if before_email != fixed_text:
-            fixes_applied.append("Enhanced email validation applied")
-    
-    # PHASE 2: Enhanced URL processing
-    if FURL_AVAILABLE:
-        before_url = fixed_text
-        
-        # Extract and fix URLs using professional library
-        import re
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+|www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-        potential_urls = re.findall(url_pattern, fixed_text)
-        
-        for url_str in potential_urls:
-            try:
-                f = furl(url_str)
-                clean_url = f.url
-                if clean_url != url_str and clean_url:
-                    fixed_text = fixed_text.replace(url_str, clean_url)
-                    url_email_fixes += 1
-                    fixes_applied.append(f"Professional URL reconstruction: {url_str} -> {clean_url}")
-            except Exception:
-                # Keep original URL if parsing fails
-                pass
-                
-        if before_url != fixed_text:
-            fixes_applied.append("Enhanced URL processing applied")
-    
-    # PHASE 3: Fallback to original Veridian regex system
-    if not EMAIL_VALIDATOR_AVAILABLE or not FURL_AVAILABLE:
-        fallback_result = apply_original_url_email_fixes(fixed_text)
-        fixed_text = fallback_result['fixed_text']
-        url_email_fixes += fallback_result['url_email_fixes']
-        fixes_applied.extend(fallback_result['fixes_applied'])
-        if method_used == 'basic_regex':
-            method_used = 'original_system'
-    
-    return {
-        'fixed_text': fixed_text,
-        'url_email_fixes': url_email_fixes,
-        'fixes_applied': fixes_applied,
-        'method': method_used,
-        'processing_notes': f"Applied {url_email_fixes} URL/email fixes using {method_used}"
-    }
-
-
-def apply_original_url_email_fixes(text: str) -> Dict[str, Any]:
+def apply_url_email_fixes(text: str) -> Dict[str, Any]:
     """
     Fix URLs and email addresses by removing inappropriate spaces
     """
@@ -1161,7 +601,7 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
     for i, pattern in enumerate(protected_patterns):
         placeholder = f"__URL_PROTECTED_{i}__"
         # Apply URL/email fixes to the protected pattern before restoring
-        fixed_pattern = apply_enhanced_url_email_fixes(pattern)['fixed_text']
+        fixed_pattern = apply_url_email_fixes(pattern)['fixed_text']
         refined_text = refined_text.replace(placeholder, fixed_pattern)
         if fixed_pattern != pattern:
             fixes_applied.append("Fixed URL/email spacing in protected pattern")
@@ -1177,173 +617,42 @@ def apply_natural_flow_punctuation(text: str) -> Dict[str, Any]:
     }
 
 
-# ================================================================================================
-# LEGACY FUNCTIONS - REPLACED WITH FAST PROCESSING
-# ================================================================================================
-# These functions are kept as simple stubs for compatibility but are no longer used
-
-def apply_ai_text_correction(text: str) -> Dict[str, Any]:
-    """LEGACY STUB - Replaced by fast_text_processor.py"""
-    return process_text_fast(text, enable_cleanup=True, enable_grammar=True)
-
-
-def apply_comprehensive_grammar_rules(text: str) -> Dict[str, Any]:
-    """
-    COMPREHENSIVE: Apply 100% accurate rule-based grammar and punctuation correction
-    Covers all common grammar, punctuation, capitalization, and style issues
-    """
-    if not text or not text.strip():
-        return {
-            'corrected_text': text,
-            'fixes_applied': 0,
-            'rule_fixes': []
-        }
-    
-    corrected = text
-    fixes_applied = 0
-    rule_fixes = []
-    
-    # PHASE 1: PUNCTUATION CORRECTIONS
-    before_punct = corrected
-    
-    # Fix spacing around punctuation
-    corrected = re.sub(r'\s+([,.!?;:])', r'\1', corrected)  # Remove space before punctuation
-    corrected = re.sub(r'([,.!?;:])(?!\s|$)', r'\1 ', corrected)  # Add space after punctuation
-    corrected = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', corrected)  # Proper spacing after sentence end
-    
-    # Fix multiple punctuation
-    corrected = re.sub(r'[.]{2,}', '.', corrected)  # Multiple periods to single
-    corrected = re.sub(r'[!]{2,}', '!', corrected)  # Multiple exclamations to single
-    corrected = re.sub(r'[?]{2,}', '?', corrected)  # Multiple questions to single
-    corrected = re.sub(r'[,]{2,}', ',', corrected)  # Multiple commas to single
-    
-    if before_punct != corrected:
-        fixes_applied += 1
-        rule_fixes.append('Fixed punctuation spacing and duplication')
-    
-    # PHASE 2: CAPITALIZATION CORRECTIONS
-    before_caps = corrected
-    
-    # Capitalize first letter of text
-    if corrected and corrected[0].islower():
-        corrected = corrected[0].upper() + corrected[1:]
-    
-    # Capitalize after sentence-ending punctuation
-    corrected = re.sub(r'([.!?])\s+([a-z])', lambda m: m.group(1) + ' ' + m.group(2).upper(), corrected)
-    
-    # Capitalize \"I\" when standalone
-    corrected = re.sub(r'\bi\b', 'I', corrected)
-    
-    # Proper names (common ones)
-    proper_nouns = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-                   'january', 'february', 'march', 'april', 'may', 'june', 
-                   'july', 'august', 'september', 'october', 'november', 'december']
-    for noun in proper_nouns:
-        corrected = re.sub(r'\b' + noun + r'\b', noun.capitalize(), corrected, flags=re.IGNORECASE)
-    
-    if before_caps != corrected:
-        fixes_applied += 1
-        rule_fixes.append('Fixed capitalization rules')
-    
-    # PHASE 3: GRAMMAR CORRECTIONS
-    before_grammar = corrected
-    
-    # Subject-verb agreement
-    corrected = re.sub(r'\b(I)\s+(are)\b', r'\1 am', corrected)
-    corrected = re.sub(r'\b(He|She|It)\s+(are)\b', r'\1 is', corrected, flags=re.IGNORECASE)
-    corrected = re.sub(r'\b(They|We|You)\s+(is)\b', r'\1 are', corrected, flags=re.IGNORECASE)
-    
-    # Article corrections
-    corrected = re.sub(r'\ba\s+([aeiouAEIOU])', r'an \1', corrected)
-    corrected = re.sub(r'\ban\s+([bcdfgjklmnpqrstvwxyzBCDFGJKLMNPQRSTVWXYZ][aeiou]*)', r'a \1', corrected)
-    
-    # Common word corrections
-    word_corrections = {
-        r'\bthere\s+(is|are)\s+no\b': r'there \1 no',
-        r'\bcould\s+of\b': 'could have',
-        r'\bshould\s+of\b': 'should have',
-        r'\bwould\s+of\b': 'would have',
-        r'\balot\b': 'a lot',
-        r'\brecieve\b': 'receive',
-        r'\bseperate\b': 'separate',
-        r'\bdefinately\b': 'definitely',
-        r'\bthere\b(?=\s+(car|house|dog|book))': 'their',  # Context-aware
-        r'\byour\s+welcome\b': "you're welcome",
-        r'\bits\s+(\w+ing)\b': r"it's \1"  # "its going" -> "it's going"
-    }
-    
-    for pattern, replacement in word_corrections.items():
-        new_text = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
-        if new_text != corrected:
-            corrected = new_text
-            fixes_applied += 1
-            rule_fixes.append(f'Fixed common word error: {pattern}')
-    
-    if before_grammar != corrected:
-        fixes_applied += 1
-        rule_fixes.append('Applied grammar corrections')
-    
-    # PHASE 4: SENTENCE STRUCTURE
-    before_structure = corrected
-    
-    # Fix run-on sentences (basic)
-    corrected = re.sub(r'\\b(and|but|or)\\s+(\\w+)\\s+(\\w+)\\s+(and|but|or)\\b', 
-                      r'\\1 \\2 \\3, \\4', corrected)
-    
-    # Ensure sentences end with punctuation
-    if corrected and not corrected.rstrip().endswith(('.', '!', '?', ':')):
-        corrected = corrected.rstrip() + '.'
-        fixes_applied += 1
-        rule_fixes.append('Added missing sentence termination')
-    
-    if before_structure != corrected:
-        fixes_applied += 1
-        rule_fixes.append('Improved sentence structure')
-    
-    # PHASE 5: FINAL CLEANUP
-    before_cleanup = corrected
-    
-    # Remove extra whitespace
-    corrected = re.sub(r'\s{2,}', ' ', corrected)
-    corrected = corrected.strip()
-    
-    # Fix spacing around quotes
-    corrected = re.sub(r'"\s*([^"]*?)\s*"', r'"\1"', corrected)
-    corrected = re.sub(r'\'\s*([^\']*?)\s*\'', r'\'\1\'', corrected)
-    
-    if before_cleanup != corrected:
-        fixes_applied += 1
-        rule_fixes.append('Applied final cleanup and formatting')
-    
-    return {
-        'corrected_text': corrected,
-        'fixes_applied': fixes_applied,
-        'rule_fixes': rule_fixes,
-        'method': 'comprehensive_grammar_rules',
-        'original_length': len(text),
-        'corrected_length': len(corrected)
-    }
-
-
 def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
     """
     Use spaCy for natural grammar refinement with enhanced grammar checking
     """
     if not SPACY_AVAILABLE or not text or not text.strip():
-        # Fallback to basic grammar fixes
-        grammar_result = apply_enhanced_grammar_fixes(text)
         return {
-            'refined_text': grammar_result['fixed_text'],
-            'refinements_applied': grammar_result['grammar_fixes'],
-            'method': 'basic_grammar_fixes',
-            'entities_found': [],
-            'sentences_processed': 0,
-            'grammar_fixes_applied': grammar_result.get('fixes_applied', [])
+            'refined_text': text,
+            'refinements_applied': 0,
+            'method': 'none',
+            'entities_found': []
         }
     
     try:
-        doc = nlp(text)
-        refined_text = text
+        # PROTECT URLs and emails during spaCy processing
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        domain_pattern = r'\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+        spaced_email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+        spaced_domain_pattern = r'\bwww\.\s*[A-Za-z0-9.-]+(?:\.\s*[A-Za-z0-9.-]*)+\b'
+        
+        protected_patterns = []
+        def protect_pattern(match):
+            placeholder = f"__SPACY_PROTECTED_{len(protected_patterns)}__"
+            protected_patterns.append(match.group(0))
+            return placeholder
+        
+        # Protect all URL/email patterns
+        protected_text = text
+        protected_text = re.sub(spaced_email_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(spaced_domain_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(email_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(url_pattern, protect_pattern, protected_text)
+        protected_text = re.sub(domain_pattern, protect_pattern, protected_text)
+        
+        doc = nlp(protected_text)
+        refined_text = protected_text
         refinements_count = 0
         entities_found = []
         
@@ -1356,32 +665,89 @@ def refine_text_with_spacy_natural(text: str) -> Dict[str, Any]:
                 'end': ent.end_char
             })
         
-        # Apply enhanced grammar fixes
+        # 1. Fix capitalization of proper nouns naturally
+        for token in doc:
+            if token.pos_ == 'PROPN' and token.text.islower():
+                refined_text = refined_text.replace(token.text, token.text.capitalize())
+                refinements_count += 1
+        
+        # 2. Apply enhanced grammar fixes
         grammar_result = apply_enhanced_grammar_fixes(refined_text)
         if grammar_result['grammar_fixes'] > 0:
             refined_text = grammar_result['fixed_text']
             refinements_count += grammar_result['grammar_fixes']
         
+        # 3. Fix sentence structure using spaCy analysis
+        sentences = list(doc.sents)
+        for sent in sentences:
+            sent_text = sent.text.strip()
+            
+            # Check for sentence fragments
+            has_verb = any(token.pos_ == 'VERB' for token in sent)
+            has_subject = any(token.dep_ in ['nsubj', 'nsubjpass'] for token in sent)
+            
+            # If sentence lacks structure, try to fix
+            if not has_verb and len(sent_text.split()) > 3:
+                # This might be a fragment, but we'll be conservative
+                pass
+        
+        # 4. Fix common grammatical patterns
+        before_patterns = refined_text
+        
+        # Fix "which" vs "that" for restrictive/non-restrictive clauses
+        # Restrictive (essential): use "that" 
+        # Non-restrictive (additional info): use "which" with commas
+        refined_text = re.sub(r'\b(\w+)\s+which\s+(are|is)\s+not\s+yet\b', r'\1 that \2 not yet', refined_text)
+        refined_text = re.sub(r'\b(\w+)\s+which\s+may\s+become\b', r'\1 that may become', refined_text)
+        
+        # Fix "one of these" vs "one of those"
+        refined_text = re.sub(r'\bOne\s+of\s+these\s+is\s+the\b', 'One of these is the', refined_text)
+        
+        # Improve flow with better connectors
+        refined_text = re.sub(r'\bIn\s+fact,\s+there\s+may\s+be\b', 'In fact, there may be', refined_text)
+        
+        if before_patterns != refined_text:
+            refinements_count += 1
+        
+        # 5. Remove redundant words
+        before_redundant = refined_text
+        refined_text = re.sub(r'\b(\w+)\s+\1\b', r'\1', refined_text)
+        if before_redundant != refined_text:
+            refinements_count += 1
+        
+        # 6. Ensure text ends naturally
+        if refined_text and not refined_text.rstrip().endswith(('.', '!', '?')):
+            refined_text = refined_text.rstrip() + '.'
+            refinements_count += 1
+        
+        # 7. Final natural cleanup
+        refined_text = re.sub(r'\s+', ' ', refined_text).strip()
+        
+        # RESTORE protected patterns and apply URL/email fixes
+        for i, pattern in enumerate(protected_patterns):
+            placeholder = f"__SPACY_PROTECTED_{i}__"
+            # Apply URL/email fixes to the protected pattern before restoring
+            fixed_pattern = apply_url_email_fixes(pattern)['fixed_text']
+            refined_text = refined_text.replace(placeholder, fixed_pattern)
+            if fixed_pattern != pattern:
+                refinements_count += 1
+        
         return {
             'refined_text': refined_text,
             'refinements_applied': refinements_count,
-            'method': 'spacy_enhanced_grammar',
+            'method': 'spacy_enhanced_grammar_with_url_protection',
             'entities_found': entities_found[:20],
-            'sentences_processed': len(list(doc.sents)),
+            'sentences_processed': len(sentences),
             'grammar_fixes_applied': grammar_result.get('fixes_applied', [])
         }
         
     except Exception as e:
-        log('WARN', f'spaCy processing failed: {e}')
-        # Fallback to basic grammar fixes
-        grammar_result = apply_enhanced_grammar_fixes(text)
         return {
-            'refined_text': grammar_result['fixed_text'],
-            'refinements_applied': grammar_result['grammar_fixes'],
-            'method': 'basic_grammar_fixes_fallback',
-            'entities_found': [],
-            'sentences_processed': 0,
-            'grammar_fixes_applied': grammar_result.get('fixes_applied', [])
+            'refined_text': text,
+            'refinements_applied': 0,
+            'method': 'none',
+            'error': str(e),
+            'entities_found': []
         }
 
 
@@ -1400,7 +766,7 @@ def apply_comprehensive_ocr_fixes(text: str) -> Dict[str, Any]:
     fixes_applied = 0
     
     # Step 1: Apply URL and email fixes first (before other processing)
-    url_email_result = apply_enhanced_url_email_fixes(fixed_text)
+    url_email_result = apply_url_email_fixes(fixed_text)
     if url_email_result['url_email_fixes'] > 0:
         fixed_text = url_email_result['fixed_text']
         fixes_applied += url_email_result['url_email_fixes']
@@ -1516,93 +882,48 @@ def apply_comprehensive_text_refinement_natural(text: str) -> Dict[str, Any]:
     all_fixes_applied = []
     grammar_fixes_applied = []
     
-    # Step 0: Apply comprehensive OCR and formatting fixes first (with error handling)
-    log('INFO', 'Text refinement step 1/6: Applying OCR fixes')
-    step_start = time.time()
-    try:
-        ocr_result = apply_comprehensive_ocr_fixes(refined_text)
-        if ocr_result['fixes_applied'] > 0:
-            refined_text = ocr_result['fixed_text']
-            ocr_fixes = ocr_result['fixes_applied']
-            total_improvements += ocr_fixes
-            methods_used.append('ocr_fixes')
-            processing_notes.append(f"OCR fixes: {ocr_fixes}")
-            all_fixes_applied.append(f"Applied {ocr_fixes} OCR fixes")
-        log('INFO', f'OCR fixes completed in {time.time() - step_start:.2f}s ({ocr_fixes} fixes)')
-    except Exception as ocr_error:
-        log('ERROR', f'OCR fixes failed: {ocr_error}')
-        processing_notes.append('OCR correction failed, continuing without OCR fixes')
+    # Step 0: Apply comprehensive OCR and formatting fixes first
+    ocr_result = apply_comprehensive_ocr_fixes(refined_text)
+    if ocr_result['fixes_applied'] > 0:
+        refined_text = ocr_result['fixed_text']
+        ocr_fixes = ocr_result['fixes_applied']
+        total_improvements += ocr_fixes
+        methods_used.append('ocr_fixes')
+        processing_notes.append(f"OCR fixes: {ocr_fixes}")
+        all_fixes_applied.append(f"Applied {ocr_fixes} OCR fixes")
     
-    # Step 1: Apply spell correction (with error handling)
-    log('INFO', 'Text refinement step 2/6: Applying spell corrections')
-    step_start = time.time()
-    try:
-        spell_result = apply_text_correction(refined_text)
-        if spell_result['corrections_made'] > 0:
-            refined_text = spell_result['corrected_text']
-            spell_corrections = spell_result['corrections_made']
-            total_improvements += spell_corrections
-            methods_used.append(spell_result['method'])
-            processing_notes.append(f"Spell corrections: {spell_corrections}")
-            all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
-        log('INFO', f'Spell corrections completed in {time.time() - step_start:.2f}s ({spell_corrections} corrections)')
-    except Exception as spell_error:
-        log('ERROR', f'Spell correction failed: {spell_error}')
-        processing_notes.append('Spell correction failed, continuing without spell fixes')
+    # Step 1: Apply spell correction
+    spell_result = apply_text_correction(refined_text)
+    if spell_result['corrections_made'] > 0:
+        refined_text = spell_result['corrected_text']
+        spell_corrections = spell_result['corrections_made']
+        total_improvements += spell_corrections
+        methods_used.append(spell_result['method'])
+        processing_notes.append(f"Spell corrections: {spell_corrections}")
+        all_fixes_applied.append(f"Applied {spell_corrections} spell corrections")
     
-    # Step 2: Apply natural flow punctuation (with error handling)
-    log('INFO', 'Text refinement step 3/6: Applying natural flow punctuation')
-    step_start = time.time()
-    try:
-        flow_result = apply_natural_flow_punctuation(refined_text)
-        if flow_result['flow_fixes'] > 0:
-            refined_text = flow_result['refined_text']
-            flow_improvements = flow_result['flow_fixes']
-            total_improvements += flow_improvements
-            methods_used.append('natural_flow_punctuation_enhanced')
-            processing_notes.append(f"Natural flow fixes: {flow_improvements}")
-            all_fixes_applied.extend(flow_result['fixes_applied'])
-        log('INFO', f'Natural flow processing completed in {time.time() - step_start:.2f}s ({flow_improvements} improvements)')
-    except Exception as flow_error:
-        log('ERROR', f'Natural flow processing failed: {flow_error}')
-        processing_notes.append('Natural flow processing failed, continuing without flow fixes')
+    # Step 2: Apply natural flow punctuation with enhanced colon grammar and comprehensive dash handling
+    flow_result = apply_natural_flow_punctuation(refined_text)
+    if flow_result['flow_fixes'] > 0:
+        refined_text = flow_result['refined_text']
+        flow_improvements = flow_result['flow_fixes']
+        total_improvements += flow_improvements
+        methods_used.append('natural_flow_punctuation_enhanced')
+        processing_notes.append(f"Natural flow fixes: {flow_improvements}")
+        all_fixes_applied.extend(flow_result['fixes_applied'])
     
-    # Step 3: Apply AI-powered text correction (with comprehensive error handling)
-    log('INFO', 'Text refinement step 4/6: Applying AI-powered grammar correction (may take 30-60s for long texts)')
-    step_start = time.time()
-    try:
-        spacy_result = apply_ai_text_correction(refined_text)
+    # Step 3: Apply spaCy NLP refinement with enhanced grammar (if available)
+    if SPACY_AVAILABLE:
+        spacy_result = refine_text_with_spacy_natural(refined_text)
         if spacy_result['refinements_applied'] > 0:
             refined_text = spacy_result['refined_text']
             grammar_refinements = spacy_result['refinements_applied']
             total_improvements += grammar_refinements
             entities_found = spacy_result.get('entities_found', [])
             grammar_fixes_applied = spacy_result.get('grammar_fixes_applied', [])
-            methods_used.append(spacy_result.get('method', 'grammar_fixes'))
-        log('INFO', f'AI grammar correction completed in {time.time() - step_start:.2f}s ({grammar_refinements} refinements)')
-        processing_notes.append(f"Grammar refinements: {grammar_refinements}")
-        all_fixes_applied.append(f"Applied {grammar_refinements} grammar refinements")
-    except Exception as ai_error:
-        log('ERROR', f'AI text correction failed: {ai_error}')
-        processing_notes.append('AI correction failed, trying fallback')
-        # Final fallback - ensure we return something
-        log('INFO', 'Text refinement step 5/6: Applying fallback grammar rules')
-        fallback_start = time.time()
-        try:
-            fallback_result = apply_comprehensive_grammar_rules(refined_text)
-            if fallback_result['fixes_applied'] > 0:
-                refined_text = fallback_result['corrected_text']
-                total_improvements += fallback_result['fixes_applied']
-                grammar_refinements += fallback_result['fixes_applied']
-                methods_used.append('emergency_fallback_rules')
-                processing_notes.append('Applied emergency fallback grammar rules')
-            log('INFO', f'Fallback grammar rules completed in {time.time() - fallback_start:.2f}s ({fallback_result["fixes_applied"]} fixes)')
-        except Exception as fallback_error:
-            log('ERROR', f'Emergency fallback also failed: {fallback_error}')
-            processing_notes.append('All correction methods failed, returning original text')
-    
-    log('INFO', 'Text refinement step 6/6: Finalizing results')
-    log('INFO', f'Text refinement completed: {total_improvements} total improvements applied')
+            methods_used.append('spacy_enhanced_grammar')
+            processing_notes.append(f"Grammar refinements: {grammar_refinements}")
+            all_fixes_applied.append(f"Applied {grammar_refinements} grammar refinements")
     
     return {
         'refined_text': refined_text,
@@ -1693,53 +1014,45 @@ def process_s3_file() -> Dict[str, Any]:
             'confidence': extracted_data['confidence']
         })
         
-        # Process text through streamlined fast pipeline (seconds instead of minutes)
-        processed_text_data = {}
+        # Process text through enhanced pipeline: extracted -> formatted -> refined with comprehensive improvements
+        formatted_text_data = {}
+        refined_text_data = {}
         text_for_comprehend = extracted_data['text']
         
         if extracted_data['text'] and extracted_data['text'].strip():
-            # Fast text processing using built-in Python only
-            log('INFO', 'Fast text processing: OCR cleanup + grammar fixes + sentence formatting')
-            process_start = time.time()
+            # Stage 1: Format extracted text (remove \n, clean spacing, join lines)
+            log('INFO', 'Formatting extracted text')
+            formatted_text_data = format_extracted_text(extracted_data['text'])
             
-            # Use our optimized fast processor
-            processed_text_data = process_text_fast(
-                extracted_data['text'],
-                enable_cleanup=BASIC_TEXT_CLEANUP,
-                enable_grammar=PATTERN_BASED_CORRECTIONS
-            )
+            # Stage 2: Apply comprehensive refinement with natural flow, enhanced grammar, and comprehensive dash handling
+            log('INFO', 'Applying comprehensive text refinement with enhanced colon grammar and comprehensive dash handling')
+            refined_text_data = apply_comprehensive_text_refinement_natural(formatted_text_data.get('formatted', extracted_data['text']))
             
-            process_time = time.time() - process_start
-            text_for_comprehend = processed_text_data.get('processed_text', extracted_data['text'])
+            # Use the refined text for Comprehend analysis
+            text_for_comprehend = refined_text_data.get('refined_text', formatted_text_data.get('formatted', extracted_data['text']))
             
-            log('INFO', f'Fast text processing completed in {process_time:.2f}s', {
-                'originalChars': len(extracted_data['text']),
-                'processedChars': processed_text_data.get('processed_length', 0),
-                'totalImprovements': processed_text_data.get('total_improvements', 0),
-                'processingTimeMs': processed_text_data.get('processing_time_ms', 0),
-                'efficiencyScore': processed_text_data.get('efficiency_score', 0),
-                'processingSteps': processed_text_data.get('processing_steps', []),
-                'method': processed_text_data.get('method', 'fast_rule_based')
+            log('INFO', 'Text processing completed', {
+                'stage1_extractedChars': len(extracted_data['text']),
+                'stage2_formattedChars': formatted_text_data['stats']['cleanedChars'],
+                'stage3_refinedChars': refined_text_data.get('refined_length', 0),
+                'totalImprovements': refined_text_data.get('total_improvements', 0),
+                'spellCorrections': refined_text_data.get('spell_corrections', 0),
+                'grammarRefinements': refined_text_data.get('grammar_refinements', 0),
+                'flowImprovements': refined_text_data.get('flow_improvements', 0),
+                'methodsUsed': refined_text_data.get('methods_used', []),
+                'entitiesFound': len(refined_text_data.get('entities_found', []))
             })
-            
-            # Extract emails and URLs if found
-            if BASIC_TEXT_CLEANUP:
-                email_url_data = extract_emails_and_urls(text_for_comprehend)
-                if email_url_data['email_count'] > 0 or email_url_data['url_count'] > 0:
-                    log('INFO', 'Extracted structured data', {
-                        'emails': email_url_data['email_count'],
-                        'urls': email_url_data['url_count']
-                    })
         
-        # Process text with AWS Comprehend (fast and efficient)
+        # Process formatted text with AWS Comprehend
         comprehend_data = {}
-        if text_for_comprehend and text_for_comprehend.strip() and len(text_for_comprehend) >= MIN_TEXT_LENGTH:
-            log('INFO', 'AWS Comprehend analysis: language + sentiment + entities')
+        if text_for_comprehend and text_for_comprehend.strip():
+            log('INFO', 'Starting Comprehend analysis on refined text')
             comprehend_start_time = time.time()
             comprehend_data = process_text_with_comprehend(text_for_comprehend)
             comprehend_time = time.time() - comprehend_start_time
             
-            log('INFO', f'Comprehend analysis completed in {comprehend_time:.2f}s', {
+            log('INFO', 'Comprehend analysis completed', {
+                'processingTimeSeconds': comprehend_time,
                 'language': comprehend_data.get('languageName', comprehend_data.get('language', 'Unknown')),
                 'languageCode': comprehend_data.get('language'),
                 'sentiment': comprehend_data.get('sentiment', {}).get('Sentiment'),
@@ -1747,57 +1060,60 @@ def process_s3_file() -> Dict[str, Any]:
                 'keyPhrasesCount': len(comprehend_data.get('keyPhrases', []))
             })
         else:
-            log('INFO', 'Skipping Comprehend analysis - text too short or empty')
+            log('INFO', 'Skipping Comprehend analysis - no text extracted')
         
         total_processing_time = time.time() - start_time
         
-        # Generate streamlined processing results (optimized for performance)
+        # Generate processing results with comprehensive enhancements
         processing_results = {
             'processed_at': datetime.now(timezone.utc).isoformat(),
             'file_size': file_size,
             'content_type': content_type,
             'processing_duration': format_duration(total_processing_time),
-            'processing_method': 'fast_rule_based',
             'extracted_text': extracted_data['text'],
-            'processed_text': processed_text_data.get('processed_text', extracted_data['text']),
+            'formatted_text': formatted_text_data.get('formatted', extracted_data['text']),
+            'refined_text': refined_text_data.get('refined_text', formatted_text_data.get('formatted', extracted_data['text'])),
             'summary_analysis': {
                 'word_count': extracted_data['wordCount'],
                 'character_count': len(extracted_data['text']),
-                'processed_character_count': processed_text_data.get('processed_length', len(extracted_data['text'])),
                 'line_count': extracted_data['lineCount'],
+                'paragraph_count': formatted_text_data.get('stats', {}).get('paragraphCount', 0),
+                'sentence_count': formatted_text_data.get('stats', {}).get('sentenceCount', 0),
                 'confidence': extracted_data['confidence'],
-                'total_improvements': processed_text_data.get('total_improvements', 0),
-                'processing_time_ms': processed_text_data.get('processing_time_ms', 0),
-                'efficiency_score': processed_text_data.get('efficiency_score', 0),
-                'processing_steps': processed_text_data.get('processing_steps', [])
+                'total_improvements': refined_text_data.get('total_improvements', 0),
+                'spell_corrections': refined_text_data.get('spell_corrections', 0),
+                'grammar_refinements': refined_text_data.get('grammar_refinements', 0),
+                'flow_improvements': refined_text_data.get('flow_improvements', 0),
+                'methods_used': refined_text_data.get('methods_used', []),
+                'entities_found': len(refined_text_data.get('entities_found', []))
             },
-            'fast_processing_details': {
-                'method': processed_text_data.get('method', 'fast_rule_based'),
-                'total_improvements': processed_text_data.get('total_improvements', 0),
-                'processing_time_ms': processed_text_data.get('processing_time_ms', 0),
-                'efficiency_score': processed_text_data.get('efficiency_score', 0),
-                'original_length': processed_text_data.get('original_length', len(extracted_data['text'])),
-                'processed_length': processed_text_data.get('processed_length', len(extracted_data['text'])),
-                'performance_optimized': True,
-                'scalable_architecture': True
+            'text_refinement_details': {
+                'total_improvements': refined_text_data.get('total_improvements', 0),
+                'spell_corrections': refined_text_data.get('spell_corrections', 0),
+                'grammar_refinements': refined_text_data.get('grammar_refinements', 0),
+                'flow_improvements': refined_text_data.get('flow_improvements', 0),
+                'methods_used': refined_text_data.get('methods_used', []),
+                'entities_found': refined_text_data.get('entities_found', []),
+                'processing_notes': refined_text_data.get('processing_notes', 'No processing applied'),
+                'natural_flow_notes': refined_text_data.get('natural_flow_notes', 'No natural flow processing'),
+                'grammar_fixes_applied': refined_text_data.get('grammar_fixes_applied', []),
+                'length_change': refined_text_data.get('refined_length', 0) - refined_text_data.get('original_length', 0),
+                'all_fixes_applied': refined_text_data.get('all_fixes_applied', [])
             },
-            'structured_data': email_url_data if 'email_url_data' in locals() else {'emails': [], 'urls': []},
             'comprehend_analysis': comprehend_data,
             'metadata': {
-                'processor_version': '4.0.0',  # Streamlined fast processing
-                'architecture': 'high_performance_rule_based',
+                'processor_version': '2.7.0',  # Updated version with comprehensive dash handling
                 'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown'),
                 'textract_job_id': extracted_data['jobId'],
                 'textract_duration': format_duration(textract_time),
-                'text_processing_duration': f"{processed_text_data.get('processing_time_ms', 0):.2f}ms",
-                'comprehend_duration': f"{comprehend_time:.2f}s" if 'comprehend_time' in locals() else 'N/A',
-                'libraries_used': ['python_builtins', 'boto3', 're', 'string'],
-                'ai_models_removed': True,
-                'performance_optimized': True,
-                'scalable_to_millions': True,
-                'processing_method': 'fast_rule_based',
-                'memory_efficient': True,
-                'cpu_optimized': True
+                'comprehend_duration': format_duration(comprehend_data.get('processingTime', 0)) if comprehend_data.get('processingTime') else 'N/A',
+                'text_correction_enabled': TEXTBLOB_AVAILABLE or SPELLCHECKER_AVAILABLE,
+                'text_refinement_enabled': SPACY_AVAILABLE,
+                'natural_flow_enabled': True,
+                'enhanced_grammar_enabled': True,
+                'quillbot_compliant_colons': True,
+                'comprehensive_dash_handling': True,
+                'url_email_fixes_enabled': True
             }
         }
         
@@ -1819,9 +1135,9 @@ def process_s3_file() -> Dict[str, Any]:
             'extractedWords': extracted_data['wordCount'],
             'extractedLines': extracted_data['lineCount'],
             'confidence': extracted_data['confidence'],
-            'totalImprovements': processed_text_data.get('total_improvements', 0),
-            'flowImprovements': processed_text_data.get('flow_improvements', 0),
-            'grammarImprovements': processed_text_data.get('grammar_refinements', 0),
+            'totalImprovements': refined_text_data.get('total_improvements', 0),
+            'flowImprovements': refined_text_data.get('flow_improvements', 0),
+            'grammarImprovements': refined_text_data.get('grammar_refinements', 0),
             'comprehendLanguage': comprehend_data.get('language'),
             'comprehendSentiment': comprehend_data.get('sentiment', {}).get('Sentiment')
         })
@@ -1850,20 +1166,8 @@ def process_s3_file() -> Dict[str, Any]:
 def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, Any]:
     """Process file with AWS Textract - synchronous version"""
     try:
-        # Get file size for better logging
-        try:
-            s3_head = s3_client.head_object(Bucket=bucket_name, Key=object_key)
-            file_size = s3_head.get('ContentLength', 0)
-            file_size_mb = file_size / (1024 * 1024)
-        except:
-            file_size = 0
-            file_size_mb = 0
-        
         log('INFO', 'Starting Textract document analysis', {
-            's3Uri': f's3://{bucket_name}/{object_key}',
-            'fileSizeBytes': file_size,
-            'fileSizeMB': round(file_size_mb, 2),
-            'expectedProcessingTime': 'Large files (>1MB) may take 2-5 minutes'
+            's3Uri': f's3://{bucket_name}/{object_key}'
         })
         
         # Start asynchronous document analysis - text only
@@ -1896,22 +1200,10 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
         # Wait for job completion
         job_status = 'IN_PROGRESS'
         attempts = 0
-        max_attempts = TEXTRACT_MAX_ATTEMPTS  # Configurable timeout
-        
-        log('INFO', 'Waiting for Textract processing to complete (this may take a few minutes for large images)')
-        
-        # Check initial status immediately (some jobs complete very quickly)
-        try:
-            status_response = textract_client.get_document_text_detection(JobId=job_id)
-        except:
-            status_response = textract_client.get_document_analysis(JobId=job_id)
-        
-        job_status = status_response['JobStatus']
-        if job_status != 'IN_PROGRESS':
-            log('INFO', f'Textract job completed quickly with status: {job_status}')
+        max_attempts = 60  # 5 minutes timeout (5 seconds * 60)
         
         while job_status == 'IN_PROGRESS' and attempts < max_attempts:
-            time.sleep(TEXTRACT_POLL_INTERVAL)  # Configurable poll interval
+            time.sleep(5)  # Wait 5 seconds
             
             # Try text detection result first, then document analysis
             try:
@@ -1922,15 +1214,11 @@ def process_file_with_textract(bucket_name: str, object_key: str) -> Dict[str, A
             job_status = status_response['JobStatus']
             attempts += 1
             
-            # Log progress more frequently for better visibility
-            if attempts % 3 == 0:  # Log every 3 poll intervals
-                elapsed_time = attempts * TEXTRACT_POLL_INTERVAL
-                log('INFO', 'Textract processing in progress...', {
+            if attempts % 6 == 0:  # Log every 30 seconds
+                log('INFO', 'Waiting for Textract completion', {
                     'status': job_status,
                     'attempt': attempts,
-                    'maxAttempts': max_attempts,
-                    'elapsedSeconds': elapsed_time,
-                    'estimatedMaxSeconds': max_attempts * TEXTRACT_POLL_INTERVAL
+                    'maxAttempts': max_attempts
                 })
             
             if job_status == 'FAILED':
@@ -2031,10 +1319,33 @@ def apply_text_correction(text: str) -> Dict[str, Any]:
     method_used = 'none'
     
     try:
-        # TextBlob is disabled, skip to next method
+        # Method 1: TextBlob correction (preferred for OCR errors)
+        if TEXTBLOB_AVAILABLE:
+            log('DEBUG', 'Applying TextBlob text correction')
+            blob = TextBlob(text)
+            corrected_blob = blob.correct()
+            corrected_text = str(corrected_blob)
+            method_used = 'textblob'
+            
+            # Count differences
+            original_words = text.split()
+            corrected_words = corrected_text.split()
+            
+            if len(original_words) == len(corrected_words):
+                for i, (orig, corr) in enumerate(zip(original_words, corrected_words)):
+                    if orig != corr:
+                        corrections_made += 1
+                        correction_details.append({
+                            'position': i,
+                            'original': orig,
+                            'corrected': corr,
+                            'type': 'spelling'
+                        })
+            
+            log('DEBUG', f'TextBlob correction completed - {corrections_made} corrections made')
         
         # Method 2: PySpellChecker as fallback/enhancement
-        if SPELLCHECKER_AVAILABLE:
+        elif SPELLCHECKER_AVAILABLE:
             log('DEBUG', 'Applying PySpellChecker text correction')
             spell = SpellChecker()
             words = text.split()

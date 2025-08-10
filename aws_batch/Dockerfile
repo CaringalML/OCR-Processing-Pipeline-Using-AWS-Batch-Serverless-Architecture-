@@ -1,73 +1,75 @@
-# ================================================================================================
-# OCR PROCESSING PIPELINE DOCKERFILE
-# ================================================================================================
-# Optimized container for high-quality document processing at scale
-# Size: ~400-500MB (includes language-tool-python JVM)
-# Cold start: ~8-12 seconds (includes language tool initialization)
+# Multi-stage build for faster and smaller images
+# Stage 1: Build stage with full Python image for compiling dependencies
+FROM python:3.12-slim as builder
 
-FROM python:3.12-slim
-
-# Install Java and wget (required for language-tool-python)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jre-headless wget && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Add labels for AWS Batch tracking
-LABEL maintainer="Lawrence Caringal"
-LABEL application="ocr-batch-processing"
-LABEL version="4.1.0"
-LABEL description="High-quality OCR pipeline with advanced grammar correction"
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements file
 COPY requirements.txt ./
 
-# Install Python build tools and dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-distutils && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Create a virtual environment and install dependencies
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies with pre-built wheels where possible
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Set environment variables for optimal performance
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONPATH=/app
+# Install text correction libraries
+RUN pip install --no-cache-dir \
+    textblob==0.17.1 \
+    pyspellchecker==0.7.2
 
-# Language Tool configuration
-ENV JAVA_OPTS="-Xmx512m"
-ENV LT_DISABLE_REMOTE_RULES=true
+# Download TextBlob corpora
+RUN python -m textblob.download_corpora lite
 
-# AWS Batch specific optimizations
-ENV MALLOC_ARENA_MAX=2
+# Download spaCy language model
+RUN python -m spacy download en_core_web_sm
 
-# Verify core dependencies (skip language_tool_python to avoid download during build)
-RUN python -c "from spellchecker import SpellChecker; import boto3, json, re, regex, ftfy, rapidfuzz, email_validator, furl; print('✅ Core OCR dependencies verified')"
+# Stage 2: Runtime stage with minimal Alpine image
+FROM python:3.12-alpine3.20
 
-# Copy application code (single file)
-COPY index.py ./
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    libstdc++ \
+    libgomp \
+    && rm -rf /var/cache/apk/*
 
-# Create non-root user for security
-RUN groupadd -g 1001 python && \
-    useradd -m -u 1001 -g python python && \
-    chown -R python:python /app
+# Set working directory
+WORKDIR /app
 
-# Create directory for AWS Batch job outputs
-RUN mkdir -p /tmp/batch-output && \
-    chown -R python:python /tmp/batch-output
+# Copy virtual environment from builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy TextBlob data
+COPY --from=builder /root/nltk_data /root/nltk_data
+
+# Copy application code
+COPY . .
+
+# Create a non-root user and change ownership
+RUN addgroup -g 1001 -S python && \
+    adduser -S python -u 1001 -G python && \
+    chown -R python:python /app && \
+    chown -R python:python /root/nltk_data
 
 # Switch to non-root user
 USER python
 
-# Lightweight health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)" || exit 1
+# Set environment variables
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
 # Command to run the application
 CMD ["python", "index.py"]
