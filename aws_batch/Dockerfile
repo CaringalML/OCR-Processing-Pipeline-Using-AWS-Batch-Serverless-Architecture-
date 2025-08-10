@@ -38,7 +38,7 @@ ENV PYTHONPATH=/app
 ENV MALLOC_ARENA_MAX=2
 
 # Verify all dependencies
-RUN python -c "import boto3, json, re, regex, ftfy, rapidfuzz, pyspellchecker, email_validator, furl, language_tool_python; print('✅ All OCR processing dependencies verified')"
+RUN python -c "from spellchecker import SpellChecker; import boto3, json, re, regex, ftfy, rapidfuzz, email_validator, furl, language_tool_python; print('✅ All OCR processing dependencies verified')"
 
 # Copy application code (single file)
 COPY index.py ./
