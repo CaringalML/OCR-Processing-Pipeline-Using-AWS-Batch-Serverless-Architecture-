@@ -7,9 +7,9 @@
 
 FROM python:3.12-slim
 
-# Install Java (required for language-tool-python)
+# Install Java and wget (required for language-tool-python)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jre-headless && \
+    apt-get install -y --no-install-recommends openjdk-17-jre-headless wget && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -39,6 +39,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
+
+# Language Tool configuration
+ENV JAVA_OPTS="-Xmx512m"
+ENV LT_DISABLE_REMOTE_RULES=true
 
 # AWS Batch specific optimizations
 ENV MALLOC_ARENA_MAX=2

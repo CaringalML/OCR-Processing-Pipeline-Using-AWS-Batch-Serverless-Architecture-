@@ -121,16 +121,19 @@ def fast_grammar_fixes(text: str) -> Dict[str, Any]:
     # Step 1: Advanced grammar correction (if available)
     if LANGUAGE_TOOL_AVAILABLE and grammar_tool:
         try:
-            matches = grammar_tool.check(text)
+            # Limit text length to avoid timeouts (language-tool can be slow on long texts)
+            text_to_check = text[:2000] if len(text) > 2000 else text
+            matches = grammar_tool.check(text_to_check)
             if matches:
                 # Apply corrections from end to start to maintain positions
-                for match in reversed(matches):
+                for match in reversed(matches[:10]):  # Limit to top 10 corrections for performance
                     if match.replacements:
                         replacement = match.replacements[0]
                         text = text[:match.offset] + replacement + text[match.offset + match.errorLength:]
                         fixes_applied += 1
         except Exception as e:
             log('WARN', f'Language tool error: {e}')
+            # Fall back to spell checking if language tool fails
     
     # Step 2: Spell checking (if available)
     elif SPELLCHECKER_AVAILABLE and spell_checker:
@@ -388,7 +391,10 @@ def log(level: str, message: str, data: Dict[str, Any] = None) -> None:
             print(json.dumps(log_entry, default=str, separators=(',', ':')))
             
         # Also log to Python logger for CloudWatch integration
-        getattr(logger, level.lower(), logger.info)(message)
+        log_method = getattr(logger, level.lower(), logger.info)
+        if level.upper() == 'WARN':
+            log_method = logger.warning
+        log_method(message)
 
 # ================================================================================================
 # BALANCED LIBRARIES - FAST + QUALITY
@@ -432,13 +438,18 @@ except ImportError:
 
 try:
     import language_tool_python
+    # Initialize with minimal configuration for faster startup
+    grammar_tool = language_tool_python.LanguageTool('en-US', config={'cacheSize': 1000, 'maxErrors': 10})
     LANGUAGE_TOOL_AVAILABLE = True
-    grammar_tool = language_tool_python.LanguageTool('en-US')
     log('INFO', 'language-tool-python loaded - advanced grammar correction enabled')
-except ImportError:
+except ImportError as e:
     LANGUAGE_TOOL_AVAILABLE = False
     grammar_tool = None
-    log('WARN', 'language-tool-python not available - using basic grammar fixes')
+    log('WARN', f'language-tool-python not available - using basic grammar fixes: {e}')
+except Exception as e:
+    LANGUAGE_TOOL_AVAILABLE = False
+    grammar_tool = None
+    log('WARN', f'language-tool-python initialization failed - using basic grammar fixes: {e}')
 
 try:
     from furl import furl
