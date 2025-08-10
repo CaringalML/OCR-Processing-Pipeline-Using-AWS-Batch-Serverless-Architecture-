@@ -1808,9 +1808,9 @@ def process_s3_file() -> Dict[str, Any]:
             'extractedWords': extracted_data['wordCount'],
             'extractedLines': extracted_data['lineCount'],
             'confidence': extracted_data['confidence'],
-            'totalImprovements': refined_text_data.get('total_improvements', 0),
-            'flowImprovements': refined_text_data.get('flow_improvements', 0),
-            'grammarImprovements': refined_text_data.get('grammar_refinements', 0),
+            'totalImprovements': processed_text_data.get('total_improvements', 0),
+            'flowImprovements': processed_text_data.get('flow_improvements', 0),
+            'grammarImprovements': processed_text_data.get('grammar_refinements', 0),
             'comprehendLanguage': comprehend_data.get('language'),
             'comprehendSentiment': comprehend_data.get('sentiment', {}).get('Sentiment')
         })

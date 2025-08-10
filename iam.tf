@@ -183,6 +183,18 @@ resource "aws_iam_role_policy" "batch_task_policy" {
         ]
         Resource = var.iam_wildcard_resource
       },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "comprehend:DetectDominantLanguage",
+          "comprehend:DetectEntities",
+          "comprehend:DetectKeyPhrases",
+          "comprehend:DetectSentiment",
+          "comprehend:DetectSyntax",
+          "comprehend:DetectPiiEntities"
+        ]
+        Resource = var.iam_wildcard_resource
+      },
     ]
   })
 }
