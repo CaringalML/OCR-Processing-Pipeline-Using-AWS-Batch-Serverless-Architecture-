@@ -106,6 +106,18 @@ samconfig.toml
 .env.*
 !.env.example
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+.env.staging
+digitize-pro/.env
+digitize-pro/.env.local
+digitize-pro/.env.development.local
+digitize-pro/.env.test.local
+digitize-pro/.env.production.local
+digitize-pro/.env.production
+digitize-pro/.env.staging
 .env.*.local
 !.env.*.example
 
@@ -169,6 +181,10 @@ secrets/
 
 # Node.js (if used for frontend)
 node_modules/
+/node_modules
+digitize-pro/node_modules/
+digitize-pro/.pnp
+digitize-pro/.pnp.js
 .npm
 .yarn-integrity
 .yarn/cache
@@ -176,12 +192,18 @@ node_modules/
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+/.pnp
+.pnp.js
 
 # Build outputs
 build/
+/build
+digitize-pro/build/
+digitize-pro/coverage/
 dist/
 out/
 target/
+/coverage
 
 # Database
 *.db
