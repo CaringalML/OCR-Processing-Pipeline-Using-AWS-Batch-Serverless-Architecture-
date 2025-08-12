@@ -84,9 +84,10 @@ def lambda_handler(event, context):
         }
     
     try:
-        # Parse path parameters
+        # Parse path parameters and query parameters for fileId
         path_params = event.get('pathParameters', {}) or {}
-        file_id = path_params.get('fileId')
+        query_params = event.get('queryStringParameters', {}) or {}
+        file_id = path_params.get('fileId') or query_params.get('fileId')
         
         if not file_id:
             return {
@@ -97,7 +98,7 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Bad Request',
-                    'message': 'Missing fileId in path parameters'
+                    'message': 'Missing fileId in path parameters or query parameters'
                 })
             }
         
@@ -178,8 +179,9 @@ def lambda_handler(event, context):
         
         file_metadata = metadata_response['Items'][0]
         
-        # Check if file has been processed
-        if file_metadata.get('processing_status') != 'processed':
+        # Check if file has been processed (both long-batch 'processed' and short-batch 'completed' statuses)
+        processing_status = file_metadata.get('processing_status')
+        if processing_status not in ['processed', 'completed']:
             return {
                 'statusCode': 400,
                 'headers': {
@@ -188,7 +190,7 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Bad Request',
-                    'message': f'File {file_id} has not been processed yet. Status: {file_metadata.get("processing_status")}'
+                    'message': f'File {file_id} has not been processed yet. Status: {processing_status}. Expected: processed or completed'
                 })
             }
         

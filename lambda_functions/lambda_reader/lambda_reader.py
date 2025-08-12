@@ -132,7 +132,7 @@ def lambda_handler(event, context):
             
             file_metadata = decimal_to_json(metadata_response['Items'][0])
             
-            # Get processing results
+            # Get processing results from shared table (both short-batch and long-batch use it)
             results_response = results_table.get_item(
                 Key={'file_id': file_id}
             )
@@ -164,8 +164,38 @@ def lambda_handler(event, context):
             # Determine processing type and add appropriate results
             processing_route = file_metadata.get('processing_route', 'long-batch')
             
-            if processing_route == 'short-batch' and (file_metadata.get('raw_ocr_text') or file_metadata.get('refined_ocr_text')):
-                # Short-batch (Claude API) results - stored in metadata table
+            if processing_result:
+                # Results found in shared table (both short-batch and long-batch store here)
+                processing_type = processing_result.get('processing_type', processing_route)
+                
+                if processing_type == 'short-batch':
+                    # Short-batch (Claude API) results from shared table
+                    response_data['ocrResults'] = {
+                        'formattedText': processing_result.get('formatted_text', ''),  # Exact replica
+                        'refinedText': processing_result.get('refined_text', ''),      # Grammar improved
+                        'extractedText': processing_result.get('extracted_text', ''),  # Raw OCR
+                        'processingModel': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
+                        'processingType': 'short-batch',
+                        'processingCost': processing_result.get('processing_cost', 0),
+                        'processedAt': processing_result.get('processed_at', ''),
+                        'processingDuration': format_duration(processing_result.get('processing_duration', 0)),
+                        'tokenUsage': processing_result.get('token_usage', {}),
+                        'languageDetection': processing_result.get('language_detection', {}),
+                        'qualityAssessment': processing_result.get('quality_assessment', {})
+                    }
+                else:
+                    # Long-batch (Textract) results from shared table
+                    response_data['ocrResults'] = {
+                        'extractedText': processing_result.get('extracted_text', ''),     # Raw Textract
+                        'formattedText': processing_result.get('formatted_text', ''),    # Processed
+                        'refinedText': processing_result.get('refined_text', ''),        # Final refined
+                        'processingModel': processing_result.get('processing_model', 'aws-textract'),
+                        'processingType': 'long-batch',
+                        'processingDuration': format_duration(processing_result.get('processing_duration', 0))
+                    }
+            # Fallback to metadata table for backward compatibility (legacy short-batch)
+            elif processing_route == 'short-batch' and (file_metadata.get('raw_ocr_text') or file_metadata.get('refined_ocr_text')):
+                # Legacy short-batch results stored only in metadata table
                 raw_text = file_metadata.get('raw_ocr_text', '')
                 refined_text = file_metadata.get('refined_ocr_text', '')
                 
@@ -186,23 +216,45 @@ def lambda_handler(event, context):
                     'detectedLanguage': file_metadata.get('detected_language', 'unknown'),
                     'languageConfidence': file_metadata.get('language_confidence', 0.0)
                 }
-            elif processing_result:
-                # Long-batch (Textract) results - stored in results table
-                response_data['ocrResults'] = {
-                    'extractedText': processing_result.get('extracted_text', ''),     # Raw Textract
-                    'formattedText': processing_result.get('formatted_text', ''),    # Processed
-                    'refinedText': processing_result.get('refined_text', ''),        # Final refined
-                    'processingModel': 'aws-textract',
-                    'processingType': 'long-batch',
-                    'processingDuration': format_duration(processing_result.get('processing_duration', 0))
-                }
             else:
                 # No OCR results available
                 response_data['ocrResults'] = None
             
             # Add analysis data based on processing type
-            if processing_route == 'short-batch':
-                # For Claude processing, add text statistics for both versions
+            if processing_result and processing_result.get('processing_type') == 'short-batch':
+                # For Claude processing from shared table, add text statistics
+                formatted_text = processing_result.get('formatted_text', '')
+                refined_text = processing_result.get('refined_text', '')
+                
+                if formatted_text or refined_text:
+                    # Use refined text for analysis (better for word/sentence counting)
+                    analysis_text = refined_text if refined_text else formatted_text
+                    words = analysis_text.split()
+                    paragraphs = analysis_text.split('\n\n')
+                    sentences = analysis_text.split('. ')
+                    
+                    response_data['textAnalysis'] = {
+                        'total_words': len(words),
+                        'total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                        'total_sentences': len([s for s in sentences if s.strip()]),
+                        'raw_character_count': len(formatted_text),
+                        'refined_character_count': len(refined_text),
+                        'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
+                        'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
+                        'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
+                    }
+                    
+                    # Add entity analysis if available in results
+                    entity_analysis = processing_result.get('entity_analysis', {})
+                    if entity_analysis and entity_analysis.get('entity_summary'):
+                        response_data['entityAnalysis'] = {
+                            'entity_summary': entity_analysis.get('entity_summary', {}),
+                            'total_entities': entity_analysis.get('total_entities', 0),
+                            'entity_types': list(entity_analysis.get('entity_summary', {}).keys()),
+                            'detection_source': 'Claude AI OCR Analysis'
+                        }
+            elif processing_route == 'short-batch':
+                # Legacy: For Claude processing from metadata table
                 raw_text = file_metadata.get('raw_ocr_text', '')
                 refined_text = file_metadata.get('refined_ocr_text', '')
                 
@@ -333,17 +385,13 @@ def lambda_handler(event, context):
             # Enrich items with CloudFront URLs and results
             processed_items = []
             for item in items:
-                # Get processing results if available for long-batch files
+                # Get processing results from shared table for both short and long batch
                 if item.get('processing_status') in ['processed', 'completed']:
-                    # Only query results table for long-batch files (status = 'processed')
-                    if item.get('processing_status') == 'processed':
-                        results_response = results_table.get_item(
-                            Key={'file_id': item['file_id']}
-                        )
-                        processing_result = decimal_to_json(results_response.get('Item', {}))
-                    else:
-                        # Short-batch files (status = 'completed') have results in metadata table
-                        processing_result = {}
+                    # Query shared results table for both processing types
+                    results_response = results_table.get_item(
+                        Key={'file_id': item['file_id']}
+                    )
+                    processing_result = decimal_to_json(results_response.get('Item', {}))
                 else:
                     processing_result = {}
                 
@@ -374,8 +422,36 @@ def lambda_handler(event, context):
                     # Determine processing type and add appropriate results
                     processing_route = item.get('processing_route', 'long-batch')
                     
-                    if processing_route == 'short-batch' and (item.get('raw_ocr_text') or item.get('refined_ocr_text')):
-                        # Short-batch (Claude API) results - stored in metadata table
+                    if processing_result:
+                        # Results found in shared table
+                        processing_type = processing_result.get('processing_type', processing_route)
+                        
+                        if processing_type == 'short-batch':
+                            # Short-batch results from shared table
+                            item_data['ocrResults'] = {
+                                'formattedText': processing_result.get('formatted_text', ''),
+                                'refinedText': processing_result.get('refined_text', ''),
+                                'extractedText': processing_result.get('extracted_text', ''),
+                                'processingModel': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
+                                'processingType': 'short-batch',
+                                'processingCost': processing_result.get('processing_cost', 0),
+                                'processedAt': processing_result.get('processed_at', ''),
+                                'processingDuration': format_duration(processing_result.get('processing_duration', 0)),
+                                'tokenUsage': processing_result.get('token_usage', {}),
+                                'languageDetection': processing_result.get('language_detection', {})
+                            }
+                        else:
+                            # Long-batch results from shared table
+                            item_data['ocrResults'] = {
+                                'extractedText': processing_result.get('extracted_text', ''),
+                                'formattedText': processing_result.get('formatted_text', ''),
+                                'refinedText': processing_result.get('refined_text', ''),
+                                'processingModel': processing_result.get('processing_model', 'aws-textract'),
+                                'processingType': 'long-batch',
+                                'processingDuration': format_duration(processing_result.get('processing_duration', 0))
+                            }
+                    elif processing_route == 'short-batch' and (item.get('raw_ocr_text') or item.get('refined_ocr_text')):
+                        # Legacy short-batch results - stored only in metadata table
                         raw_text = item.get('raw_ocr_text', '')
                         refined_text = item.get('refined_ocr_text', '')
                         
@@ -397,8 +473,28 @@ def lambda_handler(event, context):
                             'languageConfidence': item.get('language_confidence', 0.0)
                         }
                         
-                        # Add analysis data for short-batch
-                        if raw_text or refined_text:
+                        # Add analysis data for results from shared table
+                        if processing_result and processing_type == 'short-batch':
+                            refined_text = processing_result.get('refined_text', '')
+                            formatted_text = processing_result.get('formatted_text', '')
+                            if refined_text or formatted_text:
+                                analysis_text = refined_text if refined_text else formatted_text
+                                words = analysis_text.split()
+                                paragraphs = analysis_text.split('\n\n')
+                                sentences = analysis_text.split('. ')
+                                
+                                item_data['textAnalysis'] = {
+                                    'total_words': len(words),
+                                    'total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                                    'total_sentences': len([s for s in sentences if s.strip()]),
+                                    'raw_character_count': len(formatted_text),
+                                    'refined_character_count': len(refined_text),
+                                    'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
+                                    'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
+                                    'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
+                                }
+                        # Add analysis data for legacy short-batch from metadata
+                        elif raw_text or refined_text:
                             # Use refined text for analysis (better for word/sentence counting)
                             analysis_text = refined_text if refined_text else raw_text
                             words = analysis_text.split()

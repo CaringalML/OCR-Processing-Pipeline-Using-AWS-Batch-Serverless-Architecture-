@@ -70,9 +70,9 @@ resource "aws_dynamodb_table" "file_metadata" {
   })
 }
 
-# DynamoDB Table for Processing Results
+# DynamoDB Table for Processing Results - Shared by both short-batch and long-batch
 resource "aws_dynamodb_table" "processing_results" {
-  name         = "${var.project_name}-${var.environment}-processing-results"
+  name         = "ocr-processor-batch-processing-results"
   billing_mode = var.dynamodb_billing_mode
   hash_key     = var.dynamodb_processing_results_hash_key
 
@@ -86,7 +86,8 @@ resource "aws_dynamodb_table" "processing_results" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-processing-results"
+    Name = "ocr-processor-batch-processing-results",
+    Purpose = "Shared OCR results storage for both short-batch and long-batch processing"
   })
 }
 

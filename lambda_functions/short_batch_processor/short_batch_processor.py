@@ -40,6 +40,8 @@ logger.setLevel(logging.INFO)
 
 # Environment variables with validation
 DOCUMENTS_TABLE = os.environ.get('DOCUMENTS_TABLE')
+# Use the shared results table for both short-batch and long-batch
+RESULTS_TABLE = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
 PROCESSED_BUCKET = os.environ.get('PROCESSED_BUCKET')
 DEAD_LETTER_QUEUE_URL = os.environ.get('DEAD_LETTER_QUEUE_URL')
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')

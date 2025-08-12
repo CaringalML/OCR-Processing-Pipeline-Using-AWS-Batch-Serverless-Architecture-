@@ -106,11 +106,25 @@ resource "aws_api_gateway_resource" "upload" {
 
 # Smart route endpoint removed - routing now integrated into /upload endpoint
 
-# Processed Resource (view processed files)
-resource "aws_api_gateway_resource" "processed" {
+# Batch Resource
+resource "aws_api_gateway_resource" "batch" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "batch"
+}
+
+# Batch Processed Resource (view processed files)
+resource "aws_api_gateway_resource" "batch_processed" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.batch.id
   path_part   = var.api_path_processed
+}
+
+# Batch Processed Edit Resource (edit processed files)
+resource "aws_api_gateway_resource" "batch_processed_edit" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.batch_processed.id
+  path_part   = "edit"
 }
 
 # Search Resource (search functionality)
@@ -196,32 +210,60 @@ resource "aws_lambda_permission" "upload_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
-# Processed GET Method (view processed files)
-resource "aws_api_gateway_method" "processed_get" {
+# Batch Processed GET Method (view processed files)
+resource "aws_api_gateway_method" "batch_processed_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.processed.id
+  resource_id   = aws_api_gateway_resource.batch_processed.id
   http_method   = "GET"
   authorization = "NONE"
 }
 
-# Processed GET Integration (to reader Lambda)
-resource "aws_api_gateway_integration" "processed_get" {
+# Batch Processed GET Integration (to reader Lambda)
+resource "aws_api_gateway_integration" "batch_processed_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.processed.id
-  http_method = aws_api_gateway_method.processed_get.http_method
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_get.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.reader.invoke_arn
 }
 
-# Lambda Permission for Processed
-resource "aws_lambda_permission" "processed_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Batch Processed Edit PUT Method (edit processed files)
+resource "aws_api_gateway_method" "batch_processed_edit_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_processed_edit.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+# Batch Processed Edit PUT Integration (to editor Lambda)
+resource "aws_api_gateway_integration" "batch_processed_edit_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed_edit.id
+  http_method = aws_api_gateway_method.batch_processed_edit_put.http_method
+
+  integration_http_method = var.api_integration_http_method
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.editor.invoke_arn
+}
+
+# Lambda Permission for Batch Processed GET
+resource "aws_lambda_permission" "batch_processed_get_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchGet"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.reader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/processed"
+}
+
+# Lambda Permission for Batch Processed Edit PUT
+resource "aws_lambda_permission" "batch_processed_edit_put_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchEditPut"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.editor.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/batch/processed/edit"
 }
 
 # Search GET Method (search functionality)
@@ -519,24 +561,6 @@ resource "aws_api_gateway_integration" "long_batch_process_post" {
   uri                     = aws_lambda_function.sqs_batch_processor.invoke_arn
 }
 
-# Long Batch Processed GET Method
-resource "aws_api_gateway_method" "long_batch_processed_get" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_processed.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-# Long Batch Processed GET Integration
-resource "aws_api_gateway_integration" "long_batch_processed_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_processed.id
-  http_method = aws_api_gateway_method.long_batch_processed_get.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.reader.invoke_arn
-}
 
 # Long Batch Search GET Method
 resource "aws_api_gateway_method" "long_batch_search_get" {
@@ -675,24 +699,6 @@ resource "aws_api_gateway_integration" "short_batch_process_post" {
   uri                     = aws_lambda_function.short_batch_submitter.invoke_arn
 }
 
-# Short Batch Processed GET Method
-resource "aws_api_gateway_method" "short_batch_processed_get" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.short_batch_processed.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-# Short Batch Processed GET Integration
-resource "aws_api_gateway_integration" "short_batch_processed_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.short_batch_processed.id
-  http_method = aws_api_gateway_method.short_batch_processed_get.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.reader.invoke_arn
-}
 
 # Short Batch Search GET Method
 resource "aws_api_gateway_method" "short_batch_search_get" {
@@ -941,10 +947,12 @@ resource "aws_api_gateway_integration_response" "invoice_processed_options" {
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   depends_on = [
+    # Unified Batch Dependencies
+    aws_api_gateway_integration.batch_processed_get,
+    aws_api_gateway_integration.batch_processed_edit_put,
     # Long Batch Dependencies
     aws_api_gateway_integration.long_batch_upload_post,
     aws_api_gateway_integration.long_batch_process_post,
-    aws_api_gateway_integration.long_batch_processed_get,
     aws_api_gateway_integration.long_batch_search_get,
     aws_api_gateway_integration.long_batch_edit_put,
     aws_api_gateway_integration.long_batch_delete_delete,
@@ -953,7 +961,6 @@ resource "aws_api_gateway_deployment" "main" {
     # Short Batch Dependencies
     aws_api_gateway_integration.short_batch_upload_post,
     aws_api_gateway_integration.short_batch_process_post,
-    aws_api_gateway_integration.short_batch_processed_get,
     aws_api_gateway_integration.short_batch_search_get,
     aws_api_gateway_integration.short_batch_edit_put,
     aws_api_gateway_integration.short_batch_delete_delete,
@@ -968,6 +975,11 @@ resource "aws_api_gateway_deployment" "main" {
 
   triggers = {
     redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.batch.id,
+      aws_api_gateway_resource.batch_processed.id,
+      aws_api_gateway_resource.batch_processed_edit.id,
+      aws_api_gateway_integration.batch_processed_get.id,
+      aws_api_gateway_integration.batch_processed_edit_put.id,
       aws_api_gateway_resource.long_batch.id,
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.long_batch_upload.id,
@@ -1003,7 +1015,7 @@ resource "aws_lambda_permission" "uploader_long_batch_api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.uploader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/long-batch/upload"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/long-batch/upload"
 }
 
 resource "aws_lambda_permission" "uploader_short_batch_api_gateway" {
@@ -1011,7 +1023,7 @@ resource "aws_lambda_permission" "uploader_short_batch_api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.uploader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/upload"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/upload"
 }
 
 resource "aws_lambda_permission" "invoice_uploader_api_gateway" {
@@ -1019,7 +1031,7 @@ resource "aws_lambda_permission" "invoice_uploader_api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.invoice_uploader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/invoices/upload"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/invoices/upload"
 }
 
 resource "aws_lambda_permission" "invoice_reader_api_gateway" {
@@ -1027,7 +1039,7 @@ resource "aws_lambda_permission" "invoice_reader_api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.invoice_reader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/short-batch/invoices/processed"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/invoices/processed"
 }
 
 resource "aws_lambda_permission" "sqs_processor" {
@@ -1035,7 +1047,7 @@ resource "aws_lambda_permission" "sqs_processor" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.sqs_batch_processor.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/long-batch/process"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/long-batch/process"
 }
 
 resource "aws_lambda_permission" "short_batch_submitter" {
@@ -1043,31 +1055,16 @@ resource "aws_lambda_permission" "short_batch_submitter" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.short_batch_submitter.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/process"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/process"
 }
 
-resource "aws_lambda_permission" "reader_long_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.reader.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/long-batch/processed"
-}
-
-resource "aws_lambda_permission" "reader_short_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayShortBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.reader.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/short-batch/processed"
-}
 
 resource "aws_lambda_permission" "search_long_batch" {
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.search.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/long-batch/search"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/long-batch/search"
 }
 
 resource "aws_lambda_permission" "search_short_batch" {
@@ -1075,7 +1072,7 @@ resource "aws_lambda_permission" "search_short_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.search.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/short-batch/search"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/search"
 }
 
 resource "aws_lambda_permission" "editor_long_batch" {
@@ -1083,7 +1080,7 @@ resource "aws_lambda_permission" "editor_long_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.editor.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/PUT/long-batch/edit"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/long-batch/edit"
 }
 
 resource "aws_lambda_permission" "editor_short_batch" {
@@ -1091,7 +1088,7 @@ resource "aws_lambda_permission" "editor_short_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.editor.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/PUT/short-batch/edit"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/short-batch/edit"
 }
 
 resource "aws_lambda_permission" "deleter_long_batch" {
@@ -1099,7 +1096,7 @@ resource "aws_lambda_permission" "deleter_long_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.deleter.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/DELETE/long-batch/delete/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/DELETE/long-batch/delete/*"
 }
 
 resource "aws_lambda_permission" "deleter_short_batch" {
@@ -1107,7 +1104,7 @@ resource "aws_lambda_permission" "deleter_short_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.deleter.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/DELETE/short-batch/delete/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/DELETE/short-batch/delete/*"
 }
 
 resource "aws_lambda_permission" "recycle_bin_reader_long_batch" {
@@ -1115,7 +1112,7 @@ resource "aws_lambda_permission" "recycle_bin_reader_long_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.recycle_bin_reader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/long-batch/recycle-bin"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/long-batch/recycle-bin"
 }
 
 resource "aws_lambda_permission" "recycle_bin_reader_short_batch" {
@@ -1123,7 +1120,7 @@ resource "aws_lambda_permission" "recycle_bin_reader_short_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.recycle_bin_reader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/GET/short-batch/recycle-bin"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/recycle-bin"
 }
 
 resource "aws_lambda_permission" "restorer_long_batch" {
@@ -1131,7 +1128,7 @@ resource "aws_lambda_permission" "restorer_long_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.restorer.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/long-batch/restore/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/long-batch/restore/*"
 }
 
 resource "aws_lambda_permission" "restorer_short_batch" {
@@ -1139,5 +1136,5 @@ resource "aws_lambda_permission" "restorer_short_batch" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.restorer.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/POST/short-batch/restore/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/restore/*"
 }

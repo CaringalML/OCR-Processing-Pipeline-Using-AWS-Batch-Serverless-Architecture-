@@ -6,19 +6,18 @@ output "api_gateway" {
 
     # Unified/General Endpoints (combines both batch types)
     unified_endpoints = {
-      smart_upload  = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
-      all_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed"
-      search_all    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
-      edit          = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/edit"
-      delete        = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/delete/{fileId}"
-      recycle_bin   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
-      restore       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/restore/{fileId}"
+      smart_upload     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload"
+      batch_processed  = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed"
+      search_all       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search"
+      edit             = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/edit"
+      delete           = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/delete/{fileId}"
+      recycle_bin      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/recycle-bin"
+      restore          = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/restore/{fileId}"
     }
 
     long_batch_endpoints = {
       upload      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload"
       process     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process"
-      processed   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/processed"
       search      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/search"
       edit        = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/edit"
       delete      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/delete/{fileId}"
@@ -29,7 +28,6 @@ output "api_gateway" {
     short_batch_endpoints = {
       upload      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload"
       process     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/process"
-      processed   = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/processed"
       search      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/search"
       edit        = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/edit"
       delete      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/delete/{fileId}"
@@ -234,26 +232,6 @@ output "networking" {
   }
 }
 
-# CloudWatch Logs Outputs
-output "cloudwatch_logs" {
-  description = "CloudWatch log groups"
-  value = {
-    s3_uploader           = aws_cloudwatch_log_group.s3_uploader_logs.name
-    lambda_reader         = aws_cloudwatch_log_group.lambda_reader_logs.name
-    document_search       = aws_cloudwatch_log_group.document_search_logs.name
-    sqs_to_batch          = aws_cloudwatch_log_group.sqs_to_batch_submitter_logs.name
-    batch_reconciliation  = aws_cloudwatch_log_group.batch_status_reconciliation_logs.name
-    dead_job_detector     = aws_cloudwatch_log_group.dead_job_detector_logs.name
-    file_deleter          = aws_cloudwatch_log_group.file_deleter_logs.name
-    file_restorer         = aws_cloudwatch_log_group.file_restorer_logs.name
-    recycle_bin_reader    = aws_cloudwatch_log_group.recycle_bin_reader_logs.name
-    short_batch_processor = aws_cloudwatch_log_group.short_batch_processor_logs.name
-    # long_batch_uploader and short_batch_uploader logs removed - functionality consolidated into s3_uploader
-    short_batch_submitter = aws_cloudwatch_log_group.short_batch_submitter_logs.name
-    ocr_editor            = aws_cloudwatch_log_group.ocr_editor_logs.name
-    cleanup_processor     = aws_cloudwatch_log_group.cleanup_processor_logs.name
-  }
-}
 
 # SNS Topics Outputs
 output "monitoring" {
@@ -284,28 +262,6 @@ output "monitoring" {
   }
 }
 
-# Rate Limiting Outputs
-output "rate_limiting" {
-  description = "API rate limiting configuration"
-  value = {
-    enabled = var.enable_rate_limiting
-    message = var.enable_rate_limiting ? "Rate limiting enabled with multi-tier protection" : "Rate limiting is disabled"
-    tiers = var.enable_rate_limiting ? {
-      public = {
-        rate_limit  = var.public_rate_limit
-        burst_limit = var.public_burst_limit
-      }
-      registered = {
-        rate_limit  = var.registered_rate_limit
-        burst_limit = var.registered_burst_limit
-      }
-      premium = {
-        rate_limit  = var.premium_rate_limit
-        burst_limit = var.premium_burst_limit
-      }
-    } : null
-  }
-}
 
 # Deployment Commands
 output "deployment_commands" {
@@ -326,150 +282,28 @@ output "deployment_commands" {
 output "api_examples" {
   description = "Example API calls for testing"
   value = {
-    # Unified Endpoints Examples (combines both batch types)
-    unified_search_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?q=electric+cars'"
-
-    unified_get_all_processed = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed'"
-
-    unified_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/processed?fileId=YOUR_FILE_ID'"
-
-    # Smart routing upload (size-based decision)
+    # Essential API Examples
     smart_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/upload' -F 'file=@document.pdf'"
-
-    # Long Batch Examples
-    long_batch_search = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/search?q=electric+cars'"
-
-    long_batch_process = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
-
-    long_batch_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/processed?fileId=YOUR_FILE_ID'"
-
-    # Short Batch Examples  
-    short_batch_search = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/search?q=electrik+kars&fuzzy=true&fuzzyThreshold=80'"
-
-    short_batch_process = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
-
-    short_batch_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/processed?fileId=YOUR_FILE_ID'"
-
-    # Upload examples (dedicated endpoints for forced routing)
-    long_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload' -F 'file=@document.pdf'"
-
-    short_batch_upload = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload' -F 'file=@document.pdf'"
-
-    # Invoice Processing Examples (OCR extracts all data automatically)
-    invoice_upload_simple = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf'"
-
-    invoice_upload_with_options = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload' -F 'file=@invoice.pdf' -F 'description=Monthly invoice' -F 'priority=urgent'"
-
-    invoice_get_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed'"
-
-    invoice_get_with_limit = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?limit=5000'"
-
-    invoice_get_by_id = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?fileId=YOUR_INVOICE_ID'"
-
-    invoice_search_vendor = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?vendorName=ABC+Company'"
-
-    invoice_search_number = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?invoiceNumber=INV-001'"
-
-    # Common operations (available on both APIs)
-    delete_file = "curl -X DELETE 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/delete/YOUR_FILE_ID'"
-
-    list_recycle_bin = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/recycle-bin'"
-
-    restore_file = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/restore/YOUR_FILE_ID'"
+    get_processed = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?fileId=YOUR_FILE_ID'"
+    search_all = "curl 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?q=electric+cars'"
+    process_long = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
+    process_short = "curl -X POST 'https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/process' -H 'Content-Type: application/json' -d '{\"fileId\": \"YOUR_FILE_ID\"}'"
   }
 }
 
-# Cost Optimization Summary
-output "cost_summary" {
-  description = "Cost optimization and estimates"
-  value = {
-    optimizations = [
-      "VPC Endpoints instead of NAT Gateways (save $75-105/month)",
-      "DynamoDB Pay-per-Request pricing",
-      "S3 Lifecycle policies for automatic archival",
-      "Lambda pay-per-use (no idle costs)",
-      "Fargate Spot for batch processing",
-      "CloudFront PriceClass_100 for cost-effective CDN"
-    ]
-
-    estimated_monthly_costs = {
-      vpc_endpoints = "$43.20"
-      cloudfront    = "$1-10 (usage based)"
-      dynamodb      = "$0.25 per million requests"
-      s3_storage    = "$0.023 per GB"
-      lambda        = "$0.20 per million requests"
-      batch_fargate = "$0.04 per vCPU hour"
-    }
-
-    annual_savings = "$900-1,260 vs traditional EC2/RDS setup"
-  }
-}
 
 # Architecture Overview
 output "architecture" {
   description = "System architecture overview"
   value = {
-    upload_flow       = "Smart Router → Size-based routing OR Forced routing via dedicated endpoints"
-    long_batch_flow   = "Long Batch Upload → Direct to long-batch-files → AWS Batch → DynamoDB"
-    short_batch_flow  = "Short Batch Upload → Direct to short-batch-files → Lambda → Claude AI OCR → DynamoDB"
-    smart_routing     = "Generic Upload (/upload) → Smart Router → Size/type-based decision → Appropriate processing pipeline"
-    unified_retrieval = "Unified Processed (/processed) → Reader Lambda → Combines both batch types → CloudFront CDN"
-    search_flow       = "Search APIs (/search, /long-batch/search, /short-batch/search) → Search Lambda → DynamoDB (Fuzzy Search)"
-    delete_flow       = "Delete APIs → Deleter Lambda → Recycle Bin → TTL (30 days)"
-    restore_flow      = "Restore APIs → Restorer Lambda → DynamoDB (Restore)"
-
+    unified_retrieval = "Unified Processed (/batch/processed) → Reader Lambda → Combines both batch types → CloudFront CDN"
     key_features = [
-      "Dual API architecture (Long & Short batch)",
-      "Smart routing based on file size and type",
-      "Forced routing via dedicated endpoints",
-      "Serverless auto-scaling processing",
-      "Fast processing for small files (10-30s)",
-      "Heavy processing for complex files (5-15min)",
-      "Specialized invoice OCR processing",
-      "Structured invoice data extraction",
-      "Invoice-specific search and filtering",
-      "Fuzzy search with RapidFuzz",
-      "Semantic text processing",
-      "Cost-optimized infrastructure",
-      "Comprehensive monitoring",
-      "Recycle bin with 30-day retention",
-      "Soft delete and restore functionality"
+      "Unified /batch/processed?fileId= endpoint",
+      "Smart routing based on file size",
+      "Fast Claude AI processing (10-30s)",
+      "Heavy AWS Batch processing (5-15min)",
+      "Specialized invoice OCR processing"
     ]
-
-    invoice_processing = {
-      flow = "Invoice Upload → S3 Invoice Folder → SQS → Claude AI OCR → Comprehensive Extraction → DynamoDB"
-      features = [
-        "Claude Sonnet 4 for maximum accuracy OCR",
-        "60+ detailed fields extracted automatically",
-        "Comprehensive business and client information",
-        "Complete financial breakdown with currency handling",
-        "Enhanced line item details with categories",
-        "Payment and banking information extraction",
-        "Signature and logo detection",
-        "Document quality assessment",
-        "Multi-language support",
-        "Advanced search by any extracted field",
-        "Structured JSON output for easy integration"
-      ]
-
-      field_categories = {
-        business_info     = "15 fields: name, address, contact, tax details, logo detection"
-        client_info       = "11 fields: complete customer information and addresses"
-        invoice_details   = "8 fields: numbers, dates, references, types"
-        financial_summary = "12 fields: totals, taxes, discounts, currency"
-        line_items        = "9 fields per item: descriptions, quantities, pricing, categories"
-        payment_info      = "8 fields: terms, methods, banking details"
-        additional_info   = "7 fields: notes, signatures, authorization"
-        document_metadata = "7 fields: quality, confidence, validation"
-      }
-
-      supported_formats        = ["PDF", "PNG", "JPG", "JPEG"]
-      max_file_size            = "10MB"
-      processing_time          = "10-30 seconds"
-      confidence_scoring       = "High/Medium/Low with quality assessment"
-      total_extractable_fields = "60+ structured fields"
-      currency_support         = "Multi-currency with symbol and code detection"
-    }
   }
 }
 
@@ -485,45 +319,4 @@ output "environment" {
   }
 }
 
-# Troubleshooting Information
-output "troubleshooting" {
-  description = "Helpful troubleshooting information"
-  value = {
-    logs_insights_query = <<-EOT
-      fields @timestamp, @message
-      | filter @message like /ERROR/
-      | sort @timestamp desc
-      | limit 20
-    EOT
 
-    check_batch_jobs = "aws batch list-jobs --job-queue ${aws_batch_job_queue.main.name} --job-status FAILED"
-
-    check_dlq = "aws sqs receive-message --queue-url ${aws_sqs_queue.batch_dlq.url}"
-
-    lambda_errors = "aws logs tail /aws/lambda/${var.project_name}-${var.environment}-* --follow --filter-pattern ERROR"
-  }
-}
-
-# Security Information
-output "security" {
-  description = "Security configuration summary"
-  value = {
-    encryption = {
-      s3_buckets      = "AES-256 encryption enabled"
-      dynamodb_tables = "Encryption at rest enabled"
-      cloudfront      = "HTTPS only with TLS 1.2+"
-    }
-
-    access_control = {
-      s3_public_access   = "Blocked"
-      api_authentication = var.enable_rate_limiting ? "API keys required for higher limits" : "Public access"
-      cloudfront_oai     = "Origin Access Identity configured"
-    }
-
-    network_security = {
-      vpc_isolation   = "Private subnets for compute"
-      security_groups = "Least privilege rules"
-      vpc_endpoints   = "Private AWS service access"
-    }
-  }
-}

@@ -1119,8 +1119,11 @@ def process_s3_file() -> Dict[str, Any]:
         
         log('INFO', 'Storing processing results')
         
-        # Store processing results in DynamoDB
+        # Store processing results in DynamoDB (legacy table)
         store_processing_results(file_id, processing_results)
+        
+        # UNIFIED STORAGE: Also store in results table for edit endpoint compatibility
+        store_unified_results(file_id, processing_results)
         
         log('INFO', 'Updating status to processed')
         
@@ -1847,7 +1850,8 @@ def update_file_status(table_name: str, file_id: str, status: str, additional_da
 
 def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
     """Store processing results in DynamoDB - synchronous version"""
-    results_table_name = os.getenv('DYNAMODB_TABLE', '').replace('-file-metadata', '-processing-results')
+    # Use RESULTS_TABLE env var if set, otherwise use the shared table name
+    results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     
     try:
         table = dynamodb.Table(results_table_name)
@@ -1867,6 +1871,79 @@ def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
             'error': str(error)
         })
         raise
+
+
+def store_unified_results(file_id: str, results: Dict[str, Any]) -> None:
+    """Store results in unified results table for edit endpoint compatibility"""
+    # Use the shared results table for both short-batch and long-batch
+    unified_results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
+    
+    try:
+        table = dynamodb.Table(unified_results_table_name)
+        
+        # Extract the text data for unified storage (matching short-batch schema)
+        extracted_text = results.get('extracted_text', '')
+        formatted_text = results.get('formatted_text', extracted_text)
+        refined_text = results.get('refined_text', formatted_text)
+        
+        # Get processing metadata
+        comprehend_data = results.get('comprehend_analysis', {})
+        text_refinement = results.get('text_refinement_details', {})
+        
+        # Create unified item schema (matching short-batch processor schema)
+        unified_item = {
+            'file_id': file_id,
+            'extracted_text': extracted_text,
+            'formatted_text': formatted_text,
+            'refined_text': refined_text,
+            'processing_model': 'aws-textract-comprehend',
+            'processing_type': 'long-batch',
+            'processing_duration': results.get('processing_duration', '0s'),
+            'processing_cost': Decimal('0'),  # Textract cost not tracked in this version
+            'processed_at': results.get('processed_at', datetime.now(timezone.utc).isoformat()),
+            'user_edited': False,
+            'edit_history': [],
+            'language_detection': {
+                'detected_language': comprehend_data.get('languageName', 'unknown'),
+                'confidence': comprehend_data.get('languageScore', Decimal('0.0'))
+            },
+            'token_usage': {
+                'ocr_tokens': {'input': 0, 'output': 0},
+                'refinement_tokens': {'input': 0, 'output': 0}
+            },
+            'quality_assessment': {
+                'needs_refinement': False,
+                'score': 100,
+                'issues': [],
+                'assessment': 'textract_processed'
+            },
+            'entity_analysis': {
+                'entities': comprehend_data.get('entities', []),
+                'entity_summary': comprehend_data.get('entitySummary', {}),
+                'total_entities': comprehend_data.get('entityStats', {}).get('totalEntities', 0)
+            },
+            'created_at': results.get('processed_at', datetime.now(timezone.utc).isoformat()),
+            'updated_at': results.get('processed_at', datetime.now(timezone.utc).isoformat())
+        }
+        
+        # Convert to DynamoDB compatible format
+        unified_item_converted = convert_to_dynamodb_compatible(unified_item)
+        
+        table.put_item(Item=unified_item_converted)
+        log('DEBUG', 'Unified results stored for edit compatibility', {
+            'fileId': file_id, 
+            'table': unified_results_table_name,
+            'extractedTextLength': len(extracted_text),
+            'refinedTextLength': len(refined_text)
+        })
+        
+    except Exception as error:
+        log('ERROR', 'Failed to store unified results', {
+            'fileId': file_id,
+            'table': unified_results_table_name,
+            'error': str(error)
+        })
+        # Don't raise - this is supplementary storage, main storage should still work
 
 
 def run_batch_job() -> None:

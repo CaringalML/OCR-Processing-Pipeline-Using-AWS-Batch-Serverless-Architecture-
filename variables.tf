@@ -58,7 +58,7 @@ variable "environment" {
 variable "api_stage_name" {
   description = "API Gateway deployment stage name. Appears in API URLs: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}"
   type        = string
-  default     = "batch"
+  default     = "v1"
 }
 
 # =============================================================================

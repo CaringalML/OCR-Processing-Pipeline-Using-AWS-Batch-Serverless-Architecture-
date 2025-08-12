@@ -4,8 +4,18 @@ This document provides comprehensive documentation for all available API endpoin
 
 ## Base URL Structure
 ```
-https://{api-gateway-id}.execute-api.{region}.amazonaws.com/{stage}/
+https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 ```
+
+**Current Stage:** `v1` (production deployment)
+
+## ✅ CONFIRMED WORKING ENDPOINTS
+
+### **Unified Batch Processing Endpoint**
+**GET** `/v1/batch/processed` - ✅ **TESTED & WORKING**
+- Combines files from both Claude AI (short-batch) and AWS Textract (long-batch)
+- Supports `?fileId=` parameter for specific file retrieval
+- Returns unified response format for all processing types
 
 ---
 
@@ -63,26 +73,96 @@ curl -X POST '/upload' -F 'file=@document.pdf' \
 
 ---
 
-## Get All Processed Files
-**Endpoint:** `GET /processed`
+## Get All Processed Files ✅ UNIFIED ENDPOINT
+**Endpoint:** `GET /v1/batch/processed`
 
-**Purpose:** Retrieve ALL processed files from both short-batch (Claude) and long-batch (Textract) processing.
+**Purpose:** Retrieve ALL processed files from both short-batch (Claude AI) and long-batch (AWS Textract) processing pipelines in a single unified response.
+
+**Key Features:**
+- ✅ **Combines both pipelines**: Returns files from short-batch AND long-batch processing
+- ✅ **Automatic detection**: No need to specify which pipeline the file came from
+- ✅ **Sorted by recency**: Most recently uploaded files first
+- ✅ **Query parameter support**: Filter by specific fileId or limit results
+
+---
+
+## Edit Processed Files ✅ UNIFIED ENDPOINT
+**Endpoint:** `PUT /v1/batch/processed/edit?fileId={fileId}`
+
+**Purpose:** Edit OCR results for files from BOTH short-batch (Claude AI) and long-batch (AWS Textract) processing pipelines using a single unified endpoint.
+
+**Key Features:**
+- ✅ **Works with both pipelines**: Edit files regardless of processing method
+- ✅ **Partial updates**: Update only the fields you want to change
+- ✅ **Edit history**: Automatically tracks all changes with timestamps
+- ✅ **Metadata support**: Update publication info, titles, authors, etc.
+
+**Request Body:**
+```json
+{
+  "refinedText": "Updated text content...",
+  "formattedText": "Updated formatted text...",
+  "metadata": {
+    "title": "New Title",
+    "author": "New Author",
+    "description": "Updated description"
+  }
+}
+```
+
+**Example:**
+```bash
+# Edit refined text only
+curl -X PUT "https://your-api.execute-api.region.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id" \
+  -H "Content-Type: application/json" \
+  -d '{"refinedText": "Transport for Tomorrow - EDITED VERSION..."}'
+
+# Edit multiple fields
+curl -X PUT "https://your-api.execute-api.region.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refinedText": "Updated text...",
+    "metadata": {
+      "title": "New Document Title",
+      "author": "Updated Author"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "fileId": "your-file-id",
+  "refinedText": "Transport for Tomorrow - EDITED VERSION...",
+  "formattedText": "Original formatted text...",
+  "userEdited": true,
+  "lastEdited": "2025-08-12T02:21:17.580819+00:00",
+  "editHistory": [
+    {
+      "edited_at": "2025-08-12T02:21:17.580789+00:00",
+      "edited_fields": ["refined_text"],
+      "previous_refined_text": "Original text content..."
+    }
+  ],
+  "message": "OCR results updated successfully"
+}
+```
 
 **Query Parameters:**
-- `limit` - Number of results (default: 50)
-- `fileId` - Get specific file
+- `fileId` - Get specific file (works for files from both pipelines)
+- `limit` - Number of results (default: 50, applied after combining both pipelines)
 - `status` - Filter by status (default: 'processed')
 
 **Examples:**
 ```bash
-# Get all processed files
-curl '/processed'
+# Get all processed files from both pipelines
+curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed'
 
-# Get specific file
-curl '/processed?fileId=your-file-id'
+# Get specific file (works for both short-batch and long-batch files)
+curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed?fileId=your-file-id'
 
-# Get with limit
-curl '/processed?limit=100'
+# Get limited results (e.g., last 20 files from both pipelines)
+curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed?limit=20'
 ```
 
 **Response:**
@@ -142,7 +222,7 @@ curl '/processed?limit=100'
 
 **Example:**
 ```bash
-curl '/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
+curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 ```
 
 ---
@@ -190,12 +270,6 @@ curl '/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Get Long-Batch Processed Files
-**Endpoint:** `GET /long-batch/processed`
-
-**Purpose:** Get ONLY long-batch processed files (Textract-based).
-
-**Response:** Same structure as unified `/processed` but filtered to only show `processingType: "long-batch"`.
 
 ---
 
@@ -243,12 +317,6 @@ curl '/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Get Short-Batch Processed Files  
-**Endpoint:** `GET /short-batch/processed`
-
-**Purpose:** Get ONLY short-batch processed files (Claude AI-based).
-
-**Response:** Same structure as unified `/processed` but filtered to only show `processingType: "short-batch"`.
 
 ---
 
@@ -334,7 +402,7 @@ curl '/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 ## 1. Smart Upload + Unified Retrieval
 ```javascript
 // Upload with smart routing
-const uploadResponse = await fetch('/upload', {
+const uploadResponse = await fetch('/v1/upload', {
   method: 'POST',
   body: formData
 });
@@ -345,7 +413,7 @@ const waitTime = routingDecision.route === 'short-batch' ? 30000 : 300000;
 
 setTimeout(async () => {
   // Get from unified endpoint
-  const results = await fetch(`/processed?fileId=${fileId}`);
+  const results = await fetch(`/v1/batch/processed?fileId=${fileId}`);
   const data = await results.json();
   console.log('Results:', data.ocrResults);
 }, waitTime);
@@ -354,20 +422,20 @@ setTimeout(async () => {
 ## 2. Forced Short-Batch Processing
 ```javascript
 // Force short-batch processing
-const uploadResponse = await fetch('/short-batch/upload', {
+const uploadResponse = await fetch('/v1/short-batch/upload', {
   method: 'POST',
   body: formData
 });
 
-const processResponse = await fetch('/short-batch/process', {
+const processResponse = await fetch('/v1/short-batch/process', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ fileId })
 });
 
-// Check short-batch results
+// Check results using unified endpoint
 setTimeout(async () => {
-  const results = await fetch(`/short-batch/processed?fileId=${fileId}`);
+  const results = await fetch(`/v1/batch/processed?fileId=${fileId}`);
   const data = await results.json();
   console.log('Claude AI Results:', data.ocrResults);
 }, 30000);
@@ -376,7 +444,7 @@ setTimeout(async () => {
 ## 3. Invoice Processing Workflow
 ```javascript
 // Upload invoice
-const invoiceResponse = await fetch('/short-batch/invoices/upload', {
+const invoiceResponse = await fetch('/v1/short-batch/invoices/upload', {
   method: 'POST',
   body: invoiceFormData
 });
@@ -393,13 +461,13 @@ setTimeout(async () => {
 ## 4. Search Across All Documents
 ```javascript
 // Search all processed files
-const searchAll = await fetch('/search?q=transportation&fuzzy=true');
+const searchAll = await fetch('/v1/search?q=transportation&fuzzy=true');
 
-// Search only Claude AI processed files  
-const searchShort = await fetch('/short-batch/search?q=transportation');
+// Get all processed files
+const allFiles = await fetch('/v1/batch/processed');
 
-// Search only Textract processed files
-const searchLong = await fetch('/long-batch/search?q=transportation');
+// Get specific processed file
+const specificFile = await fetch('/v1/batch/processed?fileId=your-file-id');
 ```
 
 ---

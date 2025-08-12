@@ -341,6 +341,7 @@ resource "aws_lambda_function" "short_batch_processor" {
   environment {
     variables = {
       DOCUMENTS_TABLE       = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.id
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
       SNS_TOPIC_ARN         = aws_sns_topic.alerts.arn
@@ -425,6 +426,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
       BATCH_JOB_DEFINITION = aws_batch_job_definition.main.name
       SQS_QUEUE_URL        = aws_sqs_queue.batch_queue.url
       DYNAMODB_TABLE       = aws_dynamodb_table.file_metadata.name
+      RESULTS_TABLE        = aws_dynamodb_table.processing_results.name
       LOG_LEVEL            = var.lambda_log_level
       ENVIRONMENT          = var.environment
     }

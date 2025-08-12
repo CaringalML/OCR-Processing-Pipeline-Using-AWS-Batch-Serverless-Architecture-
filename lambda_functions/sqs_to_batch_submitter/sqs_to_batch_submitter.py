@@ -17,6 +17,7 @@ def lambda_handler(event, context):
     job_queue = os.environ.get('BATCH_JOB_QUEUE')
     job_definition = os.environ.get('BATCH_JOB_DEFINITION')
     dynamodb_table_name = os.environ.get('DYNAMODB_TABLE')
+    results_table_name = os.environ.get('RESULTS_TABLE')
     
     if not all([job_queue, job_definition, dynamodb_table_name]):
         print("ERROR: Missing required environment variables")
@@ -98,7 +99,8 @@ def lambda_handler(event, context):
                             {'name': 'S3_BUCKET', 'value': bucket_name},
                             {'name': 'S3_KEY', 'value': object_key},
                             {'name': 'FILE_ID', 'value': file_id},
-                            {'name': 'DYNAMODB_TABLE', 'value': dynamodb_table_name}
+                            {'name': 'DYNAMODB_TABLE', 'value': dynamodb_table_name},
+                            {'name': 'RESULTS_TABLE', 'value': results_table_name or 'ocr-processor-batch-processing-results'}
                         ]
                     }
                 )
