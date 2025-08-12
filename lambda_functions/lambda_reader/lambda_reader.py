@@ -72,12 +72,11 @@ def lambda_handler(event, context):
     # Initialize AWS clients
     dynamodb = boto3.resource('dynamodb')
     
-    # Get configuration
-    metadata_table_name = os.environ.get('METADATA_TABLE')
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    # Get configuration - only results table needed now
+    results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
-    if not all([metadata_table_name, results_table_name, cloudfront_domain]):
+    if not all([results_table_name, cloudfront_domain]):
         return {
             'statusCode': 500,
             'headers': {
@@ -106,18 +105,16 @@ def lambda_handler(event, context):
             batch_type_filter = 'long-batch'
         # If '/processed' (root endpoint), show all batch types (batch_type_filter = None)
         
-        metadata_table = dynamodb.Table(metadata_table_name)
         results_table = dynamodb.Table(results_table_name)
         
         # If specific file_id is requested
         if file_id:
-            # Get file metadata
-            metadata_response = metadata_table.query(
-                KeyConditionExpression=Key('file_id').eq(file_id),
-                Limit=1
+            # Get file data from results table
+            results_response = results_table.get_item(
+                Key={'file_id': file_id}
             )
             
-            if not metadata_response['Items']:
+            if not results_response.get('Item'):
                 return {
                     'statusCode': 404,
                     'headers': {
@@ -130,91 +127,44 @@ def lambda_handler(event, context):
                     })
                 }
             
-            file_metadata = decimal_to_json(metadata_response['Items'][0])
+            processing_result = decimal_to_json(results_response['Item'])
             
-            # Get processing results from shared table (both short-batch and long-batch use it)
-            results_response = results_table.get_item(
-                Key={'file_id': file_id}
-            )
+            # Generate CloudFront URL from results table data
+            s3_key = processing_result.get('key', '')
+            cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else ''
             
-            processing_result = decimal_to_json(results_response.get('Item', {}))
-            
-            # Generate CloudFront URL
-            cloudfront_url = f"https://{cloudfront_domain}/{file_metadata['s3_key']}"
-            
-            # Build response data
+            # Build response data from results table
             response_data = {
                 'fileId': file_id,
-                'fileName': file_metadata.get('file_name', ''),
-                'uploadTimestamp': file_metadata.get('upload_timestamp', ''),
-                'processingStatus': file_metadata.get('processing_status', ''),
-                'fileSize': file_metadata.get('file_size', 0),
-                'contentType': file_metadata.get('content_type', ''),
+                'fileName': processing_result.get('file_name', ''),
+                'uploadTimestamp': processing_result.get('upload_timestamp', ''),
+                'processingStatus': processing_result.get('processing_status', ''),
+                'processingType': processing_result.get('processing_type', ''),
+                'fileSize': processing_result.get('file_size', 0),
+                'contentType': processing_result.get('content_type', ''),
                 'cloudFrontUrl': cloudfront_url,
-                'metadata': {
-                    'publication': file_metadata.get('publication', ''),
-                    'year': file_metadata.get('year', ''),
-                    'title': file_metadata.get('title', ''),
-                    'author': file_metadata.get('author', ''),
-                    'description': file_metadata.get('description', ''),
-                    'tags': file_metadata.get('tags', [])
-                }
+                'bucket': processing_result.get('bucket', ''),
+                'key': processing_result.get('key', ''),
+                'processingModel': processing_result.get('processing_model', '')
             }
             
-            # Determine processing type and add appropriate results
-            processing_route = file_metadata.get('processing_route', 'long-batch')
-            
+            # Add OCR results from unified table structure
             if processing_result:
-                # Results found in shared table (both short-batch and long-batch store here)
-                processing_type = processing_result.get('processing_type', processing_route)
-                
-                if processing_type == 'short-batch':
-                    # Short-batch (Claude API) results from shared table
-                    response_data['ocrResults'] = {
-                        'formattedText': processing_result.get('formatted_text', ''),  # Exact replica
-                        'refinedText': processing_result.get('refined_text', ''),      # Grammar improved
-                        'extractedText': processing_result.get('extracted_text', ''),  # Raw OCR
-                        'processingModel': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
-                        'processingType': 'short-batch',
-                        'processingCost': processing_result.get('processing_cost', 0),
-                        'processedAt': processing_result.get('processed_at', ''),
-                        'processingDuration': format_duration(processing_result.get('processing_duration', 0)),
-                        'tokenUsage': processing_result.get('token_usage', {}),
-                        'languageDetection': processing_result.get('language_detection', {}),
-                        'qualityAssessment': processing_result.get('quality_assessment', {})
-                    }
-                else:
-                    # Long-batch (Textract) results from shared table
-                    response_data['ocrResults'] = {
-                        'extractedText': processing_result.get('extracted_text', ''),     # Raw Textract
-                        'formattedText': processing_result.get('formatted_text', ''),    # Processed
-                        'refinedText': processing_result.get('refined_text', ''),        # Final refined
-                        'processingModel': processing_result.get('processing_model', 'aws-textract'),
-                        'processingType': 'long-batch',
-                        'processingDuration': format_duration(processing_result.get('processing_duration', 0))
-                    }
-            # Fallback to metadata table for backward compatibility (legacy short-batch)
-            elif processing_route == 'short-batch' and (file_metadata.get('raw_ocr_text') or file_metadata.get('refined_ocr_text')):
-                # Legacy short-batch results stored only in metadata table
-                raw_text = file_metadata.get('raw_ocr_text', '')
-                refined_text = file_metadata.get('refined_ocr_text', '')
-                
                 response_data['ocrResults'] = {
-                    'formattedText': raw_text,      # Exact replica of scanned document
-                    'refinedText': refined_text,    # Grammar and punctuation improved by Claude
-                    'processingModel': file_metadata.get('model', 'claude-sonnet-4-20250514'),
-                    'processingType': 'short-batch',
-                    'processingCost': file_metadata.get('processing_cost', 0),
-                    'processedAt': file_metadata.get('processed_at', ''),
-                    'processingDuration': format_duration(file_metadata.get('processing_time', 0)),
-                    'rawTextLength': len(raw_text),
-                    'refinedTextLength': len(refined_text),
-                    'tokenUsage': {
-                        'ocrTokens': file_metadata.get('ocr_tokens', {}),
-                        'refinementTokens': file_metadata.get('refinement_tokens', {})
-                    },
-                    'detectedLanguage': file_metadata.get('detected_language', 'unknown'),
-                    'languageConfidence': file_metadata.get('language_confidence', 0.0)
+                    'extractedText': processing_result.get('extracted_text', ''),
+                    'formattedText': processing_result.get('formatted_text', ''),
+                    'refinedText': processing_result.get('refined_text', ''),
+                    'processingModel': processing_result.get('processing_model', ''),
+                    'processingType': processing_result.get('processing_type', ''),
+                    'processingCost': processing_result.get('processing_cost', 0),
+                    'processedAt': processing_result.get('processed_at', ''),
+                    'processingDuration': processing_result.get('processing_duration', ''),
+                    'tokenUsage': processing_result.get('token_usage', {}),
+                    'languageDetection': processing_result.get('language_detection', {}),
+                    'qualityAssessment': processing_result.get('quality_assessment', {}),
+                    'entityAnalysis': processing_result.get('entity_analysis', {}),
+                    'userEdited': processing_result.get('user_edited', False),
+                    'editHistory': processing_result.get('edit_history', [])
                 }
             else:
                 # No OCR results available
@@ -322,10 +272,10 @@ def lambda_handler(event, context):
                     response_data['invoiceAnalysis'] = invoice_analysis
             
         else:
-            # Query files by status
+            # Query files from results table
             if status_filter == 'all':
-                # Scan all files (less efficient but necessary for 'all')
-                response = metadata_table.scan(
+                # Scan all files from results table
+                response = results_table.scan(
                     Limit=limit
                 )
             elif status_filter == 'processed':

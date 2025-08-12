@@ -169,7 +169,7 @@ resource "aws_iam_role_policy" "batch_task_policy" {
           "dynamodb:PutItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
+          aws_dynamodb_table.processing_results.arn,
           aws_dynamodb_table.processing_results.arn
         ]
       },
@@ -371,7 +371,7 @@ resource "aws_iam_policy" "uploader_policy" {
           "dynamodb:GetItem",
           "dynamodb:UpdateItem"
         ]
-        Resource = aws_dynamodb_table.file_metadata.arn
+        Resource = aws_dynamodb_table.processing_results.arn
       },
       # SQS - Send messages to processing queues
       {
@@ -413,8 +413,8 @@ resource "aws_iam_policy" "reader_policy" {
           "dynamodb:Scan"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn
         ]
       }
@@ -446,8 +446,8 @@ resource "aws_iam_policy" "search_policy" {
           "dynamodb:GetItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn
         ]
       }
@@ -479,8 +479,8 @@ resource "aws_iam_policy" "editor_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn
         ]
       }
@@ -512,8 +512,8 @@ resource "aws_iam_policy" "short_batch_submitter_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*"
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*"
         ]
       },
       {
@@ -569,8 +569,8 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
           "dynamodb:PutItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn,
           aws_dynamodb_table.ocr_budget_tracking.arn
         ]
@@ -645,7 +645,7 @@ resource "aws_iam_policy" "sqs_processor_policy" {
           "dynamodb:GetItem",
           "dynamodb:Query"
         ]
-        Resource = aws_dynamodb_table.file_metadata.arn
+        Resource = aws_dynamodb_table.processing_results.arn
       }
     ]
   })
@@ -730,7 +730,7 @@ resource "aws_iam_policy" "batch_reconciliation_policy" {
           "dynamodb:GetItem",
           "dynamodb:Query"
         ]
-        Resource = aws_dynamodb_table.file_metadata.arn
+        Resource = aws_dynamodb_table.processing_results.arn
       },
       {
         Effect = var.iam_effect_allow
@@ -792,7 +792,7 @@ resource "aws_iam_policy" "dead_job_detector_policy" {
           "dynamodb:GetItem",
           "dynamodb:Query"
         ]
-        Resource = aws_dynamodb_table.file_metadata.arn
+        Resource = aws_dynamodb_table.processing_results.arn
       },
       {
         Effect = var.iam_effect_allow
@@ -854,7 +854,7 @@ resource "aws_iam_policy" "deleter_policy" {
           "dynamodb:DeleteItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
+          aws_dynamodb_table.processing_results.arn,
           aws_dynamodb_table.processing_results.arn
         ]
       },
@@ -926,7 +926,7 @@ resource "aws_iam_policy" "restorer_policy" {
           "dynamodb:Query"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
+          aws_dynamodb_table.processing_results.arn,
           aws_dynamodb_table.processing_results.arn
         ]
       },
@@ -1104,8 +1104,8 @@ resource "aws_iam_policy" "invoice_uploader_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*"
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*"
         ]
       },
       # SQS - Send messages to invoice queue
@@ -1163,8 +1163,8 @@ resource "aws_iam_policy" "invoice_processor_policy" {
           "dynamodb:PutItem"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn,
           "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.ocr_budget_tracking.arn
@@ -1221,8 +1221,8 @@ resource "aws_iam_policy" "invoice_reader_policy" {
           "dynamodb:Scan"
         ]
         Resource = [
-          aws_dynamodb_table.file_metadata.arn,
-          "${aws_dynamodb_table.file_metadata.arn}/index/*",
+          aws_dynamodb_table.processing_results.arn,
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn,
           "${aws_dynamodb_table.processing_results.arn}/index/*"
         ]

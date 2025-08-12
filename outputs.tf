@@ -174,9 +174,9 @@ output "dynamodb" {
   description = "DynamoDB tables information"
   value = {
     metadata_table = {
-      name       = aws_dynamodb_table.file_metadata.name
-      arn        = aws_dynamodb_table.file_metadata.arn
-      stream_arn = aws_dynamodb_table.file_metadata.stream_arn
+      name       = aws_dynamodb_table.processing_results.name
+      arn        = aws_dynamodb_table.processing_results.arn
+      stream_arn = aws_dynamodb_table.processing_results.stream_arn
     }
     results_table = {
       name       = aws_dynamodb_table.processing_results.name

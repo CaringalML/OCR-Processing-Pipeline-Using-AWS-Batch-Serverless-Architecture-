@@ -172,7 +172,7 @@ resource "aws_lambda_function" "uploader" {
   environment {
     variables = {
       UPLOAD_BUCKET_NAME     = aws_s3_bucket.upload_bucket.id
-      DYNAMODB_TABLE         = aws_dynamodb_table.file_metadata.name
+      DYNAMODB_TABLE         = aws_dynamodb_table.processing_results.name
       SHORT_BATCH_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
       LONG_BATCH_QUEUE_URL   = aws_sqs_queue.batch_queue.url
       FILE_SIZE_THRESHOLD_KB = var.file_size_threshold_kb
@@ -206,7 +206,7 @@ resource "aws_lambda_function" "reader" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
       LOG_LEVEL         = var.lambda_log_level
@@ -239,7 +239,7 @@ resource "aws_lambda_function" "search" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
       LOG_LEVEL         = var.lambda_log_level
@@ -273,7 +273,7 @@ resource "aws_lambda_function" "editor" {
 
   environment {
     variables = {
-      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
       LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
@@ -306,7 +306,7 @@ resource "aws_lambda_function" "short_batch_submitter" {
   environment {
     variables = {
       SQS_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
-      METADATA_TABLE = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE = aws_dynamodb_table.processing_results.name
       LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
@@ -340,7 +340,7 @@ resource "aws_lambda_function" "short_batch_processor" {
 
   environment {
     variables = {
-      DOCUMENTS_TABLE       = aws_dynamodb_table.file_metadata.name
+      DOCUMENTS_TABLE       = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.id
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
@@ -425,7 +425,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
       BATCH_JOB_QUEUE      = aws_batch_job_queue.main.name
       BATCH_JOB_DEFINITION = aws_batch_job_definition.main.name
       SQS_QUEUE_URL        = aws_sqs_queue.batch_queue.url
-      DYNAMODB_TABLE       = aws_dynamodb_table.file_metadata.name
+      DYNAMODB_TABLE       = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE        = aws_dynamodb_table.processing_results.name
       LOG_LEVEL            = var.lambda_log_level
       ENVIRONMENT          = var.environment
@@ -534,7 +534,7 @@ resource "aws_lambda_function" "batch_status_reconciliation" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE = aws_dynamodb_table.file_metadata.name
+      DYNAMODB_TABLE = aws_dynamodb_table.processing_results.name
       LOG_LEVEL      = var.lambda_log_level
       ENVIRONMENT    = var.environment
     }
@@ -576,7 +576,7 @@ resource "aws_lambda_function" "dead_job_detector" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE         = aws_dynamodb_table.file_metadata.name
+      DYNAMODB_TABLE         = aws_dynamodb_table.processing_results.name
       MAX_PROCESSING_MINUTES = var.max_processing_minutes
       LOG_LEVEL              = var.lambda_log_level
       ENVIRONMENT            = var.environment
@@ -619,7 +619,7 @@ resource "aws_lambda_function" "deleter" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
       S3_BUCKET         = aws_s3_bucket.upload_bucket.id
@@ -653,7 +653,7 @@ resource "aws_lambda_function" "restorer" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
       LOG_LEVEL         = var.lambda_log_level
@@ -763,7 +763,7 @@ resource "aws_lambda_function" "invoice_uploader" {
   environment {
     variables = {
       UPLOAD_BUCKET     = aws_s3_bucket.upload_bucket.bucket
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       INVOICE_QUEUE_URL = aws_sqs_queue.invoice_queue.url
     }
   }
@@ -792,7 +792,7 @@ resource "aws_lambda_function" "invoice_processor" {
 
   environment {
     variables = {
-      DOCUMENTS_TABLE       = aws_dynamodb_table.file_metadata.name
+      DOCUMENTS_TABLE       = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.bucket
       DEAD_LETTER_QUEUE_URL = "" # Will be set if needed
@@ -850,7 +850,7 @@ resource "aws_lambda_function" "invoice_reader" {
 
   environment {
     variables = {
-      METADATA_TABLE    = aws_dynamodb_table.file_metadata.name
+      METADATA_TABLE    = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
     }

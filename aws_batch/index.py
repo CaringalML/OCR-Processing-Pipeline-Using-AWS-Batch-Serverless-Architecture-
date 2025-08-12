@@ -948,13 +948,13 @@ def process_s3_file() -> Dict[str, Any]:
     bucket_name = os.getenv('S3_BUCKET')
     object_key = os.getenv('S3_KEY')
     file_id = os.getenv('FILE_ID')
-    dynamo_table = os.getenv('DYNAMODB_TABLE')
+    results_table = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     
     log('INFO', 'Starting file processing', {
         'bucket': bucket_name,
         'key': object_key,
         'fileId': file_id,
-        'table': dynamo_table
+        'resultsTable': results_table
     })
     
     # Validate required environment variables
@@ -965,8 +965,6 @@ def process_s3_file() -> Dict[str, Any]:
         missing_vars.append('S3_KEY')
     if not file_id:
         missing_vars.append('FILE_ID')
-    if not dynamo_table:
-        missing_vars.append('DYNAMODB_TABLE')
     
     if missing_vars:
         error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
@@ -976,11 +974,7 @@ def process_s3_file() -> Dict[str, Any]:
     try:
         log('INFO', 'Updating status to processing')
         
-        # Update processing status to 'processing'
-        update_file_status(dynamo_table, file_id, 'processing', {
-            'processing_started': datetime.now(timezone.utc).isoformat(),
-            'batch_job_id': os.getenv('AWS_BATCH_JOB_ID', 'unknown')
-        })
+        # Status updates removed - storing directly to results table at completion
         
         log('INFO', 'Retrieving file metadata from S3')
         
@@ -1119,19 +1113,10 @@ def process_s3_file() -> Dict[str, Any]:
         
         log('INFO', 'Storing processing results')
         
-        # Store processing results in DynamoDB (legacy table)
-        store_processing_results(file_id, processing_results)
+        # Store all results in unified table (matching short-batch schema)
+        store_unified_results(file_id, processing_results, bucket_name, object_key)
         
-        # UNIFIED STORAGE: Also store in results table for edit endpoint compatibility
-        store_unified_results(file_id, processing_results)
-        
-        log('INFO', 'Updating status to processed')
-        
-        # Update file status to 'processed'
-        update_file_status(dynamo_table, file_id, 'processed', {
-            'processing_completed': datetime.now(timezone.utc).isoformat(),
-            'processing_duration': processing_results['processing_duration']
-        })
+        log('INFO', 'Long-batch processing completed and stored in results table')
         
         log('INFO', 'File processing completed successfully', {
             'processingTimeSeconds': total_processing_time,
@@ -1153,15 +1138,12 @@ def process_s3_file() -> Dict[str, Any]:
             'type': type(error).__name__
         })
         
-        # Update status to 'failed'
+        # Store error result to results table
         try:
-            update_file_status(dynamo_table, file_id, 'failed', {
-                'error_message': str(error),
-                'failed_at': datetime.now(timezone.utc).isoformat()
-            })
-            log('INFO', 'File status updated to failed')
-        except Exception as update_error:
-            log('ERROR', 'Failed to update error status', {'error': str(update_error)})
+            store_error_result(file_id, str(error), bucket_name, object_key)
+            log('INFO', 'Error status stored to results table')
+        except Exception as store_error:
+            log('ERROR', 'Failed to store error status', {'error': str(store_error)})
         
         raise
 
@@ -1792,88 +1774,13 @@ def process_text_with_comprehend(text: str) -> Dict[str, Any]:
         }
 
 
-def update_file_status(table_name: str, file_id: str, status: str, additional_data: Dict[str, Any] = None) -> None:
-    """Update file status in DynamoDB - synchronous version"""
-    if additional_data is None:
-        additional_data = {}
-    
-    try:
-        # Get the table
-        table = dynamodb.Table(table_name)
-        
-        # First, get the current item to find the upload_timestamp
-        response = table.query(
-            KeyConditionExpression=boto3.dynamodb.conditions.Key('file_id').eq(file_id),
-            Limit=1
-        )
-        
-        if not response['Items']:
-            raise ValueError(f'File with ID {file_id} not found in database')
-        
-        upload_timestamp = response['Items'][0]['upload_timestamp']
-        
-        # Convert additional data to DynamoDB compatible format
-        additional_data_converted = convert_to_dynamodb_compatible(additional_data)
-        
-        # Update the item
-        update_expression = 'SET processing_status = :status, last_updated = :updated'
-        expression_attribute_values = {
-            ':status': status,
-            ':updated': datetime.now(timezone.utc).isoformat()
-        }
-        
-        # Add additional data to the update
-        for i, (key, value) in enumerate(additional_data_converted.items()):
-            attr_name = f':val{i}'
-            update_expression += f', {key} = {attr_name}'
-            expression_attribute_values[attr_name] = value
-        
-        table.update_item(
-            Key={
-                'file_id': file_id,
-                'upload_timestamp': upload_timestamp
-            },
-            UpdateExpression=update_expression,
-            ExpressionAttributeValues=expression_attribute_values
-        )
-        
-        log('DEBUG', 'DynamoDB status updated', {'fileId': file_id, 'status': status})
-        
-    except Exception as error:
-        log('ERROR', 'Failed to update file status', {
-            'fileId': file_id,
-            'status': status,
-            'error': str(error)
-        })
-        raise
+# REMOVED: update_file_status function - no longer needed with unified table approach
 
 
-def store_processing_results(file_id: str, results: Dict[str, Any]) -> None:
-    """Store processing results in DynamoDB - synchronous version"""
-    # Use RESULTS_TABLE env var if set, otherwise use the shared table name
-    results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
-    
-    try:
-        table = dynamodb.Table(results_table_name)
-        
-        # Convert all values to DynamoDB compatible format
-        item = convert_to_dynamodb_compatible({
-            'file_id': file_id,
-            **results
-        })
-        
-        table.put_item(Item=item)
-        log('DEBUG', 'Processing results stored', {'fileId': file_id, 'table': results_table_name})
-        
-    except Exception as error:
-        log('ERROR', 'Failed to store processing results', {
-            'fileId': file_id,
-            'error': str(error)
-        })
-        raise
+# REMOVED: store_processing_results function - replaced with store_unified_results
 
 
-def store_unified_results(file_id: str, results: Dict[str, Any]) -> None:
+def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, object_key: str) -> None:
     """Store results in unified results table for edit endpoint compatibility"""
     # Use the shared results table for both short-batch and long-batch
     unified_results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
@@ -1890,9 +1797,16 @@ def store_unified_results(file_id: str, results: Dict[str, Any]) -> None:
         comprehend_data = results.get('comprehend_analysis', {})
         text_refinement = results.get('text_refinement_details', {})
         
+        # Generate upload timestamp for consistency (use current time for long-batch)
+        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        
         # Create unified item schema (matching short-batch processor schema)
         unified_item = {
             'file_id': file_id,
+            'upload_timestamp': upload_timestamp,
+            'bucket': bucket,
+            'key': object_key,
+            'file_name': object_key.split('/')[-1],  # Extract filename from key
             'extracted_text': extracted_text,
             'formatted_text': formatted_text,
             'refined_text': refined_text,
@@ -1901,6 +1815,7 @@ def store_unified_results(file_id: str, results: Dict[str, Any]) -> None:
             'processing_duration': results.get('processing_duration', '0s'),
             'processing_cost': Decimal('0'),  # Textract cost not tracked in this version
             'processed_at': results.get('processed_at', datetime.now(timezone.utc).isoformat()),
+            'processing_status': 'completed',
             'user_edited': False,
             'edit_history': [],
             'language_detection': {
@@ -1944,6 +1859,77 @@ def store_unified_results(file_id: str, results: Dict[str, Any]) -> None:
             'error': str(error)
         })
         # Don't raise - this is supplementary storage, main storage should still work
+
+
+def store_error_result(file_id: str, error_message: str, bucket: str, object_key: str) -> None:
+    """Store error result in unified results table"""
+    unified_results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
+    
+    try:
+        table = dynamodb.Table(unified_results_table_name)
+        
+        # Generate upload timestamp for consistency
+        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        
+        # Create error item schema (matching short-batch processor schema)
+        error_item = {
+            'file_id': file_id,
+            'upload_timestamp': upload_timestamp,
+            'bucket': bucket,
+            'key': object_key,
+            'file_name': object_key.split('/')[-1],  # Extract filename from key
+            'extracted_text': '',
+            'formatted_text': '',
+            'refined_text': '',
+            'processing_model': 'aws-textract-comprehend',
+            'processing_type': 'long-batch',
+            'processing_duration': '0s',
+            'processing_cost': Decimal('0'),
+            'processed_at': datetime.now(timezone.utc).isoformat(),
+            'processing_status': 'failed',
+            'error_message': error_message,
+            'failed_at': datetime.now(timezone.utc).isoformat(),
+            'user_edited': False,
+            'edit_history': [],
+            'language_detection': {
+                'detected_language': 'unknown',
+                'confidence': Decimal('0.0')
+            },
+            'token_usage': {
+                'ocr_tokens': {'input': 0, 'output': 0},
+                'refinement_tokens': {'input': 0, 'output': 0}
+            },
+            'quality_assessment': {
+                'needs_refinement': False,
+                'score': 0,
+                'issues': ['processing_failed'],
+                'assessment': 'error'
+            },
+            'entity_analysis': {
+                'entities': [],
+                'entity_summary': {},
+                'total_entities': 0
+            },
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Convert to DynamoDB compatible format
+        error_item_converted = convert_to_dynamodb_compatible(error_item)
+        
+        table.put_item(Item=error_item_converted)
+        log('DEBUG', 'Error result stored in results table', {
+            'fileId': file_id,
+            'table': unified_results_table_name,
+            'error': error_message
+        })
+        
+    except Exception as error:
+        log('ERROR', 'Failed to store error result', {
+            'error': str(error),
+            'fileId': file_id
+        })
+        raise
 
 
 def run_batch_job() -> None:

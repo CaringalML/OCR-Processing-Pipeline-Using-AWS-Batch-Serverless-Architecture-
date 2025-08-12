@@ -39,8 +39,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Environment variables with validation
-DOCUMENTS_TABLE = os.environ.get('DOCUMENTS_TABLE')
-# Use the shared results table for both short-batch and long-batch
+# All results now stored in shared results table (metadata table removed)
 RESULTS_TABLE = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
 PROCESSED_BUCKET = os.environ.get('PROCESSED_BUCKET')
 DEAD_LETTER_QUEUE_URL = os.environ.get('DEAD_LETTER_QUEUE_URL')
@@ -142,8 +141,10 @@ COST_PER_1K_TOKENS = {
 def get_current_budget_usage() -> float:
     """Get current budget usage from DynamoDB"""
     try:
-        if not DOCUMENTS_TABLE:
-            logger.warning("DOCUMENTS_TABLE not configured")
+        # Budget tracking uses a separate table
+        budget_table_name = 'ocr_budget_tracking'
+        if not budget_table_name:
+            logger.warning("Budget tracking table not configured")
             return 0.0
             
         dynamodb = get_aws_client('dynamodb')
@@ -906,15 +907,8 @@ Key Entities: Tourism Malaysia, Auckland, Ricky Fernandez, Southeast Asia Festiv
         
         logger.info(f"OCR extraction completed. Text length: {len(formatted_text)} characters")
         
-        # Update status to assessing quality
-        if DOCUMENTS_TABLE and upload_timestamp:
-            dynamodb = get_aws_client('dynamodb')
-            table = dynamodb.Table(DOCUMENTS_TABLE)
-            table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'assessing_quality'}
-            )
+        # Status updates now go to results table
+        # No intermediate status updates needed for short-batch processing
         
         # Check if text is too short for meaningful refinement (less than 10 words or 50 characters)
         word_count = len(formatted_text.split())
@@ -1004,13 +998,7 @@ Key Entities: Tourism Malaysia, Auckland, Ricky Fernandez, Southeast Asia Festiv
         # OCR text needs refinement, proceed with refinement step
         logger.info(f"OCR text needs refinement (score: {quality_assessment['score']}, issues: {len(quality_assessment['issues'])})")
         
-        # Update status to refining
-        if DOCUMENTS_TABLE and upload_timestamp:
-            table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'refining_text'}
-            )
+        # Status updates removed - short-batch is fast enough to not need intermediate updates
         
         # For longer texts, apply aggressive text cleaning first to fix OCR issues
         cleaned_text_for_refinement = clean_extracted_text(formatted_text)
@@ -1140,15 +1128,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Missing required fields: bucket, key, document_id, or upload_timestamp")
     
     try:
-        # Update status to downloading
-        if DOCUMENTS_TABLE:
-            dynamodb = get_aws_client('dynamodb')
-            table = dynamodb.Table(DOCUMENTS_TABLE)
-            table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'downloading'}
-            )
+        # Status updates removed - processing is fast enough to not need intermediate updates
         
         # Download document from S3
         logger.info(f"Downloading document from S3: {bucket}/{key}")
@@ -1159,13 +1139,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
         
         logger.info(f"Document downloaded. Size: {len(document_bytes)} bytes, Content-Type: {content_type}")
         
-        # Update status to processing
-        if DOCUMENTS_TABLE:
-            table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'processing_ocr'}
-            )
+        # Processing status will be set in final results
         
         # Process with Claude OCR
         logger.info(f"Processing document with Claude AI OCR")
@@ -1204,13 +1178,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
-        # Update status to saving results
-        if DOCUMENTS_TABLE:
-            table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'saving_results'}
-            )
+        # Final results will be saved directly to results table
         
         # Save to processed bucket
         if PROCESSED_BUCKET:
@@ -1223,36 +1191,52 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             )
             logger.info(f"Processed result saved to S3: {processed_key}")
         
-        # Update DynamoDB with final results
-        if DOCUMENTS_TABLE:
+        # Store all results in the shared results table (no more metadata table)
+        if RESULTS_TABLE:
             dynamodb = get_aws_client('dynamodb')
-            table = dynamodb.Table(DOCUMENTS_TABLE)
-            table.update_item(
-                Key={
-                    'file_id': document_id,
-                    'upload_timestamp': upload_timestamp
+            results_table = dynamodb.Table(RESULTS_TABLE)
+            
+            # Create unified item matching long-batch structure
+            results_item = {
+                'file_id': document_id,
+                'upload_timestamp': upload_timestamp,
+                'extracted_text': ocr_result['formatted_text'],  # Raw OCR text
+                'formatted_text': ocr_result['formatted_text'],  # Same as extracted for consistency
+                'refined_text': ocr_result['refined_text'],      # Grammar improved text
+                'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
+                'processing_type': 'short-batch',
+                'processing_duration': format_duration(ocr_result['processing_time']),
+                'processing_cost': Decimal(str(ocr_result['cost'])),
+                'processed_at': result['timestamp'],
+                'processing_status': 'completed',
+                'user_edited': False,
+                'edit_history': [],
+                'language_detection': ocr_result.get('language_detection', {
+                    'detected_language': 'unknown',
+                    'confidence': Decimal('0.0')
+                }),
+                'token_usage': {
+                    'ocr_tokens': ocr_result.get('ocr_tokens', {}),
+                    'refinement_tokens': ocr_result.get('refinement_tokens', {})
                 },
-                UpdateExpression='SET processing_status = :status, raw_ocr_text = :raw_text, refined_ocr_text = :refined_text, processed_at = :timestamp, processing_cost = :cost, processing_method = :method, file_type = :file_type, quality_assessment = :quality, refinement_skipped = :skipped, ocr_tokens = :ocr_tokens, refinement_tokens = :refinement_tokens, detected_language = :language, language_confidence = :lang_conf, entity_summary = :entities, total_entities = :entity_count, processing_time = :processing_time',
-                ExpressionAttributeValues={
-                    ':status': 'completed',
-                    ':raw_text': ocr_result['formatted_text'],  # Store full raw OCR text without \n
-                    ':refined_text': ocr_result['refined_text'],      # Store full refined text
-                    ':timestamp': result['timestamp'],
-                    ':cost': Decimal(str(ocr_result['cost'])),
-                    ':method': ocr_result.get('processing_method', 'claude_ocr_with_refinement'),
-                    ':file_type': ocr_result.get('file_type', 'unknown'),
-                    ':quality': ocr_result.get('quality_assessment', {}),
-                    ':skipped': ocr_result.get('refinement_skipped', False),
-                    ':ocr_tokens': ocr_result.get('ocr_tokens', {}),
-                    ':refinement_tokens': ocr_result.get('refinement_tokens', {}),
-                    ':language': ocr_result.get('language_detection', {}).get('detected_language', 'unknown'),
-                    ':lang_conf': ocr_result.get('language_detection', {}).get('confidence', Decimal('0.0')),
-                    ':entities': ocr_result.get('entity_analysis', {}).get('entity_summary', {}),
-                    ':entity_count': ocr_result.get('entity_analysis', {}).get('total_entities', 0),
-                    ':processing_time': Decimal(str(result['processing_time']))
-                }
-            )
-            logger.info(f"DynamoDB updated for document: {document_id}")
+                'quality_assessment': ocr_result.get('quality_assessment', {}),
+                'entity_analysis': ocr_result.get('entity_analysis', {}),
+                'created_at': result['timestamp'],
+                'updated_at': result['timestamp'],
+                # Additional metadata from the original request
+                'bucket': bucket,
+                'key': key,
+                'file_name': message.get('original_filename', key.split('/')[-1]),
+                'file_size': message.get('file_size', 0),
+                'content_type': message.get('content_type', ''),
+                'file_type': ocr_result.get('file_type', 'unknown'),
+                'media_type': ocr_result.get('media_type', 'unknown'),
+                'processing_method': ocr_result.get('processing_method', 'claude_ocr'),
+                'refinement_skipped': ocr_result.get('refinement_skipped', False)
+            }
+            
+            results_table.put_item(Item=results_item)
+            logger.info(f"Results stored in shared table for document: {document_id}")
         
         logger.info(f"Successfully processed document: {document_id} using Claude AI OCR")
         return result
@@ -1260,24 +1244,25 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error processing document {document_id}: {e}")
         
-        # Update DynamoDB with error status
+        # Update results table with error status
         try:
-            if DOCUMENTS_TABLE:
+            if RESULTS_TABLE:
                 dynamodb = get_aws_client('dynamodb')
-                table = dynamodb.Table(DOCUMENTS_TABLE)
-                table.update_item(
-                    Key={
+                results_table = dynamodb.Table(RESULTS_TABLE)
+                results_table.put_item(
+                    Item={
                         'file_id': document_id,
-                        'upload_timestamp': upload_timestamp
-                    },
-                    UpdateExpression='SET processing_status = :status, error_message = :error',
-                    ExpressionAttributeValues={
-                        ':status': 'failed',
-                        ':error': str(e)[:500]
+                        'upload_timestamp': upload_timestamp,
+                        'processing_status': 'failed',
+                        'error_message': str(e)[:500],
+                        'processing_type': 'short-batch',
+                        'processed_at': datetime.now(timezone.utc).isoformat(),
+                        'bucket': bucket if 'bucket' in locals() else '',
+                        'key': key if 'key' in locals() else ''
                     }
                 )
         except Exception as db_error:
-            logger.error(f"Failed to update DynamoDB: {db_error}")
+            logger.error(f"Failed to update results table: {db_error}")
         
         raise
 

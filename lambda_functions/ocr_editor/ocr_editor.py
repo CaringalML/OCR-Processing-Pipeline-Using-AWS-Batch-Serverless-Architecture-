@@ -66,11 +66,10 @@ def lambda_handler(event, context):
     # Initialize AWS clients
     dynamodb = boto3.resource('dynamodb')
     
-    # Get configuration
-    metadata_table_name = os.environ.get('METADATA_TABLE')
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    # Get configuration - only results table needed now
+    results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     
-    if not all([metadata_table_name, results_table_name]):
+    if not results_table_name:
         return {
             'statusCode': 500,
             'headers': {
@@ -126,12 +125,12 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Initialize metadata table (use throughout function)
+        # Initialize results table
         try:
-            metadata_table = dynamodb.Table(metadata_table_name)
-            print(f"Initialized metadata table: {metadata_table_name}")
+            results_table = dynamodb.Table(results_table_name)
+            print(f"Initialized results table: {results_table_name}")
         except Exception as e:
-            print(f"ERROR initializing metadata table: {str(e)}")
+            print(f"ERROR initializing results table: {str(e)}")
             return {
                 'statusCode': 500,
                 'headers': {
@@ -140,18 +139,17 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Configuration Error',
-                    'message': f'Failed to access metadata table: {str(e)}'
+                    'message': f'Failed to access results table: {str(e)}'
                 })
             }
         
-        # Get metadata to verify file exists
+        # Get file data from results table to verify it exists and is processed
         try:
-            metadata_response = metadata_table.query(
-                KeyConditionExpression=Key('file_id').eq(file_id),
-                Limit=1
+            results_response = results_table.get_item(
+                Key={'file_id': file_id}
             )
         except Exception as e:
-            print(f"ERROR querying metadata table: {str(e)}")
+            print(f"ERROR querying results table: {str(e)}")
             return {
                 'statusCode': 500,
                 'headers': {
@@ -160,11 +158,11 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Database Error',
-                    'message': f'Failed to query metadata: {str(e)}'
+                    'message': f'Failed to query results: {str(e)}'
                 })
             }
         
-        if not metadata_response['Items']:
+        if not results_response.get('Item'):
             return {
                 'statusCode': 404,
                 'headers': {
@@ -177,10 +175,10 @@ def lambda_handler(event, context):
                 })
             }
         
-        file_metadata = metadata_response['Items'][0]
+        file_data = results_response['Item']
         
-        # Check if file has been processed (both long-batch 'processed' and short-batch 'completed' statuses)
-        processing_status = file_metadata.get('processing_status')
+        # Check if file has been processed
+        processing_status = file_data.get('processing_status')
         if processing_status not in ['processed', 'completed']:
             return {
                 'statusCode': 400,

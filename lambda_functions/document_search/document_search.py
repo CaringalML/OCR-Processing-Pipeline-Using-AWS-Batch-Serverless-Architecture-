@@ -80,12 +80,11 @@ def lambda_handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     
     # Get configuration from environment variables
-    metadata_table_name = os.environ.get('METADATA_TABLE')
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
     # Validate environment variables
-    if not metadata_table_name or not results_table_name:
+    if not results_table_name:
         return {
             'statusCode': 500,
             'headers': {
@@ -119,8 +118,7 @@ def lambda_handler(event, context):
         limit = int(query_params.get('limit', '20'))
         limit = min(limit, 100)  # Cap at 100 items
         
-        # Initialize tables
-        metadata_table = dynamodb.Table(metadata_table_name)
+        # Initialize results table
         results_table = dynamodb.Table(results_table_name)
         
         # Build search results
@@ -128,10 +126,11 @@ def lambda_handler(event, context):
         
         # If file_id is provided, do a direct lookup
         if file_id:
-            # Query metadata table for specific file
-            response = metadata_table.query(
-                KeyConditionExpression=Key('file_id').eq(file_id)
+            # Get specific file from results table
+            response = results_table.get_item(
+                Key={'file_id': file_id}
             )
+            items = [response['Item']] if response.get('Item') else []
             items = response.get('Items', [])
         else:
             # Build filter expression based on search criteria
@@ -166,8 +165,8 @@ def lambda_handler(event, context):
                     filter_expression = filter_expression & expr
                 scan_params['FilterExpression'] = filter_expression
             
-            # Scan metadata table
-            response = metadata_table.scan(**scan_params)
+            # Scan results table
+            response = results_table.scan(**scan_params)
             items = response.get('Items', [])
         
         # If we have a search term, also search in OCR results
@@ -218,8 +217,8 @@ def lambda_handler(event, context):
                 # Skip items that don't match OCR search
                 continue
             
-            # Build file URL
-            s3_key = item.get('s3_key', '')
+            # Build file URL from results table data
+            s3_key = item.get('key', '')  # 'key' is the field name in results table
             file_url = f"https://{cloudfront_domain}/{s3_key}" if cloudfront_domain and s3_key else None
             
             # Build result item

@@ -30,12 +30,11 @@ def lambda_handler(event, context):
     s3 = boto3.client('s3')
     
     # Get configuration
-    metadata_table_name = os.environ.get('METADATA_TABLE')
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     recycle_bin_table_name = os.environ.get('RECYCLE_BIN_TABLE')
     s3_bucket = os.environ.get('S3_BUCKET')
     
-    if not all([metadata_table_name, results_table_name, recycle_bin_table_name, s3_bucket]):
+    if not all([results_table_name, recycle_bin_table_name, s3_bucket]):
         return {
             'statusCode': 500,
             'headers': {
@@ -71,17 +70,15 @@ def lambda_handler(event, context):
         permanent = query_params.get('permanent', 'false').lower() == 'true'
         
         # Initialize tables
-        metadata_table = dynamodb.Table(metadata_table_name)
         results_table = dynamodb.Table(results_table_name)
         recycle_bin_table = dynamodb.Table(recycle_bin_table_name)
         
-        # Get metadata to verify file exists
-        metadata_response = metadata_table.query(
-            KeyConditionExpression=Key('file_id').eq(file_id),
-            Limit=1
+        # Get file data from results table to verify file exists
+        results_response = results_table.get_item(
+            Key={'file_id': file_id}
         )
         
-        if not metadata_response['Items']:
+        if 'Item' not in results_response:
             # Check if file is in recycle bin
             if permanent:
                 recycle_response = recycle_bin_table.query(
@@ -114,11 +111,11 @@ def lambda_handler(event, context):
                 )
                 
                 # Delete from S3 if file still exists
-                if 's3_key' in recycled_item['original_metadata']:
+                if 'key' in recycled_item['original_metadata']:
                     try:
                         s3.delete_object(
                             Bucket=s3_bucket,
-                            Key=recycled_item['original_metadata']['s3_key']
+                            Key=recycled_item['original_metadata']['key']
                         )
                     except Exception as e:
                         print(f"Error deleting S3 object: {str(e)}")
@@ -148,14 +145,10 @@ def lambda_handler(event, context):
                     })
                 }
         
-        file_metadata = metadata_response['Items'][0]
+        file_metadata = results_response['Item']
         
-        # Get processing results if they exist
-        results_response = results_table.get_item(
-            Key={'file_id': file_id}
-        )
-        
-        processing_results = results_response.get('Item', {})
+        # The file data is already combined in the results table
+        processing_results = file_metadata
         
         # Prepare recycle bin entry
         current_timestamp = datetime.now(timezone.utc)
@@ -178,19 +171,10 @@ def lambda_handler(event, context):
         # Move to recycle bin
         recycle_bin_table.put_item(Item=recycle_bin_item)
         
-        # Delete from metadata table
-        metadata_table.delete_item(
-            Key={
-                'file_id': file_id,
-                'upload_timestamp': file_metadata['upload_timestamp']
-            }
+        # Delete from results table (now the unified table)
+        results_table.delete_item(
+            Key={'file_id': file_id}
         )
-        
-        # Delete from results table if exists
-        if processing_results:
-            results_table.delete_item(
-                Key={'file_id': file_id}
-            )
         
         # Note: We keep the S3 file for now, it will be deleted after 30 days
         # or when permanently deleted from recycle bin
