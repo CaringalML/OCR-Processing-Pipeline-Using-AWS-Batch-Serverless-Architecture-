@@ -1846,26 +1846,25 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
             'assessment': 'textract_processed'
         }
         
-        # Create textAnalysis field with new descriptive format
-        text_analysis = {
-            'improvement_ratio': improvement_ratio,
-            'refined_total_character_count': len(refined_text),
-            'refined_total_word_count': summary_analysis.get('word_count', len(refined_words)),
-            'refined_total_sentences': summary_analysis.get('sentence_count', len([s for s in refined_sentences if s.strip()])),
-            'refined_total_paragraphs': summary_analysis.get('paragraph_count', len([p for p in refined_paragraphs if p.strip()])),
-            'refined_total_spell_corrections': text_refinement.get('spell_corrections', 0),
-            'refined_total_grammar_count': text_refinement.get('grammar_refinements', 0),
-            'refined_flow_improvements': text_refinement.get('flow_improvements', 0),
-            'refined_total_improvements': text_refinement.get('total_improvements', 0),
-            'raw_total_character_count': len(extracted_text),
-            'raw_total_word_count': len(raw_words),
-            'raw_total_sentences': len([s for s in raw_sentences if s.strip()]),
-            'raw_total_paragraphs': len([p for p in raw_paragraphs if p.strip()]),
-            'processing_model': 'aws-textract-comprehend',
-            'processing_notes': str(text_refinement.get('processing_notes', 'Textract OCR with Comprehend analysis')),
-            'methods_used': text_refinement.get('methods_used', ['textract', 'comprehend']),
-            'qualityAssessment': quality_assessment  # Move qualityAssessment into textAnalysis
-        }
+        # Create textAnalysis field with exact field order as specified
+        text_analysis = {}
+        text_analysis['improvement_ratio'] = improvement_ratio
+        text_analysis['refined_total_character_count'] = len(refined_text)
+        text_analysis['refined_total_word_count'] = summary_analysis.get('word_count', len(refined_words))
+        text_analysis['refined_total_sentences'] = summary_analysis.get('sentence_count', len([s for s in refined_sentences if s.strip()]))
+        text_analysis['refined_total_paragraphs'] = summary_analysis.get('paragraph_count', len([p for p in refined_paragraphs if p.strip()]))
+        text_analysis['refined_total_spell_corrections'] = text_refinement.get('spell_corrections', 0)
+        text_analysis['refined_total_grammar_count'] = text_refinement.get('grammar_refinements', 0)
+        text_analysis['refined_flow_improvements'] = text_refinement.get('flow_improvements', 0)
+        text_analysis['refined_total_improvements'] = text_refinement.get('total_improvements', 0)
+        text_analysis['raw_total_character_count'] = len(extracted_text)
+        text_analysis['raw_total_word_count'] = len(raw_words)
+        text_analysis['raw_total_sentences'] = len([s for s in raw_sentences if s.strip()])
+        text_analysis['raw_total_paragraphs'] = len([p for p in raw_paragraphs if p.strip()])
+        text_analysis['processing_model'] = 'aws-textract-comprehend'
+        text_analysis['processing_notes'] = str(text_refinement.get('processing_notes', 'Textract OCR with Comprehend analysis'))
+        text_analysis['qualityAssessment'] = quality_assessment
+        text_analysis['methods_used'] = text_refinement.get('methods_used', ['textract', 'comprehend'])
         
         # Create entity analysis without duplication
         entity_analysis = {
@@ -1953,30 +1952,29 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
                 log('WARN', f'Failed to get file metadata from S3: {e}')
                 original_filename = object_key.split('/')[-1]
         
-        # Create empty textAnalysis for error case
-        text_analysis = {
-            'improvement_ratio': Decimal('0'),
-            'refined_total_character_count': 0,
-            'refined_total_word_count': 0,
-            'refined_total_sentences': 0,
-            'refined_total_paragraphs': 0,
-            'refined_total_spell_corrections': 0,
-            'refined_total_grammar_count': 0,
-            'refined_flow_improvements': 0,
-            'refined_total_improvements': 0,
-            'raw_total_character_count': 0,
-            'raw_total_word_count': 0,
-            'raw_total_sentences': 0,
-            'raw_total_paragraphs': 0,
-            'processing_model': 'aws-textract-comprehend',
-            'processing_notes': 'Processing failed',
-            'methods_used': [],
-            'qualityAssessment': {
-                'confidence_score': '0',
-                'issues': ['processing_failed'],
-                'assessment': 'error'
-            }
+        # Create empty textAnalysis for error case - follow exact field order
+        text_analysis = {}
+        text_analysis['improvement_ratio'] = Decimal('0')
+        text_analysis['refined_total_character_count'] = 0
+        text_analysis['refined_total_word_count'] = 0
+        text_analysis['refined_total_sentences'] = 0
+        text_analysis['refined_total_paragraphs'] = 0
+        text_analysis['refined_total_spell_corrections'] = 0
+        text_analysis['refined_total_grammar_count'] = 0
+        text_analysis['refined_flow_improvements'] = 0
+        text_analysis['refined_total_improvements'] = 0
+        text_analysis['raw_total_character_count'] = 0
+        text_analysis['raw_total_word_count'] = 0
+        text_analysis['raw_total_sentences'] = 0
+        text_analysis['raw_total_paragraphs'] = 0
+        text_analysis['processing_model'] = 'aws-textract-comprehend'
+        text_analysis['processing_notes'] = 'Processing failed'
+        text_analysis['qualityAssessment'] = {
+            'confidence_score': '0',
+            'issues': ['processing_failed'],
+            'assessment': 'error'
         }
+        text_analysis['methods_used'] = []
         
         # Create error item schema (matching short-batch processor schema)
         error_item = {

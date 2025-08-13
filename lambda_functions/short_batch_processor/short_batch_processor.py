@@ -1223,25 +1223,25 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             # Remove needs_refinement as it's not needed
             quality_assessment_updated.pop('needs_refinement', None)
             
-            text_analysis = {
-                'improvement_ratio': improvement_ratio,
-                'refined_total_character_count': len(refined_text),
-                'refined_total_word_count': len(refined_words),
-                'refined_total_sentences': len([s for s in refined_sentences if s.strip()]),
-                'refined_total_paragraphs': len([p for p in refined_paragraphs if p.strip()]),
-                'refined_total_spell_corrections': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 20),
-                'refined_total_grammar_count': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_sentences) // 5),
-                'refined_flow_improvements': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_paragraphs) // 3),
-                'refined_total_improvements': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 10),
-                'raw_total_character_count': len(formatted_text),
-                'raw_total_word_count': len(raw_words),
-                'raw_total_sentences': len([s for s in raw_sentences if s.strip()]),
-                'raw_total_paragraphs': len([p for p in raw_paragraphs if p.strip()]),
-                'processing_model': str(ocr_result.get('model', 'claude-sonnet-4-20250514')),
-                'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                'methods_used': ['claude_ocr'] + ([] if ocr_result.get('refinement_skipped', False) else ['grammar_refinement']),
-                'qualityAssessment': quality_assessment_updated  # Move qualityAssessment into textAnalysis
-            }
+            # Follow exact field order as specified
+            text_analysis = {}
+            text_analysis['improvement_ratio'] = improvement_ratio
+            text_analysis['refined_total_character_count'] = len(refined_text)
+            text_analysis['refined_total_word_count'] = len(refined_words)
+            text_analysis['refined_total_sentences'] = len([s for s in refined_sentences if s.strip()])
+            text_analysis['refined_total_paragraphs'] = len([p for p in refined_paragraphs if p.strip()])
+            text_analysis['refined_total_spell_corrections'] = 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 20)
+            text_analysis['refined_total_grammar_count'] = 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_sentences) // 5)
+            text_analysis['refined_flow_improvements'] = 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_paragraphs) // 3)
+            text_analysis['refined_total_improvements'] = 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 10)
+            text_analysis['raw_total_character_count'] = len(formatted_text)
+            text_analysis['raw_total_word_count'] = len(raw_words)
+            text_analysis['raw_total_sentences'] = len([s for s in raw_sentences if s.strip()])
+            text_analysis['raw_total_paragraphs'] = len([p for p in raw_paragraphs if p.strip()])
+            text_analysis['processing_model'] = str(ocr_result.get('model', 'claude-sonnet-4-20250514'))
+            text_analysis['processing_notes'] = 'Dual-pass Claude processing: OCR extraction + grammar refinement'
+            text_analysis['qualityAssessment'] = quality_assessment_updated
+            text_analysis['methods_used'] = ['claude_ocr'] + ([] if ocr_result.get('refinement_skipped', False) else ['grammar_refinement'])
             
             # Create unified item matching long-batch structure
             results_item = {
@@ -1297,30 +1297,29 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 dynamodb = get_aws_client('dynamodb')
                 results_table = dynamodb.Table(RESULTS_TABLE)
                 
-                # Create empty textAnalysis for error case
-                error_text_analysis = {
-                    'improvement_ratio': Decimal('0'),
-                    'refined_total_character_count': 0,
-                    'refined_total_word_count': 0,
-                    'refined_total_sentences': 0,
-                    'refined_total_paragraphs': 0,
-                    'refined_total_spell_corrections': 0,
-                    'refined_total_grammar_count': 0,
-                    'refined_flow_improvements': 0,
-                    'refined_total_improvements': 0,
-                    'raw_total_character_count': 0,
-                    'raw_total_word_count': 0,
-                    'raw_total_sentences': 0,
-                    'raw_total_paragraphs': 0,
-                    'processing_model': CLAUDE_MODEL,
-                    'processing_notes': 'Processing failed',
-                    'methods_used': [],
-                    'qualityAssessment': {
-                        'confidence_score': 0,
-                        'issues': ['processing_failed'],
-                        'assessment': 'error'
-                    }
+                # Create empty textAnalysis for error case - follow exact field order
+                error_text_analysis = {}
+                error_text_analysis['improvement_ratio'] = Decimal('0')
+                error_text_analysis['refined_total_character_count'] = 0
+                error_text_analysis['refined_total_word_count'] = 0
+                error_text_analysis['refined_total_sentences'] = 0
+                error_text_analysis['refined_total_paragraphs'] = 0
+                error_text_analysis['refined_total_spell_corrections'] = 0
+                error_text_analysis['refined_total_grammar_count'] = 0
+                error_text_analysis['refined_flow_improvements'] = 0
+                error_text_analysis['refined_total_improvements'] = 0
+                error_text_analysis['raw_total_character_count'] = 0
+                error_text_analysis['raw_total_word_count'] = 0
+                error_text_analysis['raw_total_sentences'] = 0
+                error_text_analysis['raw_total_paragraphs'] = 0
+                error_text_analysis['processing_model'] = CLAUDE_MODEL
+                error_text_analysis['processing_notes'] = 'Processing failed'
+                error_text_analysis['qualityAssessment'] = {
+                    'confidence_score': 0,
+                    'issues': ['processing_failed'],
+                    'assessment': 'error'
                 }
+                error_text_analysis['methods_used'] = []
                 
                 results_table.put_item(
                     Item={
