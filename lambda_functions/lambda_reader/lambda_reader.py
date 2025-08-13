@@ -203,39 +203,9 @@ def lambda_handler(event, context):
                             'entity_types': list(entity_analysis.get('entity_summary', {}).keys()),
                             'detection_source': 'Claude AI OCR Analysis'
                         }
-            elif processing_route == 'short-batch':
-                # Legacy: For Claude processing from metadata table
-                raw_text = file_metadata.get('raw_ocr_text', '')
-                refined_text = file_metadata.get('refined_ocr_text', '')
-                
-                if raw_text or refined_text:
-                    # Use refined text for analysis (better for word/sentence counting)
-                    analysis_text = refined_text if refined_text else raw_text
-                    words = analysis_text.split()
-                    paragraphs = analysis_text.split('\n\n')
-                    sentences = analysis_text.split('. ')
-                    
-                    response_data['textAnalysis'] = {
-                        'total_words': len(words),
-                        'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                        'total_sentences': len([s for s in sentences if s.strip()]),
-                        'raw_character_count': len(raw_text),
-                        'refined_character_count': len(refined_text),
-                        'processing_model': file_metadata.get('model', 'claude-sonnet-4-20250514'),
-                        'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                        'improvement_ratio': round(len(refined_text) / len(raw_text), 2) if raw_text else 1.0
-                    }
-                    
-                    # Add entity analysis for short-batch - from Claude detection
-                    entity_summary = file_metadata.get('entity_summary', {})
-                    if entity_summary:
-                        response_data['entityAnalysis'] = {
-                            'entity_summary': entity_summary,
-                            'total_entities': file_metadata.get('total_entities', 0),
-                            'entity_types': list(entity_summary.keys()) if entity_summary else [],
-                            'detection_method': 'claude_ai'
-                        }
-            elif processing_result:
+            # Legacy code removed - now using unified table structure
+            
+            if processing_result:
                 # For Textract processing, use existing analysis
                 enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
                 if enhanced_textract_analysis:
@@ -400,77 +370,7 @@ def lambda_handler(event, context):
                                 'processingType': 'long-batch',
                                 'processingDuration': format_duration(processing_result.get('processing_duration', 0))
                             }
-                    elif processing_route == 'short-batch' and (item.get('raw_ocr_text') or item.get('refined_ocr_text')):
-                        # Legacy short-batch results - stored only in metadata table
-                        raw_text = item.get('raw_ocr_text', '')
-                        refined_text = item.get('refined_ocr_text', '')
-                        
-                        item_data['ocrResults'] = {
-                            'formattedText': raw_text,      # Exact replica of scanned document
-                            'refinedText': refined_text,    # Grammar and punctuation improved by Claude
-                            'processingModel': item.get('model', 'claude-sonnet-4-20250514'),
-                            'processingType': 'short-batch',
-                            'processingCost': item.get('processing_cost', 0),
-                            'processedAt': item.get('processed_at', ''),
-                            'processingDuration': format_duration(item.get('processing_time', 0)),
-                            'rawTextLength': len(raw_text),
-                            'refinedTextLength': len(refined_text),
-                            'tokenUsage': {
-                                'ocrTokens': item.get('ocr_tokens', {}),
-                                'refinementTokens': item.get('refinement_tokens', {})
-                            },
-                            'detectedLanguage': item.get('detected_language', 'unknown'),
-                            'languageConfidence': item.get('language_confidence', 0.0)
-                        }
-                        
-                        # Add analysis data for results from shared table
-                        if processing_result and processing_type == 'short-batch':
-                            refined_text = processing_result.get('refined_text', '')
-                            formatted_text = processing_result.get('formatted_text', '')
-                            if refined_text or formatted_text:
-                                analysis_text = refined_text if refined_text else formatted_text
-                                words = analysis_text.split()
-                                paragraphs = analysis_text.split('\n\n')
-                                sentences = analysis_text.split('. ')
-                                
-                                item_data['textAnalysis'] = {
-                                    'total_words': len(words),
-                                    'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                                    'total_sentences': len([s for s in sentences if s.strip()]),
-                                    'raw_character_count': len(formatted_text),
-                                    'refined_character_count': len(refined_text),
-                                    'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
-                                    'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                                    'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
-                                }
-                        # Add analysis data for legacy short-batch from metadata
-                        elif raw_text or refined_text:
-                            # Use refined text for analysis (better for word/sentence counting)
-                            analysis_text = refined_text if refined_text else raw_text
-                            words = analysis_text.split()
-                            paragraphs = analysis_text.split('\n\n')
-                            sentences = analysis_text.split('. ')
-                            
-                            item_data['textAnalysis'] = {
-                                'total_words': len(words),
-                                'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                                'total_sentences': len([s for s in sentences if s.strip()]),
-                                'raw_character_count': len(raw_text),
-                                'refined_character_count': len(refined_text),
-                                'processing_model': item.get('model', 'claude-sonnet-4-20250514'),
-                                'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                                'improvement_ratio': round(len(refined_text) / len(raw_text), 2) if raw_text else 1.0
-                            }
-                            
-                            # Add entity analysis for short-batch - from Claude detection
-                            entity_summary = item.get('entity_summary', {})
-                            if entity_summary:
-                                item_data['entityAnalysis'] = {
-                                    'entity_summary': entity_summary,
-                                    'total_entities': item.get('total_entities', 0),
-                                    'entity_types': list(entity_summary.keys()) if entity_summary else [],
-                                    'detection_method': 'claude_ai'
-                                }
+                    # Legacy short-batch handling removed - now using unified results table
                     elif processing_result:
                         # Long-batch (Textract) results - stored in results table
                         item_data['ocrResults'] = {
