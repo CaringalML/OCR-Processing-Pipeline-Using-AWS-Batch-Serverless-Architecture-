@@ -1816,6 +1816,36 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
                 log('WARN', f'Failed to get original filename from S3 metadata: {e}')
                 original_filename = object_key.split('/')[-1]
         
+        # Extract text analysis data
+        summary_analysis = results.get('summary_analysis', {})
+        text_refinement = results.get('text_refinement_details', {})
+        
+        # Create textAnalysis field matching short-batch format
+        text_analysis = {
+            'total_words': summary_analysis.get('word_count', 0),
+            'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+            'total_sentences': summary_analysis.get('sentence_count', 0),
+            'raw_character_count': len(extracted_text),
+            'refined_character_count': len(refined_text),
+            'confidence_score': summary_analysis.get('confidence', '0'),
+            'total_improvements': text_refinement.get('total_improvements', 0),
+            'spell_corrections': text_refinement.get('spell_corrections', 0),
+            'grammar_refinements': text_refinement.get('grammar_refinements', 0),
+            'flow_improvements': text_refinement.get('flow_improvements', 0),
+            'methods_used': text_refinement.get('methods_used', []),
+            'entities_found': len(text_refinement.get('entities_found', [])),
+            'processing_notes': text_refinement.get('processing_notes', 'Textract OCR with Comprehend analysis'),
+            'processing_model': 'aws-textract-comprehend',
+            'improvement_ratio': round(len(refined_text) / len(extracted_text), 2) if extracted_text else 1.0
+        }
+        
+        # Create entity analysis without duplication
+        entity_analysis = {
+            'entities': [entity.get('Text', '') for entity in comprehend_data.get('entities', [])],
+            'entity_summary': comprehend_data.get('entitySummary', {}),
+            'total_entities': comprehend_data.get('entityStats', {}).get('totalEntities', 0)
+        }
+        
         # Create unified item schema (matching short-batch processor schema)
         unified_item = {
             'file_id': file_id,
@@ -1831,6 +1861,7 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
             'processing_model': 'aws-textract-comprehend',
             'processing_type': 'long-batch',
             'processing_duration': results.get('processing_duration', '0s'),
+            'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration
             'processing_cost': Decimal('0'),  # Textract cost not tracked in this version
             'processed_at': results.get('processed_at', datetime.now(timezone.utc).isoformat()),
             'processing_status': 'completed',
@@ -1850,11 +1881,7 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
                 'issues': [],
                 'assessment': 'textract_processed'
             },
-            'entity_analysis': {
-                'entities': comprehend_data.get('entities', []),
-                'entity_summary': comprehend_data.get('entitySummary', {}),
-                'total_entities': comprehend_data.get('entityStats', {}).get('totalEntities', 0)
-            },
+            'entityAnalysis': entity_analysis,  # Renamed and simplified to avoid duplication
             'created_at': results.get('processed_at', datetime.now(timezone.utc).isoformat()),
             'updated_at': results.get('processed_at', datetime.now(timezone.utc).isoformat())
         }
@@ -1904,6 +1931,25 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
                 log('WARN', f'Failed to get file metadata from S3: {e}')
                 original_filename = object_key.split('/')[-1]
         
+        # Create empty textAnalysis for error case
+        text_analysis = {
+            'total_words': 0,
+            'total_paragraphs': 0,
+            'total_sentences': 0,
+            'raw_character_count': 0,
+            'refined_character_count': 0,
+            'confidence_score': '0',
+            'total_improvements': 0,
+            'spell_corrections': 0,
+            'grammar_refinements': 0,
+            'flow_improvements': 0,
+            'methods_used': [],
+            'entities_found': 0,
+            'processing_notes': 'Processing failed',
+            'processing_model': 'aws-textract-comprehend',
+            'improvement_ratio': 0
+        }
+        
         # Create error item schema (matching short-batch processor schema)
         error_item = {
             'file_id': file_id,
@@ -1919,6 +1965,7 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
             'processing_model': 'aws-textract-comprehend',
             'processing_type': 'long-batch',
             'processing_duration': '0s',
+            'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration
             'processing_cost': Decimal('0'),
             'processed_at': datetime.now(timezone.utc).isoformat(),
             'processing_status': 'failed',
@@ -1940,7 +1987,7 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
                 'issues': ['processing_failed'],
                 'assessment': 'error'
             },
-            'entity_analysis': {
+            'entityAnalysis': {
                 'entities': [],
                 'entity_summary': {},
                 'total_entities': 0

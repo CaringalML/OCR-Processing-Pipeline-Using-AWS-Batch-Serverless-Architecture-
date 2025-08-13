@@ -761,7 +761,7 @@ def lambda_handler(event, context):
                     'tokenUsage': processing_result.get('token_usage', {}),
                     'languageDetection': processing_result.get('language_detection', {}),
                     'qualityAssessment': processing_result.get('quality_assessment', {}),
-                    'entityAnalysis': processing_result.get('entity_analysis', {}),
+                    'entityAnalysis': processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {})),
                     'userEdited': processing_result.get('user_edited', False),
                     'editHistory': processing_result.get('edit_history', [])
                 }
@@ -771,30 +771,37 @@ def lambda_handler(event, context):
             
             # Add analysis data based on processing type
             if processing_result and processing_result.get('processing_type') == 'short-batch':
-                # For Claude processing from shared table, add text statistics
-                formatted_text = processing_result.get('formatted_text', '')
-                refined_text = processing_result.get('refined_text', '')
+                # For Claude processing from shared table, use stored textAnalysis if available
+                stored_text_analysis = processing_result.get('textAnalysis')
                 
-                if formatted_text or refined_text:
-                    # Use refined text for analysis (better for word/sentence counting)
-                    analysis_text = refined_text if refined_text else formatted_text
-                    words = analysis_text.split()
-                    paragraphs = analysis_text.split('\n\n')
-                    sentences = analysis_text.split('. ')
+                if stored_text_analysis:
+                    # Use the stored textAnalysis from the database
+                    response_data['textAnalysis'] = stored_text_analysis
+                else:
+                    # Fallback: Generate text analysis on-the-fly for backward compatibility
+                    formatted_text = processing_result.get('formatted_text', '')
+                    refined_text = processing_result.get('refined_text', '')
                     
-                    response_data['textAnalysis'] = {
-                        'total_words': len(words),
-                        'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                        'total_sentences': len([s for s in sentences if s.strip()]),
-                        'raw_character_count': len(formatted_text),
-                        'refined_character_count': len(refined_text),
-                        'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
-                        'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                        'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
-                    }
+                    if formatted_text or refined_text:
+                        # Use refined text for analysis (better for word/sentence counting)
+                        analysis_text = refined_text if refined_text else formatted_text
+                        words = analysis_text.split()
+                        paragraphs = analysis_text.split('\n\n')
+                        sentences = analysis_text.split('. ')
+                        
+                        response_data['textAnalysis'] = {
+                            'total_words': len(words),
+                            'total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                            'total_sentences': len([s for s in sentences if s.strip()]),
+                            'raw_character_count': len(formatted_text),
+                            'refined_character_count': len(refined_text),
+                            'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
+                            'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
+                            'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
+                        }
                     
-                    # Add entity analysis if available in results
-                    entity_analysis = processing_result.get('entity_analysis', {})
+                    # Add entity analysis if available in results (check both field names for compatibility)
+                    entity_analysis = processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {}))
                     if entity_analysis and entity_analysis.get('entity_summary'):
                         response_data['entityAnalysis'] = {
                             'entity_summary': entity_analysis.get('entity_summary', {}),
@@ -805,29 +812,36 @@ def lambda_handler(event, context):
             # Legacy code removed - now using unified table structure
             
             if processing_result:
-                # For Textract processing, use existing analysis
-                enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
-                if enhanced_textract_analysis:
-                    response_data['textAnalysis'] = enhanced_textract_analysis
+                # For long-batch/Textract processing, use stored textAnalysis if available
+                stored_text_analysis = processing_result.get('textAnalysis')
+                
+                if stored_text_analysis:
+                    # Use the stored textAnalysis from the database
+                    response_data['textAnalysis'] = stored_text_analysis
                 else:
-                    # Fallback to legacy construction for backward compatibility
-                    summary_analysis = processing_result.get('summary_analysis', {})
-                    text_refinement_details = processing_result.get('text_refinement_details', {})
-                    
-                    response_data['textAnalysis'] = {
-                        'total_words': summary_analysis.get('word_count', 0),
-                        'total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                        'total_sentences': summary_analysis.get('sentence_count', 0),
-                        'total_improvements': text_refinement_details.get('total_improvements', 0),
-                        'spell_corrections': text_refinement_details.get('spell_corrections', 0),
-                        'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
-                        'methods_used': text_refinement_details.get('methods_used', []),
-                        'entities_found': len(text_refinement_details.get('entities_found', [])),
-                        'processing_notes': text_refinement_details.get('processing_notes', ''),
-                        'confidence_score': summary_analysis.get('confidence', '0'),
-                        'character_count': summary_analysis.get('character_count', 0),
-                        'line_count': summary_analysis.get('line_count', 0)
-                    }
+                    # Check for legacy textract_analysis field
+                    enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
+                    if enhanced_textract_analysis:
+                        response_data['textAnalysis'] = enhanced_textract_analysis
+                    else:
+                        # Fallback to legacy construction for backward compatibility
+                        summary_analysis = processing_result.get('summary_analysis', {})
+                        text_refinement_details = processing_result.get('text_refinement_details', {})
+                        
+                        response_data['textAnalysis'] = {
+                            'total_words': summary_analysis.get('word_count', 0),
+                            'total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                            'total_sentences': summary_analysis.get('sentence_count', 0),
+                            'total_improvements': text_refinement_details.get('total_improvements', 0),
+                            'spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                            'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
+                            'methods_used': text_refinement_details.get('methods_used', []),
+                            'entities_found': len(text_refinement_details.get('entities_found', [])),
+                            'processing_notes': text_refinement_details.get('processing_notes', ''),
+                            'confidence_score': summary_analysis.get('confidence', '0'),
+                            'character_count': summary_analysis.get('character_count', 0),
+                            'line_count': summary_analysis.get('line_count', 0)
+                        }
                 
                 # Add enhanced Comprehend entity analysis for long-batch
                 comprehend_analysis = processing_result.get('comprehend_analysis', {})

@@ -1196,6 +1196,27 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             dynamodb = get_aws_client('dynamodb')
             results_table = dynamodb.Table(RESULTS_TABLE)
             
+            # Create textAnalysis field
+            formatted_text = ocr_result['formatted_text']
+            refined_text = ocr_result['refined_text']
+            
+            # Basic text statistics
+            words = [word for word in refined_text.split() if word.strip()]
+            paragraphs = refined_text.split('\n\n')
+            sentences = refined_text.split('. ')
+            
+            text_analysis = {
+                'total_words': len(words),
+                'total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                'total_sentences': len([s for s in sentences if s.strip()]),
+                'raw_character_count': len(formatted_text),
+                'refined_character_count': len(refined_text),
+                'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
+                'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
+                'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0,
+                'refinement_skipped': ocr_result.get('refinement_skipped', False)
+            }
+            
             # Create unified item matching long-batch structure
             results_item = {
                 'file_id': document_id,
@@ -1206,6 +1227,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
                 'processing_type': 'short-batch',
                 'processing_duration': format_duration(ocr_result['processing_time']),
+                'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration
                 'processing_cost': Decimal(str(ocr_result['cost'])),
                 'processed_at': result['timestamp'],
                 'processing_status': 'completed',
@@ -1220,7 +1242,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                     'refinement_tokens': ocr_result.get('refinement_tokens', {})
                 },
                 'quality_assessment': ocr_result.get('quality_assessment', {}),
-                'entity_analysis': ocr_result.get('entity_analysis', {}),
+                'entityAnalysis': ocr_result.get('entity_analysis', {}),  # Renamed to entityAnalysis for consistency
                 'created_at': result['timestamp'],
                 'updated_at': result['timestamp'],
                 # Additional metadata from the original request
@@ -1249,6 +1271,20 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             if RESULTS_TABLE:
                 dynamodb = get_aws_client('dynamodb')
                 results_table = dynamodb.Table(RESULTS_TABLE)
+                
+                # Create empty textAnalysis for error case
+                error_text_analysis = {
+                    'total_words': 0,
+                    'total_paragraphs': 0,
+                    'total_sentences': 0,
+                    'raw_character_count': 0,
+                    'refined_character_count': 0,
+                    'processing_model': CLAUDE_MODEL,
+                    'processing_notes': 'Processing failed',
+                    'improvement_ratio': 0,
+                    'refinement_skipped': False
+                }
+                
                 results_table.put_item(
                     Item={
                         'file_id': document_id,
@@ -1256,9 +1292,14 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                         'processing_status': 'failed',
                         'error_message': str(e)[:500],
                         'processing_type': 'short-batch',
+                        'processing_duration': '0s',
+                        'textAnalysis': error_text_analysis,
                         'processed_at': datetime.now(timezone.utc).isoformat(),
                         'bucket': bucket if 'bucket' in locals() else '',
-                        'key': key if 'key' in locals() else ''
+                        'key': key if 'key' in locals() else '',
+                        'file_name': message.get('original_filename', '') if 'message' in locals() else '',
+                        'file_size': message.get('file_size', 0) if 'message' in locals() else 0,
+                        'content_type': message.get('content_type', '') if 'message' in locals() else ''
                     }
                 )
         except Exception as db_error:
