@@ -1298,7 +1298,26 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             if message.get('tags'):
                 results_item['publication_tags'] = message.get('tags')
             
-            results_table.put_item(Item=results_item)
+            # Use update_item to preserve existing fields from upload
+            # Build update expression dynamically
+            update_expression_parts = []
+            expression_attribute_values = {}
+            
+            for key, value in results_item.items():
+                if key != 'file_id':  # Don't update the primary key
+                    update_expression_parts.append(f"#{key} = :{key}")
+                    expression_attribute_values[f":{key}"] = value
+            
+            # Build expression attribute names to handle reserved keywords
+            expression_attribute_names = {f"#{key}": key for key in results_item.keys() if key != 'file_id'}
+            
+            if update_expression_parts:
+                results_table.update_item(
+                    Key={'file_id': document_id},
+                    UpdateExpression='SET ' + ', '.join(update_expression_parts),
+                    ExpressionAttributeValues=expression_attribute_values,
+                    ExpressionAttributeNames=expression_attribute_names
+                )
             logger.info(f"Results stored in shared table for document: {document_id}")
         
         logger.info(f"Successfully processed document: {document_id} using Claude AI OCR")
@@ -1337,21 +1356,19 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 }
                 error_text_analysis['methods_used'] = []
                 
-                results_table.put_item(
-                    Item={
-                        'file_id': document_id,
-                        'upload_timestamp': upload_timestamp,
-                        'processing_status': 'failed',
-                        'error_message': str(e)[:500],
-                        'processing_type': 'short-batch',
-                        'processing_duration': '0s',
-                        'textAnalysis': error_text_analysis,
-                        'processed_at': datetime.now(timezone.utc).isoformat(),
-                        'bucket': bucket if 'bucket' in locals() else '',
-                        'key': key if 'key' in locals() else '',
-                        'file_name': message.get('original_filename', '') if 'message' in locals() else '',
-                        'file_size': message.get('file_size', 0) if 'message' in locals() else 0,
-                        'content_type': message.get('content_type', '') if 'message' in locals() else ''
+                # Update existing record with error status (preserve upload metadata)
+                results_table.update_item(
+                    Key={'file_id': document_id},
+                    UpdateExpression='SET processing_status = :status, error_message = :error, ' +
+                                     'processing_type = :type, processing_duration = :duration, ' +
+                                     'textAnalysis = :analysis, processed_at = :timestamp',
+                    ExpressionAttributeValues={
+                        ':status': 'failed',
+                        ':error': str(e)[:500],
+                        ':type': 'short-batch',
+                        ':duration': '0s',
+                        ':analysis': error_text_analysis,
+                        ':timestamp': datetime.now(timezone.utc).isoformat()
                     }
                 )
         except Exception as db_error:

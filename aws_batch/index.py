@@ -1949,8 +1949,7 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
     try:
         table = dynamodb.Table(unified_results_table_name)
         
-        # Generate upload timestamp for consistency
-        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        # Don't generate new timestamp - it will be preserved from original upload
         
         # Get original filename and file size if not provided
         file_size = 0
@@ -1992,9 +1991,9 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
         text_analysis['methods_used'] = []
         
         # Create error item schema (matching short-batch processor schema)
+        # Note: We don't include upload_timestamp as it will be preserved
         error_item = {
             'file_id': file_id,
-            'upload_timestamp': upload_timestamp,
             'bucket': bucket,
             'key': object_key,
             'file_name': original_filename,  # Use original filename from S3 metadata
@@ -2034,7 +2033,21 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
         # Convert to DynamoDB compatible format
         error_item_converted = convert_to_dynamodb_compatible(error_item)
         
-        table.put_item(Item=error_item_converted)
+        # Use update_item to preserve existing metadata (like publication fields)
+        update_expression_parts = []
+        expression_attribute_values = {}
+        
+        for key, value in error_item_converted.items():
+            if key != 'file_id':  # Don't update the primary key
+                update_expression_parts.append(f"{key} = :{key}")
+                expression_attribute_values[f":{key}"] = value
+        
+        if update_expression_parts:
+            table.update_item(
+                Key={'file_id': file_id},
+                UpdateExpression='SET ' + ', '.join(update_expression_parts),
+                ExpressionAttributeValues=expression_attribute_values
+            )
         log('DEBUG', 'Error result stored in results table', {
             'fileId': file_id,
             'table': unified_results_table_name,
