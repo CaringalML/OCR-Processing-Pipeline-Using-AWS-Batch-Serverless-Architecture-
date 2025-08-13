@@ -417,6 +417,13 @@ resource "aws_iam_policy" "reader_policy" {
           "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.processing_results.arn
         ]
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "batch:DescribeJobs"
+        ]
+        Resource = "*"
       }
     ]
   })

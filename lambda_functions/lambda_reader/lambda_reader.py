@@ -4,6 +4,114 @@ import os
 from datetime import datetime
 from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
+import time
+
+def get_detailed_processing_status(processing_result):
+    """Get detailed processing status with progress for running batch jobs"""
+    base_status = processing_result.get('processing_status', '')
+    batch_job_id = processing_result.get('batch_job_id')
+    processing_type = processing_result.get('processing_type', '')
+    
+    # For short-batch jobs that are still processing, just show "processing"
+    if processing_type == 'short-batch':
+        if base_status in ['completed', 'failed', 'processed']:
+            return base_status
+        else:
+            return 'processing'
+    
+    # If not a long-batch job or no batch job ID, return base status
+    if processing_type != 'long-batch' or not batch_job_id or base_status in ['completed', 'failed', 'processed']:
+        return base_status
+    
+    # For running long-batch jobs, try to get progress from AWS Batch
+    if base_status == 'processing':
+        try:
+            batch_client = boto3.client('batch')
+            
+            # Get job details
+            response = batch_client.describe_jobs(jobs=[batch_job_id])
+            
+            if response.get('jobs'):
+                job = response['jobs'][0]
+                job_status = job.get('jobStatus', 'UNKNOWN')
+                
+                # Map AWS Batch statuses to user-friendly progress
+                status_mapping = {
+                    'SUBMITTED': 'Queued for processing',
+                    'PENDING': 'Queued for processing', 
+                    'RUNNABLE': 'Starting processing',
+                    'STARTING': 'Starting processing',
+                    'RUNNING': get_running_progress(job),
+                    'SUCCEEDED': 'completed',
+                    'FAILED': 'failed'
+                }
+                
+                return status_mapping.get(job_status, f'Processing ({job_status.lower()})')
+                
+        except Exception as e:
+            print(f"Error getting batch job status for {batch_job_id}: {str(e)}")
+            # Fallback to time-based estimation
+            return get_time_based_progress(processing_result)
+    
+    return base_status
+
+def get_running_progress(job):
+    """Calculate progress for a running batch job"""
+    try:
+        # Get job start time
+        started_at = job.get('startedAt')
+        if not started_at:
+            return 'In progress'
+            
+        # Convert milliseconds to seconds
+        start_time = started_at / 1000
+        current_time = time.time()
+        elapsed_minutes = (current_time - start_time) / 60
+        
+        # Estimate progress based on typical processing time (10-30 minutes for most documents)
+        # This is a rough estimation - you could make this more sophisticated
+        if elapsed_minutes < 2:
+            progress = min(15, int(elapsed_minutes * 7.5))  # 0-15% in first 2 minutes
+        elif elapsed_minutes < 10:
+            progress = min(50, 15 + int((elapsed_minutes - 2) * 4.375))  # 15-50% in next 8 minutes
+        elif elapsed_minutes < 20:
+            progress = min(80, 50 + int((elapsed_minutes - 10) * 3))  # 50-80% in next 10 minutes
+        else:
+            progress = min(95, 80 + int((elapsed_minutes - 20) * 0.75))  # 80-95% after 20 minutes
+            
+        return f'In progress {progress}%'
+        
+    except Exception as e:
+        print(f"Error calculating progress: {str(e)}")
+        return 'In progress'
+
+def get_time_based_progress(processing_result):
+    """Fallback progress estimation based on processing start time"""
+    try:
+        processing_started = processing_result.get('processing_started')
+        if not processing_started:
+            return 'In progress'
+            
+        # Parse the ISO timestamp
+        start_time = datetime.fromisoformat(processing_started.replace('Z', '+00:00'))
+        current_time = datetime.now(start_time.tzinfo)
+        elapsed_minutes = (current_time - start_time).total_seconds() / 60
+        
+        # Simple time-based progress estimation
+        if elapsed_minutes < 5:
+            progress = min(20, int(elapsed_minutes * 4))
+        elif elapsed_minutes < 15:
+            progress = min(60, 20 + int((elapsed_minutes - 5) * 4))
+        elif elapsed_minutes < 25:
+            progress = min(85, 60 + int((elapsed_minutes - 15) * 2.5))
+        else:
+            progress = min(95, 85 + int((elapsed_minutes - 25) * 0.5))
+            
+        return f'In progress {progress}%'
+        
+    except Exception as e:
+        print(f"Error calculating time-based progress: {str(e)}")
+        return 'In progress'
 
 def decimal_to_json(obj):
     """Convert Decimal objects to JSON-serializable types"""
@@ -133,12 +241,15 @@ def lambda_handler(event, context):
             s3_key = processing_result.get('key', '')
             cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else ''
             
+            # Get detailed processing status (with progress for running jobs)
+            detailed_status = get_detailed_processing_status(processing_result)
+            
             # Build response data from results table
             response_data = {
                 'fileId': file_id,
                 'fileName': processing_result.get('file_name', ''),
                 'uploadTimestamp': processing_result.get('upload_timestamp', ''),
-                'processingStatus': processing_result.get('processing_status', ''),
+                'processingStatus': detailed_status,
                 'processingType': processing_result.get('processing_type', ''),
                 'fileSize': processing_result.get('file_size', 0),
                 'contentType': processing_result.get('content_type', ''),
