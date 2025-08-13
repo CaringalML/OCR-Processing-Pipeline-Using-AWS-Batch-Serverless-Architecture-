@@ -42,6 +42,39 @@ def calculate_real_time_duration(processing_result):
         print(f"Error calculating real-time duration: {str(e)}")
         return 0
 
+def format_file_size(size_bytes):
+    """Format file size in human readable format"""
+    try:
+        if isinstance(size_bytes, str):
+            size_bytes = float(size_bytes)
+        size_bytes = float(size_bytes)
+        
+        if size_bytes == 0:
+            return "0B"
+        
+        # Define size units
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = size_bytes
+        
+        # Convert to appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        # Format with appropriate decimal places
+        if unit_index == 0:  # Bytes
+            return f"{int(size)}B"
+        elif size >= 100:  # No decimal for 100+ units
+            return f"{int(size)}{units[unit_index]}"
+        elif size >= 10:   # 1 decimal for 10-99 units
+            return f"{size:.1f}{units[unit_index]}"
+        else:              # 2 decimals for less than 10 units
+            return f"{size:.2f}{units[unit_index]}"
+            
+    except (ValueError, TypeError):
+        return "Unknown"
+
 def get_detailed_processing_status(processing_result):
     """Get detailed processing status with progress for running batch jobs"""
     base_status = processing_result.get('processing_status', '')
@@ -706,7 +739,7 @@ def lambda_handler(event, context):
                 'uploadTimestamp': processing_result.get('upload_timestamp', ''),
                 'processingStatus': detailed_status,
                 'processingType': processing_result.get('processing_type', ''),
-                'fileSize': processing_result.get('file_size', 0),
+                'fileSize': format_file_size(processing_result.get('file_size', 0)),
                 'contentType': processing_result.get('content_type', ''),
                 'cloudFrontUrl': cloudfront_url,
                 'bucket': processing_result.get('bucket', ''),
@@ -890,7 +923,7 @@ def lambda_handler(event, context):
                     'fileName': item.get('file_name', ''),
                     'uploadTimestamp': item.get('upload_timestamp', ''),
                     'processingStatus': item.get('processing_status', ''),
-                    'fileSize': item.get('file_size', 0),
+                    'fileSize': format_file_size(item.get('file_size', 0)),
                     'contentType': item.get('content_type', ''),
                     'cloudFrontUrl': cloudfront_url,
                     'metadata': {

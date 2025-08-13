@@ -27,6 +27,39 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 import base64
+
+def format_file_size(size_bytes):
+    """Format file size in human readable format"""
+    try:
+        if isinstance(size_bytes, str):
+            size_bytes = float(size_bytes)
+        size_bytes = float(size_bytes)
+        
+        if size_bytes == 0:
+            return "0B"
+        
+        # Define size units
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = size_bytes
+        
+        # Convert to appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        # Format with appropriate decimal places
+        if unit_index == 0:  # Bytes
+            return f"{int(size)}B"
+        elif size >= 100:  # No decimal for 100+ units
+            return f"{int(size)}{units[unit_index]}"
+        elif size >= 10:   # 1 decimal for 10-99 units
+            return f"{size:.1f}{units[unit_index]}"
+        else:              # 2 decimals for less than 10 units
+            return f"{size:.2f}{units[unit_index]}"
+            
+    except (ValueError, TypeError):
+        return "Unknown"
 from botocore.exceptions import ClientError
 
 # Configure logging
@@ -434,7 +467,7 @@ def lambda_handler(event, context):
             'uploadTimestamp': upload_timestamp,
             'processingStatus': 'uploaded',
             'processingRoute': 'invoice-ocr',
-            'fileSize': file_size,
+            'fileSize': format_file_size(file_size),
             'fileSizeMB': file_size_mb,
             'contentType': file_content_type,
             's3Key': s3_key,

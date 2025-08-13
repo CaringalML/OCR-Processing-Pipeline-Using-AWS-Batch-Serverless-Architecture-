@@ -14,6 +14,39 @@ from typing import Dict, Any, Tuple, Optional
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def format_file_size(size_bytes):
+    """Format file size in human readable format"""
+    try:
+        if isinstance(size_bytes, str):
+            size_bytes = float(size_bytes)
+        size_bytes = float(size_bytes)
+        
+        if size_bytes == 0:
+            return "0B"
+        
+        # Define size units
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = size_bytes
+        
+        # Convert to appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        # Format with appropriate decimal places
+        if unit_index == 0:  # Bytes
+            return f"{int(size)}B"
+        elif size >= 100:  # No decimal for 100+ units
+            return f"{int(size)}{units[unit_index]}"
+        elif size >= 10:   # 1 decimal for 10-99 units
+            return f"{size:.1f}{units[unit_index]}"
+        else:              # 2 decimals for less than 10 units
+            return f"{size:.2f}{units[unit_index]}"
+            
+    except (ValueError, TypeError):
+        return "Unknown"
+
 # File size threshold for routing (300KB)
 FILE_SIZE_THRESHOLD_KB = int(os.environ.get('FILE_SIZE_THRESHOLD_KB', '300'))
 
@@ -365,9 +398,7 @@ def lambda_handler(event, context):
             file_result = {
                 'file_id': file_id,
                 'filename': original_filename,
-                'size': file_size,
-                'size_mb': round(file_size_mb, 2),
-                'size_kb': round(file_size / 1024, 2),
+                'fileSize': format_file_size(file_size),  # Human readable size
                 's3_key': s3_key,
                 's3_folder': routing_decision['s3_folder'],
                 'timestamp': timestamp,

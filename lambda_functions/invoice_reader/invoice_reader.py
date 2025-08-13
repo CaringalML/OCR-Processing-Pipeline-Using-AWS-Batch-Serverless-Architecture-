@@ -25,6 +25,39 @@ import logging
 import boto3
 from datetime import datetime
 from boto3.dynamodb.conditions import Key, Attr
+
+def format_file_size(size_bytes):
+    """Format file size in human readable format"""
+    try:
+        if isinstance(size_bytes, str):
+            size_bytes = float(size_bytes)
+        size_bytes = float(size_bytes)
+        
+        if size_bytes == 0:
+            return "0B"
+        
+        # Define size units
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = size_bytes
+        
+        # Convert to appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        # Format with appropriate decimal places
+        if unit_index == 0:  # Bytes
+            return f"{int(size)}B"
+        elif size >= 100:  # No decimal for 100+ units
+            return f"{int(size)}{units[unit_index]}"
+        elif size >= 10:   # 1 decimal for 10-99 units
+            return f"{size:.1f}{units[unit_index]}"
+        else:              # 2 decimals for less than 10 units
+            return f"{size:.2f}{units[unit_index]}"
+            
+    except (ValueError, TypeError):
+        return "Unknown"
 from decimal import Decimal
 
 def format_duration(duration_seconds):
@@ -467,7 +500,7 @@ def lambda_handler(event, context):
                 'fileName': file_metadata.get('original_filename') or file_metadata.get('file_name') or 'Unknown',
                 'uploadTimestamp': file_metadata.get('upload_timestamp', ''),
                 'processingStatus': file_metadata.get('processing_status', ''),
-                'fileSize': int(file_metadata.get('file_size', 0)),
+                'fileSize': format_file_size(file_metadata.get('file_size', 0)),
                 'contentType': file_metadata.get('content_type') or 'application/octet-stream',
                 'cloudFrontUrl': cloudfront_url or '',
                 'processingRoute': 'invoice-ocr',
@@ -609,7 +642,7 @@ def lambda_handler(event, context):
                     'fileName': item.get('original_filename') or item.get('file_name') or 'Unknown',
                     'uploadTimestamp': item.get('upload_timestamp', ''),
                     'processingStatus': item.get('processing_status', ''),
-                    'fileSize': int(item.get('file_size', 0)),
+                    'fileSize': format_file_size(item.get('file_size', 0)),
                     'contentType': item.get('content_type') or 'application/octet-stream',
                     'cloudFrontUrl': cloudfront_url or '',
                     'processingRoute': 'invoice-ocr',
