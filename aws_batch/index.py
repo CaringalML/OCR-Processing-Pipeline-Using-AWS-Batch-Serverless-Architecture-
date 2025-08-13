@@ -1802,8 +1802,8 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         comprehend_data = results.get('comprehend_analysis', {})
         text_refinement = results.get('text_refinement_details', {})
         
-        # Generate upload timestamp for consistency (use current time for long-batch)
-        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        # No need to get upload_timestamp since we're using update_item
+        # It will preserve all existing fields including upload_timestamp and publication metadata
         
         # Get original filename if not provided
         if not original_filename:
@@ -1874,9 +1874,9 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         }
         
         # Create unified item schema (matching short-batch processor schema)
+        # Note: We don't include upload_timestamp as it should be preserved from the original upload
         unified_item = {
             'file_id': file_id,
-            'upload_timestamp': upload_timestamp,
             'bucket': bucket,
             'key': object_key,
             'file_name': original_filename,  # Use original filename from S3 metadata
@@ -1910,7 +1910,22 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         # Convert to DynamoDB compatible format
         unified_item_converted = convert_to_dynamodb_compatible(unified_item)
         
-        table.put_item(Item=unified_item_converted)
+        # Use update_item to preserve existing publication metadata and upload_timestamp
+        # Build update expression dynamically
+        update_expression_parts = []
+        expression_attribute_values = {}
+        
+        for key, value in unified_item_converted.items():
+            if key != 'file_id':  # Don't update the primary key
+                update_expression_parts.append(f"{key} = :{key}")
+                expression_attribute_values[f":{key}"] = value
+        
+        if update_expression_parts:
+            table.update_item(
+                Key={'file_id': file_id},
+                UpdateExpression='SET ' + ', '.join(update_expression_parts),
+                ExpressionAttributeValues=expression_attribute_values
+            )
         log('DEBUG', 'Unified results stored for edit compatibility', {
             'fileId': file_id, 
             'table': unified_results_table_name,

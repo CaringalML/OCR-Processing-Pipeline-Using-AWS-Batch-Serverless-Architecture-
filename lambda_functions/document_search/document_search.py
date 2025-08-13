@@ -141,6 +141,10 @@ def lambda_handler(event, context):
         publication = query_params.get('publication', '').strip()
         year = query_params.get('year', '').strip()
         title = query_params.get('title', '').strip()
+        author = query_params.get('author', '').strip()
+        description = query_params.get('description', '').strip()
+        page = query_params.get('page', '').strip()
+        tags = query_params.get('tags', '').strip()
         status = query_params.get('status', '').strip()
         file_id = query_params.get('fileId', '').strip()
         
@@ -175,17 +179,43 @@ def lambda_handler(event, context):
             if status:
                 filter_expressions.append(Attr('processing_status').eq(status))
             
-            # Publication filter
+            # Publication filter - search in the publication field
             if publication and not fuzzy:
                 filter_expressions.append(Attr('publication').contains(publication))
             
-            # Year filter
+            # Year filter - search in publication_year field
             if year:
-                filter_expressions.append(Attr('year').eq(year))
+                filter_expressions.append(Attr('publication_year').eq(year))
             
-            # Title filter
+            # Title filter - search in publication_title field
             if title and not fuzzy:
-                filter_expressions.append(Attr('title').contains(title))
+                filter_expressions.append(Attr('publication_title').contains(title))
+            
+            # Author filter - search in publication_author field
+            if author and not fuzzy:
+                filter_expressions.append(Attr('publication_author').contains(author))
+            
+            # Description filter - search in publication_description field  
+            if description and not fuzzy:
+                filter_expressions.append(Attr('publication_description').contains(description))
+            
+            # Page filter - search in publication_page field
+            if page:
+                filter_expressions.append(Attr('publication_page').eq(page))
+            
+            # Tags filter - search in publication_tags field
+            if tags:
+                # Tags can be comma-separated list
+                tag_list = [t.strip() for t in tags.split(',')]
+                if len(tag_list) == 1:
+                    filter_expressions.append(Attr('publication_tags').contains(tag_list[0]))
+                else:
+                    # Search for any of the tags
+                    tag_filters = [Attr('publication_tags').contains(tag) for tag in tag_list]
+                    tag_filter = tag_filters[0]
+                    for tf in tag_filters[1:]:
+                        tag_filter = tag_filter | tf
+                    filter_expressions.append(tag_filter)
             
             # Build scan parameters
             scan_params = {
@@ -266,11 +296,12 @@ def lambda_handler(event, context):
                 'fileUrl': file_url,
                 'metadata': {
                     'publication': item.get('publication', ''),
-                    'year': item.get('year', ''),
-                    'title': item.get('title', ''),
-                    'author': item.get('author', ''),
-                    'description': item.get('description', ''),
-                    'tags': item.get('tags', [])
+                    'publication_year': item.get('publication_year', ''),
+                    'publication_title': item.get('publication_title', ''),
+                    'publication_author': item.get('publication_author', ''),
+                    'publication_description': item.get('publication_description', ''),
+                    'publication_page': item.get('publication_page', ''),
+                    'publication_tags': item.get('publication_tags', [])
                 }
             }
             

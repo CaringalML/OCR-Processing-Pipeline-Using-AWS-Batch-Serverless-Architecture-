@@ -10,7 +10,7 @@ dynamodb = boto3.resource('dynamodb')
 
 # Environment variables
 SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL')
-METADATA_TABLE = os.environ.get('METADATA_TABLE', 'ocr-processor-metadata')
+RESULTS_TABLE = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
 
 def lambda_handler(event, context):
     """
@@ -31,9 +31,9 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'fileId is required'})
             }
         
-        # Validate file exists in metadata table
-        metadata_table = dynamodb.Table(METADATA_TABLE)
-        metadata_response = metadata_table.get_item(Key={'file_id': file_id})
+        # Validate file exists in results table
+        results_table = dynamodb.Table(RESULTS_TABLE)
+        metadata_response = results_table.get_item(Key={'file_id': file_id})
         
         if 'Item' not in metadata_response:
             return {
@@ -79,18 +79,39 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Create message for SQS
+        # Create message for SQS with metadata structure
         message = {
             'messageId': str(uuid.uuid4()),
             'fileId': file_id,
-            'bucketName': file_metadata.get('bucket_name'),
-            's3Key': file_metadata.get('s3_key'),
-            'fileName': file_metadata.get('file_name', 'unknown'),
-            'fileSize': file_metadata.get('file_size', 0),
-            'submittedAt': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'metadata': {
+                's3_bucket': file_metadata.get('bucket_name'),
+                's3_key': file_metadata.get('s3_key'),
+                'file_id': file_id,
+                'upload_timestamp': file_metadata.get('upload_timestamp', datetime.now(timezone.utc).isoformat()),
+                'original_filename': file_metadata.get('file_name', 'unknown'),
+                'content_type': file_metadata.get('content_type', 'application/octet-stream'),
+                'file_size': file_metadata.get('file_size', 0)
+            },
             'requestId': context.request_id,
             'processingType': 'short_batch'
         }
+        
+        # Add publication metadata if provided
+        if body.get('publication'):
+            message['metadata']['publication'] = body.get('publication')
+        if body.get('year'):
+            message['metadata']['year'] = body.get('year')
+        if body.get('title'):
+            message['metadata']['title'] = body.get('title')
+        if body.get('author'):
+            message['metadata']['author'] = body.get('author')
+        if body.get('description'):
+            message['metadata']['description'] = body.get('description')
+        if body.get('page'):
+            message['metadata']['page'] = body.get('page')
+        if body.get('tags'):
+            message['metadata']['tags'] = body.get('tags')
         
         # Send message to SQS with deduplication
         sqs_response = sqs_client.send_message(
@@ -109,7 +130,7 @@ def lambda_handler(event, context):
         )
         
         # Update status to queued
-        metadata_table.update_item(
+        results_table.update_item(
             Key={'file_id': file_id},
             UpdateExpression='SET processing_status = :status, sqs_message_id = :msg_id, queue_timestamp = :timestamp',
             ExpressionAttributeValues={

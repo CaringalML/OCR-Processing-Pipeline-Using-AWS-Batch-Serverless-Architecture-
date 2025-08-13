@@ -375,20 +375,19 @@ def lambda_handler(event, context):
                 'api_path': path,
                 'force_routing': force_routing,
                 'route_override': query_params.get('route', ''),
-                # Add default metadata fields that the reader expects
+                # Add publication metadata fields
                 'publication': form_data.get('publication', ''),
-                'year': form_data.get('year', ''),
-                'title': form_data.get('title', ''),
-                'author': form_data.get('author', '')
+                'publication_year': form_data.get('year', ''),
+                'publication_title': form_data.get('title', ''),
+                'publication_author': form_data.get('author', ''),
+                'publication_description': form_data.get('description', ''),
+                'publication_page': form_data.get('page', ''),
+                'publication_tags': form_data.get('tags', '').split(',') if form_data.get('tags') else []
             }
             
-            # Add optional form data
+            # Add optional form data for other purposes
             if 'priority' in form_data:
                 item['priority'] = form_data['priority']
-            if 'description' in form_data:
-                item['description'] = form_data['description']
-            if 'tags' in form_data:
-                item['tags'] = form_data['tags']
             
             table.put_item(Item=item)
             

@@ -1282,6 +1282,22 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 'refinement_skipped': ocr_result.get('refinement_skipped', False)
             }
             
+            # Add publication metadata if provided
+            if message.get('publication'):
+                results_item['publication'] = message.get('publication')
+            if message.get('year'):
+                results_item['publication_year'] = message.get('year')
+            if message.get('title'):
+                results_item['publication_title'] = message.get('title')
+            if message.get('author'):
+                results_item['publication_author'] = message.get('author')
+            if message.get('description'):
+                results_item['publication_description'] = message.get('description')
+            if message.get('page'):
+                results_item['publication_page'] = message.get('page')
+            if message.get('tags'):
+                results_item['publication_tags'] = message.get('tags')
+            
             results_table.put_item(Item=results_item)
             logger.info(f"Results stored in shared table for document: {document_id}")
         
@@ -1389,6 +1405,7 @@ def lambda_handler(event, context):
                 'title': metadata.get('title'),
                 'author': metadata.get('author'),
                 'description': metadata.get('description'),
+                'page': metadata.get('page'),
                 'tags': metadata.get('tags')
             }
             
