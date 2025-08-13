@@ -1823,6 +1823,8 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
             'bucket': bucket,
             'key': object_key,
             'file_name': original_filename,  # Use original filename from S3 metadata
+            'file_size': results.get('file_size', 0),  # Add file size from processing results
+            'content_type': results.get('content_type', 'application/octet-stream'),  # Add content type
             'extracted_text': extracted_text,
             'formatted_text': formatted_text,
             'refined_text': refined_text,
@@ -1887,15 +1889,19 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
         # Generate upload timestamp for consistency
         upload_timestamp = datetime.now(timezone.utc).isoformat()
         
-        # Get original filename if not provided
+        # Get original filename and file size if not provided
+        file_size = 0
+        content_type = 'application/octet-stream'
         if not original_filename:
             try:
                 s3_client = boto3.client('s3')
                 s3_object_metadata = s3_client.head_object(Bucket=bucket, Key=object_key)
                 s3_metadata = s3_object_metadata.get('Metadata', {})
                 original_filename = s3_metadata.get('original-filename', object_key.split('/')[-1])
+                file_size = s3_object_metadata.get('ContentLength', 0)
+                content_type = s3_object_metadata.get('ContentType', 'application/octet-stream')
             except Exception as e:
-                log('WARN', f'Failed to get original filename from S3 metadata: {e}')
+                log('WARN', f'Failed to get file metadata from S3: {e}')
                 original_filename = object_key.split('/')[-1]
         
         # Create error item schema (matching short-batch processor schema)
@@ -1905,6 +1911,8 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
             'bucket': bucket,
             'key': object_key,
             'file_name': original_filename,  # Use original filename from S3 metadata
+            'file_size': file_size,  # Add file size
+            'content_type': content_type,  # Add content type
             'extracted_text': '',
             'formatted_text': '',
             'refined_text': '',
