@@ -108,33 +108,22 @@ def lambda_handler(event, context):
                 job_id = batch_response['jobId']
                 print(f"Submitted Batch job {job_id} for file {file_id}")
                 
-                # First, query to get the correct upload_timestamp
-                metadata_response = table.query(
-                    KeyConditionExpression='file_id = :file_id',
-                    ExpressionAttributeValues={':file_id': file_id},
-                    Limit=1
-                )
-                
-                if metadata_response['Items']:
-                    upload_timestamp = metadata_response['Items'][0]['upload_timestamp']
-                    
-                    # Update DynamoDB with job information
+                # Update DynamoDB with job information (unified table uses only file_id as key)
+                try:
                     table.update_item(
-                        Key={
-                            'file_id': file_id,
-                            'upload_timestamp': upload_timestamp
-                        },
+                        Key={'file_id': file_id},
                         UpdateExpression='SET processing_status = :status, batch_job_id = :job_id, batch_job_name = :job_name, last_updated = :updated, processing_started = :started',
                         ExpressionAttributeValues={
                             ':status': 'processing',
                             ':job_id': job_id,
                             ':job_name': job_name,
                             ':updated': datetime.utcnow().isoformat(),
-                            ':started': int(datetime.utcnow().timestamp())
+                            ':started': datetime.utcnow().isoformat()  # Store as ISO string for consistency
                         }
                     )
-                else:
-                    print(f"ERROR: File metadata not found for file_id: {file_id}")
+                    print(f"Updated file {file_id} with batch job ID {job_id}")
+                except Exception as update_error:
+                    print(f"ERROR: Failed to update DynamoDB for file_id {file_id}: {str(update_error)}")
                     batch_item_failures.append({"itemIdentifier": message_id})
                     error_count += 1
                     continue

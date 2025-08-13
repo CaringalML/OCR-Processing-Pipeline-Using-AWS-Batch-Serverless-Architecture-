@@ -322,13 +322,16 @@ def lambda_handler(event, context):
                 'file_size_mb': str(file_size_mb),
                 'file_size_kb': str(file_size / 1024),
                 's3_bucket': bucket_name,
+                'bucket': bucket_name,  # Add bucket for unified table compatibility
                 's3_key': s3_key,
+                'key': s3_key,  # Add key for unified table compatibility
                 's3_folder': routing_decision['s3_folder'],
                 'processing_status': 'uploaded',
                 'upload_source': 'api',
                 'bucket_name': bucket_name,  # For GSI query
                 # Enhanced routing metadata
                 'processing_route': routing_decision['route'],
+                'processing_type': routing_decision['route'],  # Add processing_type for lambda_reader compatibility
                 'processor_type': routing_decision['processor_type'],
                 'routing_reason': routing_decision['reason'],
                 'estimated_processing_time': routing_decision['estimated_processing_time'],

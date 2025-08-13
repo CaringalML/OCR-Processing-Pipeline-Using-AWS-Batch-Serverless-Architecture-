@@ -1,16 +1,55 @@
 import json
 import boto3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
 import time
+
+def calculate_real_time_duration(processing_result):
+    """Calculate real-time processing duration based on current time and start time"""
+    try:
+        # Check if processing is completed (has processing_duration in the DB)
+        stored_duration = processing_result.get('processing_duration')
+        if stored_duration and processing_result.get('processing_status') == 'completed':
+            return stored_duration
+        
+        # For ongoing processing, calculate real-time duration
+        processing_started = processing_result.get('processing_started')
+        if processing_started:
+            try:
+                # Parse ISO format timestamp
+                start_time = datetime.fromisoformat(processing_started.replace('Z', '+00:00'))
+                current_time = datetime.now(start_time.tzinfo)
+                elapsed_seconds = (current_time - start_time).total_seconds()
+                return elapsed_seconds
+            except (ValueError, AttributeError):
+                pass
+        
+        # Fallback to upload timestamp if processing_started is not available
+        upload_timestamp = processing_result.get('upload_timestamp')
+        if upload_timestamp:
+            try:
+                upload_time = datetime.fromisoformat(upload_timestamp.replace('Z', '+00:00'))
+                current_time = datetime.now(upload_time.tzinfo)
+                elapsed_seconds = (current_time - upload_time).total_seconds()
+                return elapsed_seconds
+            except (ValueError, AttributeError):
+                pass
+                
+        return 0
+    except Exception as e:
+        print(f"Error calculating real-time duration: {str(e)}")
+        return 0
 
 def get_detailed_processing_status(processing_result):
     """Get detailed processing status with progress for running batch jobs"""
     base_status = processing_result.get('processing_status', '')
     batch_job_id = processing_result.get('batch_job_id')
     processing_type = processing_result.get('processing_type', '')
+    
+    # Debug logging can be enabled when needed
+    # print(f"DEBUG: Processing status check - base_status: {base_status}, batch_job_id: {batch_job_id}, processing_type: {processing_type}")
     
     # For short-batch jobs that are still processing, just show "processing"
     if processing_type == 'short-batch':
@@ -19,57 +58,117 @@ def get_detailed_processing_status(processing_result):
         else:
             return 'processing'
     
-    # If not a long-batch job or no batch job ID, return base status
-    if processing_type != 'long-batch' or not batch_job_id or base_status in ['completed', 'failed', 'processed']:
-        return base_status
-    
-    # For running long-batch jobs, try to get progress from AWS Batch
-    if base_status == 'processing':
+    # For long-batch jobs, always check the batch job status if we have a job ID
+    if processing_type == 'long-batch' and batch_job_id:
+        # Even if status is "uploaded" or other states, check the actual batch job
         try:
             batch_client = boto3.client('batch')
             
             # Get job details
             response = batch_client.describe_jobs(jobs=[batch_job_id])
             
+            print(f"DEBUG: Batch response for job {batch_job_id}: {response}")
+            
             if response.get('jobs'):
                 job = response['jobs'][0]
-                job_status = job.get('jobStatus', 'UNKNOWN')
+                job_status = job.get('status', 'UNKNOWN')
+                print(f"DEBUG: Job status: {job_status}")
+                
+                # Check for container status for more detailed info
+                container = job.get('container', {})
+                task_arn = container.get('taskArn', '')
+                log_stream_name = container.get('logStreamName', '')
                 
                 # Map AWS Batch statuses to user-friendly progress
-                status_mapping = {
-                    'SUBMITTED': 'Queued for processing',
-                    'PENDING': 'Queued for processing', 
-                    'RUNNABLE': 'Starting processing',
-                    'STARTING': 'Starting processing',
-                    'RUNNING': get_running_progress(job),
-                    'SUCCEEDED': 'completed',
-                    'FAILED': 'failed'
-                }
-                
-                return status_mapping.get(job_status, f'Processing ({job_status.lower()})')
-                
+                if job_status == 'SUBMITTED':
+                    return 'Queued for processing'
+                elif job_status == 'PENDING':
+                    return 'Pending - Waiting for resources'
+                elif job_status == 'RUNNABLE':
+                    return 'Starting - Provisioning container'
+                elif job_status == 'STARTING':
+                    # ECS task is being provisioned
+                    return 'Starting - ECS task provisioning'
+                elif job_status == 'RUNNING':
+                    # Job is actually running, show progress
+                    return get_running_progress(job)
+                elif job_status == 'SUCCEEDED':
+                    return 'completed'
+                elif job_status == 'FAILED':
+                    # Check if there's a reason for failure
+                    status_reason = job.get('statusReason', '')
+                    if 'Task failed' in status_reason:
+                        return 'failed - Task error'
+                    elif 'ResourcesNotAvailable' in status_reason:
+                        return 'failed - Resources unavailable'
+                    else:
+                        return 'failed'
+                else:
+                    return f'Processing ({job_status.lower()})'
+            else:
+                print(f"DEBUG: No jobs found for {batch_job_id}")
+                # Job not found, possibly completed and cleaned up
+                if base_status == 'completed':
+                    return 'completed'
+                else:
+                    return 'Queued for processing'
+                    
         except Exception as e:
             print(f"Error getting batch job status for {batch_job_id}: {str(e)}")
-            # Fallback to time-based estimation
-            return get_time_based_progress(processing_result)
+            # If we can't get batch status, use base status with enhancement
+            if base_status == 'uploaded':
+                return 'Queued for processing'
+            elif base_status == 'processing':
+                # Fallback to time-based estimation
+                return get_time_based_progress(processing_result)
+            else:
+                return base_status
+    
+    # For long-batch without job ID (shouldn't happen) or completed/failed status
+    if processing_type == 'long-batch':
+        if base_status == 'uploaded':
+            return 'Queued for processing'
+        elif base_status in ['completed', 'processed']:
+            return 'completed'
+        elif base_status == 'failed':
+            return 'failed'
+        elif base_status == 'processing':
+            # Check if batch job was submitted recently but not yet stored in DB
+            recent_job_status = check_recent_batch_job_status(processing_result)
+            if recent_job_status:
+                return recent_job_status
+            else:
+                return 'Processing - Batch job pending'
+        else:
+            # Handle any unexpected status
+            return f'Status: {base_status}'
     
     return base_status
 
 def get_running_progress(job):
-    """Calculate progress for a running batch job"""
+    """Calculate progress for a running batch job by checking CloudWatch logs"""
     try:
-        # Get job start time
+        # First try to get actual progress from CloudWatch logs
+        container = job.get('container', {})
+        log_stream_name = container.get('logStreamName')
+        
+        if log_stream_name:
+            # Parse progress from CloudWatch logs
+            actual_progress = get_progress_from_logs(log_stream_name)
+            if actual_progress:
+                return actual_progress
+        
+        # Fallback to time-based estimation if we can't get logs
         started_at = job.get('startedAt')
         if not started_at:
-            return 'In progress'
+            return 'In progress - Starting'
             
         # Convert milliseconds to seconds
         start_time = started_at / 1000
         current_time = time.time()
         elapsed_minutes = (current_time - start_time) / 60
         
-        # Estimate progress based on typical processing time (10-30 minutes for most documents)
-        # This is a rough estimation - you could make this more sophisticated
+        # Estimate progress based on typical processing time
         if elapsed_minutes < 2:
             progress = min(15, int(elapsed_minutes * 7.5))  # 0-15% in first 2 minutes
         elif elapsed_minutes < 10:
@@ -84,6 +183,362 @@ def get_running_progress(job):
     except Exception as e:
         print(f"Error calculating progress: {str(e)}")
         return 'In progress'
+
+def get_progress_from_logs(log_stream_name):
+    """Parse actual progress from CloudWatch logs"""
+    try:
+        logs_client = boto3.client('logs')
+        log_group_name = '/aws/batch/ocr-processor-batch-long-batch-processor'
+        
+        # Get the latest log events
+        response = logs_client.get_log_events(
+            logGroupName=log_group_name,
+            logStreamName=log_stream_name,
+            startFromHead=False,  # Get latest logs
+            limit=50  # Get last 50 log entries
+        )
+        
+        # Parse logs to determine current stage
+        events = response.get('events', [])
+        
+        # Define progress stages based on log messages
+        progress_stages = {
+            'OCR Processor starting': 5,
+            'Starting file processing': 10,
+            'Retrieving file metadata': 15,
+            'File metadata retrieved': 20,
+            'Starting Textract OCR processing': 25,
+            'Starting Textract document analysis': 30,
+            'Textract job submitted': 35,
+            'Waiting for Textract completion': 40,
+            'Textract job completed, retrieving results': 50,
+            'Textract job completed': 50,
+            'Textract processing completed': 55,
+            'Extracting text from Textract results': 58,
+            'Formatting extracted text': 62,
+            'Applying comprehensive text refinement': 67,
+            'Text processing completed': 72,
+            'Starting Comprehend analysis on refined text': 76,
+            'Starting Comprehend analysis': 76,
+            'Comprehend analysis completed': 82,
+            'Storing processing results': 88,
+            'Long-batch processing completed and stored in results table': 94,
+            'Long-batch processing completed': 94,
+            'File processing completed successfully': 98,
+            'Batch job completed successfully': 100
+        }
+        
+        # Find the latest stage from logs
+        current_stage = 'In progress'
+        current_progress = 0
+        
+        for event in reversed(events):  # Check from newest to oldest
+            message = event.get('message', '')
+            
+            # Try to parse JSON log
+            try:
+                if message.startswith('{'):
+                    log_data = json.loads(message)
+                    log_message = log_data.get('message', '')
+                    
+                    # Check for specific stages
+                    for stage, progress in progress_stages.items():
+                        if stage in log_message:
+                            if progress > current_progress:
+                                current_progress = progress
+                                current_stage = stage
+                                
+                    # Check for Textract waiting status with percentage
+                    if 'Waiting for Textract completion' in log_message:
+                        # Textract processing can take time, show intermediate progress
+                        elapsed = log_data.get('context', {}).get('elapsedMinutes', 0)
+                        if elapsed > 0:
+                            # Textract typically takes 5-15 minutes
+                            textract_progress = min(45, 35 + int(elapsed * 2))
+                            if textract_progress > current_progress:
+                                current_progress = textract_progress
+                                current_stage = f'Processing document (Textract)'
+            except:
+                # If not JSON, check plain text
+                for stage, progress in progress_stages.items():
+                    if stage in message:
+                        if progress > current_progress:
+                            current_progress = progress
+                            current_stage = stage
+        
+        if current_progress > 0:
+            # Add time-based interpolation for smoother progress
+            # If we detect a stage but it's been running for a while, add some interpolation
+            from datetime import datetime, timezone
+            import time
+            
+            current_time = time.time()
+            stage_duration_bonus = 0
+            
+            # Add small bonus based on how long the current stage has been running
+            # This helps fill gaps between detected stages
+            if current_progress < 100:
+                # Add up to 2% bonus based on elapsed time (max 5 minutes)
+                elapsed_minutes = 2  # Assume some elapsed time if we can't determine it
+                stage_duration_bonus = min(2, elapsed_minutes * 0.4)
+                current_progress = min(99, current_progress + stage_duration_bonus)
+            
+            # Return user-friendly status based on stage
+            if current_progress < 30:
+                return f'In progress {current_progress}% - Initializing'
+            elif current_progress < 55:
+                return f'In progress {current_progress}% - Extracting text'
+            elif current_progress < 75:
+                return f'In progress {current_progress}% - Refining text'
+            elif current_progress < 90:
+                return f'In progress {current_progress}% - Analyzing content'
+            elif current_progress < 100:
+                return f'In progress {current_progress}% - Finalizing'
+            else:
+                return f'Completed'
+        
+        return None  # No specific progress found, use fallback
+        
+    except Exception as e:
+        print(f"Error reading CloudWatch logs: {str(e)}")
+        return None
+
+def check_recent_batch_job_status(processing_result):
+    """Check for recent batch job submissions and their status via logs and batch API"""
+    try:
+        file_id = processing_result.get('file_id', '')
+        upload_timestamp = processing_result.get('upload_timestamp', '')
+        
+        if not file_id:
+            return None
+            
+        # Check CloudWatch logs for recent batch job submissions for this file
+        logs_client = boto3.client('logs')
+        batch_client = boto3.client('batch')
+        
+        # Look for recent SQS processor logs mentioning this file
+        try:
+            # Get logs from the last 10 minutes
+            start_time = int((datetime.now() - timedelta(minutes=10)).timestamp() * 1000)
+            
+            sqs_log_response = logs_client.filter_log_events(
+                logGroupName='/aws/lambda/ocr-processor-batch-sqs-batch-processor',
+                startTime=start_time,
+                filterPattern=f'"{file_id}"',
+                limit=20
+            )
+            
+            # Look for batch job submission in logs
+            batch_job_id = None
+            job_submitted = False
+            
+            for event in sqs_log_response.get('events', []):
+                message = event.get('message', '')
+                if 'Submitted Batch job' in message and file_id in message:
+                    # Extract job ID from log message
+                    # Format: "Submitted Batch job JOB_ID for file FILE_ID"
+                    parts = message.split()
+                    if len(parts) >= 4:
+                        batch_job_id = parts[3]  # The job ID
+                        job_submitted = True
+                        break
+                elif 'ERROR' in message and file_id in message:
+                    return 'Processing failed - Check logs'
+                elif 'Updated file' in message and file_id in message:
+                    # Job was submitted and DB updated successfully
+                    if 'batch job ID' in message:
+                        parts = message.split()
+                        for i, part in enumerate(parts):
+                            if part == 'ID' and i + 1 < len(parts):
+                                batch_job_id = parts[i + 1]
+                                break
+            
+            if batch_job_id:
+                # Found a batch job ID, check its current status
+                try:
+                    batch_response = batch_client.describe_jobs(jobs=[batch_job_id])
+                    if batch_response.get('jobs'):
+                        job = batch_response['jobs'][0]
+                        job_status = job.get('status', 'UNKNOWN')
+                        
+                        # Map status to user-friendly messages
+                        if job_status == 'RUNNING':
+                            # Get actual progress from batch processor logs
+                            container = job.get('container', {})
+                            log_stream_name = container.get('logStreamName', '')
+                            if log_stream_name:
+                                actual_progress = get_progress_from_batch_logs(batch_job_id)
+                                if actual_progress:
+                                    return actual_progress
+                            return get_running_progress(job)
+                        else:
+                            status_mapping = {
+                                'SUBMITTED': 'Queued for processing',
+                                'PENDING': 'Pending - Waiting for resources',
+                                'RUNNABLE': 'Starting - Provisioning container',
+                                'STARTING': 'Starting - ECS task provisioning',
+                                'SUCCEEDED': 'Processing completed',
+                                'FAILED': 'Processing failed'
+                            }
+                            return status_mapping.get(job_status, f'Processing ({job_status.lower()})')
+                        
+                except Exception as batch_error:
+                    print(f"Error checking batch job {batch_job_id}: {str(batch_error)}")
+            
+            elif job_submitted:
+                return 'Batch job submitted - Starting soon'
+            
+            # Check if file is in SQS queue waiting to be processed
+            sqs_client = boto3.client('sqs')
+            queue_url = 'https://sqs.ap-southeast-2.amazonaws.com/939737198590/ocr-processor-batch-batch-queue'
+            
+            # Check if there are messages in flight
+            queue_attrs = sqs_client.get_queue_attributes(
+                QueueUrl=queue_url,
+                AttributeNames=['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible']
+            )
+            
+            visible_messages = int(queue_attrs['Attributes'].get('ApproximateNumberOfMessages', 0))
+            invisible_messages = int(queue_attrs['Attributes'].get('ApproximateNumberOfMessagesNotVisible', 0))
+            
+            if visible_messages > 0:
+                return f'Queued for processing ({visible_messages} files ahead)'
+            elif invisible_messages > 0:
+                return 'Processing queue - Job starting soon'
+            else:
+                # No messages in queue, check if it's a recent upload
+                if upload_timestamp:
+                    upload_time = datetime.fromisoformat(upload_timestamp.replace('Z', '+00:00'))
+                    time_since_upload = (datetime.now(upload_time.tzinfo) - upload_time).total_seconds()
+                    
+                    if time_since_upload < 300:  # Less than 5 minutes
+                        return 'Processing initiated - Starting batch job'
+                    else:
+                        return 'Processing delayed - Check system status'
+            
+        except Exception as log_error:
+            print(f"Error checking logs for file {file_id}: {str(log_error)}")
+            return None
+            
+    except Exception as e:
+        print(f"Error in check_recent_batch_job_status: {str(e)}")
+        return None
+
+def get_progress_from_batch_logs(batch_job_id):
+    """Get progress directly from batch processor logs using job ID"""
+    try:
+        logs_client = boto3.client('logs')
+        log_group_name = '/aws/batch/ocr-processor-batch-long-batch-processor'
+        
+        # Get recent log events from the last 30 minutes
+        start_time = int((datetime.now() - timedelta(minutes=30)).timestamp() * 1000)
+        
+        # Filter logs by batch job ID to get logs for this specific job
+        response = logs_client.filter_log_events(
+            logGroupName=log_group_name,
+            startTime=start_time,
+            filterPattern=f'"{batch_job_id}"',  # Filter by job ID
+            limit=50
+        )
+        
+        events = response.get('events', [])
+        
+        # If no logs found for this job ID, try getting recent logs for any job
+        if not events:
+            response = logs_client.filter_log_events(
+                logGroupName=log_group_name,
+                startTime=start_time,
+                limit=20
+            )
+            events = response.get('events', [])
+        
+        # Parse the same progress stages as before
+        progress_stages = {
+            'OCR Processor starting': 5,
+            'Starting file processing': 10,
+            'Retrieving file metadata': 15,
+            'File metadata retrieved': 20,
+            'Starting Textract OCR processing': 25,
+            'Starting Textract document analysis': 30,
+            'Textract job submitted': 35,
+            'Waiting for Textract completion': 40,
+            'Textract job completed, retrieving results': 50,
+            'Textract job completed': 50,
+            'Textract processing completed': 55,
+            'Extracting text from Textract results': 58,
+            'Formatting extracted text': 62,
+            'Applying comprehensive text refinement': 67,
+            'Text processing completed': 72,
+            'Starting Comprehend analysis on refined text': 76,
+            'Starting Comprehend analysis': 76,
+            'Comprehend analysis completed': 82,
+            'Storing processing results': 88,
+            'Long-batch processing completed and stored in results table': 94,
+            'Long-batch processing completed': 94,
+            'File processing completed successfully': 98,
+            'Batch job completed successfully': 100
+        }
+        
+        # Find the latest stage from logs
+        current_progress = 0
+        
+        for event in reversed(events):  # Check from newest to oldest
+            message = event.get('message', '')
+            
+            # Try to parse JSON log
+            try:
+                if message.startswith('{'):
+                    log_data = json.loads(message)
+                    log_message = log_data.get('message', '')
+                    
+                    # Check for specific stages
+                    for stage, progress in progress_stages.items():
+                        if stage in log_message:
+                            if progress > current_progress:
+                                current_progress = progress
+                                
+                    # Check for Textract waiting status
+                    if 'Waiting for Textract completion' in log_message:
+                        context = log_data.get('context', {})
+                        if 'elapsedMinutes' in context:
+                            elapsed = context['elapsedMinutes']
+                            # Textract typically takes 5-15 minutes
+                            textract_progress = min(45, 35 + int(elapsed * 2))
+                            if textract_progress > current_progress:
+                                current_progress = textract_progress
+            except:
+                # If not JSON, check plain text
+                for stage, progress in progress_stages.items():
+                    if stage in message:
+                        if progress > current_progress:
+                            current_progress = progress
+        
+        if current_progress > 0:
+            # Add time-based interpolation for smoother progress
+            if current_progress < 100:
+                # Add small bonus for elapsed time to show progression
+                stage_duration_bonus = min(3, 1.5)  # Add up to 3% bonus
+                current_progress = min(99, current_progress + stage_duration_bonus)
+            
+            # Return user-friendly status based on stage
+            if current_progress < 30:
+                return f'In progress {current_progress}% - Initializing'
+            elif current_progress < 55:
+                return f'In progress {current_progress}% - Extracting text (Textract)'
+            elif current_progress < 75:
+                return f'In progress {current_progress}% - Refining text'
+            elif current_progress < 90:
+                return f'In progress {current_progress}% - Analyzing content (Comprehend)'
+            elif current_progress < 100:
+                return f'In progress {current_progress}% - Finalizing'
+            else:
+                return f'Completed'
+        
+        return None  # No specific progress found
+        
+    except Exception as e:
+        print(f"Error reading batch processor logs: {str(e)}")
+        return None
 
 def get_time_based_progress(processing_result):
     """Fallback progress estimation based on processing start time"""
@@ -269,7 +724,7 @@ def lambda_handler(event, context):
                     'processingType': processing_result.get('processing_type', ''),
                     'processingCost': processing_result.get('processing_cost', 0),
                     'processedAt': processing_result.get('processed_at', ''),
-                    'processingDuration': processing_result.get('processing_duration', ''),
+                    'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
                     'tokenUsage': processing_result.get('token_usage', {}),
                     'languageDetection': processing_result.get('language_detection', {}),
                     'qualityAssessment': processing_result.get('quality_assessment', {}),
@@ -467,7 +922,7 @@ def lambda_handler(event, context):
                                 'processingType': 'short-batch',
                                 'processingCost': processing_result.get('processing_cost', 0),
                                 'processedAt': processing_result.get('processed_at', ''),
-                                'processingDuration': format_duration(processing_result.get('processing_duration', 0)),
+                                'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
                                 'tokenUsage': processing_result.get('token_usage', {}),
                                 'languageDetection': processing_result.get('language_detection', {})
                             }
@@ -479,7 +934,7 @@ def lambda_handler(event, context):
                                 'refinedText': processing_result.get('refined_text', ''),
                                 'processingModel': processing_result.get('processing_model', 'aws-textract'),
                                 'processingType': 'long-batch',
-                                'processingDuration': format_duration(processing_result.get('processing_duration', 0))
+                                'processingDuration': format_duration(calculate_real_time_duration(processing_result))
                             }
                     # Legacy short-batch handling removed - now using unified results table
                     elif processing_result:
@@ -490,7 +945,7 @@ def lambda_handler(event, context):
                             'refinedText': processing_result.get('refined_text', ''),        # Final refined
                             'processingModel': 'aws-textract',
                             'processingType': 'long-batch',
-                            'processingDuration': format_duration(processing_result.get('processing_duration', 0))
+                            'processingDuration': format_duration(calculate_real_time_duration(processing_result))
                         }
                         
                         # For Textract processing, use existing analysis

@@ -424,6 +424,25 @@ resource "aws_iam_policy" "reader_policy" {
           "batch:DescribeJobs"
         ]
         Resource = "*"
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ]
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:*:log-group:/aws/batch/job:*",
+          "arn:aws:logs:${var.aws_region}:*:log-group:/aws/batch/ocr-processor-batch-long-batch-processor:*",
+          "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/ocr-processor-batch-sqs-batch-processor:*"
+        ]
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = "arn:aws:sqs:${var.aws_region}:*:ocr-processor-batch-batch-queue"
       }
     ]
   })

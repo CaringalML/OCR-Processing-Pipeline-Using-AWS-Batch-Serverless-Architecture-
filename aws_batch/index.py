@@ -988,9 +988,14 @@ def process_s3_file() -> Dict[str, Any]:
         file_size = s3_object_metadata.get('ContentLength', 0)
         content_type = s3_object_metadata.get('ContentType', 'unknown')
         
+        # Extract original filename from S3 metadata
+        s3_metadata = s3_object_metadata.get('Metadata', {})
+        original_filename = s3_metadata.get('original-filename', object_key.split('/')[-1])
+        
         log('INFO', 'File metadata retrieved', {
             'size': file_size,
             'contentType': content_type,
+            'originalFilename': original_filename,
             'lastModified': s3_object_metadata.get('LastModified', '').isoformat() if s3_object_metadata.get('LastModified') else None
         })
         
@@ -1114,7 +1119,7 @@ def process_s3_file() -> Dict[str, Any]:
         log('INFO', 'Storing processing results')
         
         # Store all results in unified table (matching short-batch schema)
-        store_unified_results(file_id, processing_results, bucket_name, object_key)
+        store_unified_results(file_id, processing_results, bucket_name, object_key, original_filename)
         
         log('INFO', 'Long-batch processing completed and stored in results table')
         
@@ -1140,7 +1145,7 @@ def process_s3_file() -> Dict[str, Any]:
         
         # Store error result to results table
         try:
-            store_error_result(file_id, str(error), bucket_name, object_key)
+            store_error_result(file_id, str(error), bucket_name, object_key, original_filename)
             log('INFO', 'Error status stored to results table')
         except Exception as store_error:
             log('ERROR', 'Failed to store error status', {'error': str(store_error)})
@@ -1780,7 +1785,7 @@ def process_text_with_comprehend(text: str) -> Dict[str, Any]:
 # REMOVED: store_processing_results function - replaced with store_unified_results
 
 
-def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, object_key: str) -> None:
+def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, object_key: str, original_filename: str = None) -> None:
     """Store results in unified results table for edit endpoint compatibility"""
     # Use the shared results table for both short-batch and long-batch
     unified_results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
@@ -1800,13 +1805,24 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         # Generate upload timestamp for consistency (use current time for long-batch)
         upload_timestamp = datetime.now(timezone.utc).isoformat()
         
+        # Get original filename if not provided
+        if not original_filename:
+            try:
+                s3_client = boto3.client('s3')
+                s3_object_metadata = s3_client.head_object(Bucket=bucket, Key=object_key)
+                s3_metadata = s3_object_metadata.get('Metadata', {})
+                original_filename = s3_metadata.get('original-filename', object_key.split('/')[-1])
+            except Exception as e:
+                log('WARN', f'Failed to get original filename from S3 metadata: {e}')
+                original_filename = object_key.split('/')[-1]
+        
         # Create unified item schema (matching short-batch processor schema)
         unified_item = {
             'file_id': file_id,
             'upload_timestamp': upload_timestamp,
             'bucket': bucket,
             'key': object_key,
-            'file_name': object_key.split('/')[-1],  # Extract filename from key
+            'file_name': original_filename,  # Use original filename from S3 metadata
             'extracted_text': extracted_text,
             'formatted_text': formatted_text,
             'refined_text': refined_text,
@@ -1861,7 +1877,7 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         # Don't raise - this is supplementary storage, main storage should still work
 
 
-def store_error_result(file_id: str, error_message: str, bucket: str, object_key: str) -> None:
+def store_error_result(file_id: str, error_message: str, bucket: str, object_key: str, original_filename: str = None) -> None:
     """Store error result in unified results table"""
     unified_results_table_name = os.getenv('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     
@@ -1871,13 +1887,24 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
         # Generate upload timestamp for consistency
         upload_timestamp = datetime.now(timezone.utc).isoformat()
         
+        # Get original filename if not provided
+        if not original_filename:
+            try:
+                s3_client = boto3.client('s3')
+                s3_object_metadata = s3_client.head_object(Bucket=bucket, Key=object_key)
+                s3_metadata = s3_object_metadata.get('Metadata', {})
+                original_filename = s3_metadata.get('original-filename', object_key.split('/')[-1])
+            except Exception as e:
+                log('WARN', f'Failed to get original filename from S3 metadata: {e}')
+                original_filename = object_key.split('/')[-1]
+        
         # Create error item schema (matching short-batch processor schema)
         error_item = {
             'file_id': file_id,
             'upload_timestamp': upload_timestamp,
             'bucket': bucket,
             'key': object_key,
-            'file_name': object_key.split('/')[-1],  # Extract filename from key
+            'file_name': original_filename,  # Use original filename from S3 metadata
             'extracted_text': '',
             'formatted_text': '',
             'refined_text': '',
