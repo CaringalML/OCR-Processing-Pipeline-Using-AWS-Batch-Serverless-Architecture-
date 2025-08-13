@@ -1213,7 +1213,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 'refined_character_count': len(refined_text),
                 'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
                 'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0,
+                'improvement_ratio': Decimal(str(round(len(refined_text) / len(formatted_text), 2))) if formatted_text else Decimal('1.0'),
                 'refinement_skipped': ocr_result.get('refinement_skipped', False)
             }
             
@@ -1281,7 +1281,7 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                     'refined_character_count': 0,
                     'processing_model': CLAUDE_MODEL,
                     'processing_notes': 'Processing failed',
-                    'improvement_ratio': 0,
+                    'improvement_ratio': Decimal('0'),
                     'refinement_skipped': False
                 }
                 

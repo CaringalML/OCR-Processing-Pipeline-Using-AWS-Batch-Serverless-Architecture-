@@ -1836,7 +1836,7 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
             'entities_found': len(text_refinement.get('entities_found', [])),
             'processing_notes': text_refinement.get('processing_notes', 'Textract OCR with Comprehend analysis'),
             'processing_model': 'aws-textract-comprehend',
-            'improvement_ratio': round(len(refined_text) / len(extracted_text), 2) if extracted_text else 1.0
+            'improvement_ratio': Decimal(str(round(len(refined_text) / len(extracted_text), 2))) if extracted_text else Decimal('1.0')
         }
         
         # Create entity analysis without duplication
@@ -1947,7 +1947,7 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
             'entities_found': 0,
             'processing_notes': 'Processing failed',
             'processing_model': 'aws-textract-comprehend',
-            'improvement_ratio': 0
+            'improvement_ratio': Decimal('0')
         }
         
         # Create error item schema (matching short-batch processor schema)
