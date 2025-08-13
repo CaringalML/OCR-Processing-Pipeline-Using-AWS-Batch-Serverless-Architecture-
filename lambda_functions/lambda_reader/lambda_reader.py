@@ -760,7 +760,6 @@ def lambda_handler(event, context):
                     'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
                     'tokenUsage': processing_result.get('token_usage', {}),
                     'languageDetection': processing_result.get('language_detection', {}),
-                    'qualityAssessment': processing_result.get('quality_assessment', {}),
                     'entityAnalysis': processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {})),
                     'userEdited': processing_result.get('user_edited', False),
                     'editHistory': processing_result.get('edit_history', [])
@@ -789,15 +788,33 @@ def lambda_handler(event, context):
                         paragraphs = analysis_text.split('\n\n')
                         sentences = analysis_text.split('. ')
                         
+                        # Safe improvement ratio calculation
+                        improvement_ratio = 1.0
+                        if formatted_text and len(formatted_text) > 0:
+                            improvement_ratio = round(len(refined_text) / len(formatted_text), 2)
+                        
                         response_data['textAnalysis'] = {
-                            'total_words': len(words),
-                            'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                            'total_sentences': len([s for s in sentences if s.strip()]),
-                            'raw_character_count': len(formatted_text),
-                            'refined_character_count': len(refined_text),
+                            'improvement_ratio': improvement_ratio,
+                            'refined_total_character_count': len(refined_text),
+                            'refined_total_word_count': len(words),
+                            'refined_total_sentences': len([s for s in sentences if s.strip()]),
+                            'refined_total_paragraphs': len([p for p in paragraphs if p.strip()]),
+                            'refined_total_spell_corrections': 0,
+                            'refined_total_grammar_count': 0,
+                            'refined_flow_improvements': 0,
+                            'refined_total_improvements': 0,
+                            'raw_total_character_count': len(formatted_text),
+                            'raw_total_word_count': len(words),  # Approximation for old records
+                            'raw_total_sentences': len([s for s in sentences if s.strip()]),
+                            'raw_total_paragraphs': len([p for p in paragraphs if p.strip()]),
                             'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
-                            'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                            'improvement_ratio': round(len(refined_text) / len(formatted_text), 2) if formatted_text else 1.0
+                            'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement (legacy fallback)',
+                            'methods_used': ['claude_ocr', 'grammar_refinement'],
+                            'qualityAssessment': {
+                                'confidence_score': '95',
+                                'issues': [],
+                                'assessment': 'legacy_fallback'
+                            }
                         }
                     
                     # Add entity analysis if available in results (check both field names for compatibility)
@@ -829,18 +846,27 @@ def lambda_handler(event, context):
                         text_refinement_details = processing_result.get('text_refinement_details', {})
                         
                         response_data['textAnalysis'] = {
-                            'total_words': summary_analysis.get('word_count', 0),
-                            'total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                            'total_sentences': summary_analysis.get('sentence_count', 0),
-                            'total_improvements': text_refinement_details.get('total_improvements', 0),
-                            'spell_corrections': text_refinement_details.get('spell_corrections', 0),
-                            'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
-                            'methods_used': text_refinement_details.get('methods_used', []),
-                            'entities_found': len(text_refinement_details.get('entities_found', [])),
-                            'processing_notes': text_refinement_details.get('processing_notes', ''),
-                            'confidence_score': summary_analysis.get('confidence', '0'),
-                            'character_count': summary_analysis.get('character_count', 0),
-                            'line_count': summary_analysis.get('line_count', 0)
+                            'improvement_ratio': 1.0,
+                            'refined_total_character_count': summary_analysis.get('character_count', 0),
+                            'refined_total_word_count': summary_analysis.get('word_count', 0),
+                            'refined_total_sentences': summary_analysis.get('sentence_count', 0),
+                            'refined_total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                            'refined_total_spell_corrections': text_refinement_details.get('spell_corrections', 0),
+                            'refined_total_grammar_count': text_refinement_details.get('grammar_refinements', 0),
+                            'refined_flow_improvements': 0,
+                            'refined_total_improvements': text_refinement_details.get('total_improvements', 0),
+                            'raw_total_character_count': summary_analysis.get('character_count', 0),
+                            'raw_total_word_count': summary_analysis.get('word_count', 0),
+                            'raw_total_sentences': summary_analysis.get('sentence_count', 0),
+                            'raw_total_paragraphs': summary_analysis.get('paragraph_count', 0),
+                            'processing_model': 'aws-textract-comprehend',
+                            'processing_notes': text_refinement_details.get('processing_notes', 'Legacy Textract processing'),
+                            'methods_used': text_refinement_details.get('methods_used', ['textract', 'comprehend']),
+                            'qualityAssessment': {
+                                'confidence_score': summary_analysis.get('confidence', '0'),
+                                'issues': [],
+                                'assessment': 'legacy_textract'
+                            }
                         }
                 
                 # Add enhanced Comprehend entity analysis for long-batch

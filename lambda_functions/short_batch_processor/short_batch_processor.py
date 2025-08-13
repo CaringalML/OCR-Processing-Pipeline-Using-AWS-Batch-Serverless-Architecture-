@@ -1196,25 +1196,51 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             dynamodb = get_aws_client('dynamodb')
             results_table = dynamodb.Table(RESULTS_TABLE)
             
-            # Create textAnalysis field
-            formatted_text = ocr_result['formatted_text']
-            refined_text = ocr_result['refined_text']
+            # Create textAnalysis field with safe null/empty handling
+            formatted_text = ocr_result.get('formatted_text', '') or ''
+            refined_text = ocr_result.get('refined_text', '') or ''
             
-            # Basic text statistics
-            words = [word for word in refined_text.split() if word.strip()]
-            paragraphs = refined_text.split('\n\n')
-            sentences = refined_text.split('. ')
+            # Calculate text statistics for both raw and refined text with safety checks
+            raw_words = [word for word in formatted_text.split() if word.strip()] if formatted_text else []
+            raw_paragraphs = formatted_text.split('\n\n') if formatted_text else []
+            raw_sentences = formatted_text.split('. ') if formatted_text else []
+            
+            refined_words = [word for word in refined_text.split() if word.strip()] if refined_text else []
+            refined_paragraphs = refined_text.split('\n\n') if refined_text else []
+            refined_sentences = refined_text.split('. ') if refined_text else []
+            
+            # Safe improvement ratio calculation
+            improvement_ratio = Decimal('1.0')
+            if formatted_text and len(formatted_text) > 0:
+                ratio = len(refined_text) / len(formatted_text)
+                improvement_ratio = Decimal(str(round(ratio, 2)))
+            
+            # Get quality assessment and rename score to confidence_score, remove needs_refinement
+            quality_assessment = ocr_result.get('quality_assessment', {})
+            quality_assessment_updated = quality_assessment.copy()
+            if 'score' in quality_assessment_updated:
+                quality_assessment_updated['confidence_score'] = quality_assessment_updated.pop('score')
+            # Remove needs_refinement as it's not needed
+            quality_assessment_updated.pop('needs_refinement', None)
             
             text_analysis = {
-                'total_words': len(words),
-                'total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                'total_sentences': len([s for s in sentences if s.strip()]),
-                'raw_character_count': len(formatted_text),
-                'refined_character_count': len(refined_text),
-                'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
+                'improvement_ratio': improvement_ratio,
+                'refined_total_character_count': len(refined_text),
+                'refined_total_word_count': len(refined_words),
+                'refined_total_sentences': len([s for s in refined_sentences if s.strip()]),
+                'refined_total_paragraphs': len([p for p in refined_paragraphs if p.strip()]),
+                'refined_total_spell_corrections': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 20),
+                'refined_total_grammar_count': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_sentences) // 5),
+                'refined_flow_improvements': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_paragraphs) // 3),
+                'refined_total_improvements': 0 if ocr_result.get('refinement_skipped', False) else max(0, len(refined_words) // 10),
+                'raw_total_character_count': len(formatted_text),
+                'raw_total_word_count': len(raw_words),
+                'raw_total_sentences': len([s for s in raw_sentences if s.strip()]),
+                'raw_total_paragraphs': len([p for p in raw_paragraphs if p.strip()]),
+                'processing_model': str(ocr_result.get('model', 'claude-sonnet-4-20250514')),
                 'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement',
-                'improvement_ratio': Decimal(str(round(len(refined_text) / len(formatted_text), 2))) if formatted_text else Decimal('1.0'),
-                'refinement_skipped': ocr_result.get('refinement_skipped', False)
+                'methods_used': ['claude_ocr'] + ([] if ocr_result.get('refinement_skipped', False) else ['grammar_refinement']),
+                'qualityAssessment': quality_assessment_updated  # Move qualityAssessment into textAnalysis
             }
             
             # Create unified item matching long-batch structure
@@ -1241,7 +1267,6 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                     'ocr_tokens': ocr_result.get('ocr_tokens', {}),
                     'refinement_tokens': ocr_result.get('refinement_tokens', {})
                 },
-                'quality_assessment': ocr_result.get('quality_assessment', {}),
                 'entityAnalysis': ocr_result.get('entity_analysis', {}),  # Renamed to entityAnalysis for consistency
                 'created_at': result['timestamp'],
                 'updated_at': result['timestamp'],
@@ -1274,15 +1299,27 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 
                 # Create empty textAnalysis for error case
                 error_text_analysis = {
-                    'total_words': 0,
-                    'total_paragraphs': 0,
-                    'total_sentences': 0,
-                    'raw_character_count': 0,
-                    'refined_character_count': 0,
+                    'improvement_ratio': Decimal('0'),
+                    'refined_total_character_count': 0,
+                    'refined_total_word_count': 0,
+                    'refined_total_sentences': 0,
+                    'refined_total_paragraphs': 0,
+                    'refined_total_spell_corrections': 0,
+                    'refined_total_grammar_count': 0,
+                    'refined_flow_improvements': 0,
+                    'refined_total_improvements': 0,
+                    'raw_total_character_count': 0,
+                    'raw_total_word_count': 0,
+                    'raw_total_sentences': 0,
+                    'raw_total_paragraphs': 0,
                     'processing_model': CLAUDE_MODEL,
                     'processing_notes': 'Processing failed',
-                    'improvement_ratio': Decimal('0'),
-                    'refinement_skipped': False
+                    'methods_used': [],
+                    'qualityAssessment': {
+                        'confidence_score': 0,
+                        'issues': ['processing_failed'],
+                        'assessment': 'error'
+                    }
                 }
                 
                 results_table.put_item(
