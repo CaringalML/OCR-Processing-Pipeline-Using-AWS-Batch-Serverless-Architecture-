@@ -342,14 +342,13 @@ def lambda_handler(event, context):
     # Initialize AWS clients
     dynamodb = boto3.resource('dynamodb')
     
-    # Get configuration
-    metadata_table_name = os.environ.get('METADATA_TABLE')
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    # Get configuration (invoices use dedicated invoice table)
+    invoice_table_name = os.environ.get('INVOICE_TABLE', 'ocr-processor-batch-invoice-processing-results')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
-    logger.info(f"Invoice reader configuration - METADATA_TABLE: {metadata_table_name}, RESULTS_TABLE: {results_table_name}, CLOUDFRONT_DOMAIN: {cloudfront_domain}")
+    logger.info(f"Invoice reader configuration - INVOICE_TABLE: {invoice_table_name}, CLOUDFRONT_DOMAIN: {cloudfront_domain}")
     
-    if not all([metadata_table_name, results_table_name, cloudfront_domain]):
+    if not all([invoice_table_name, cloudfront_domain]):
         logger.error("Missing required environment variables")
         return {
             'statusCode': 500,
@@ -361,8 +360,7 @@ def lambda_handler(event, context):
                 'error': 'Configuration Error',
                 'message': 'Missing required environment variables',
                 'debug': {
-                    'METADATA_TABLE': metadata_table_name,
-                    'RESULTS_TABLE': results_table_name,
+                    'INVOICE_TABLE': invoice_table_name,
                     'CLOUDFRONT_DOMAIN': cloudfront_domain
                 }
             })
@@ -382,8 +380,8 @@ def lambda_handler(event, context):
         date_from = query_params.get('dateFrom')
         date_to = query_params.get('dateTo')
         
-        metadata_table = dynamodb.Table(metadata_table_name)
-        results_table = dynamodb.Table(results_table_name)
+        # Using single invoice table for all invoice data
+        invoice_table = dynamodb.Table(invoice_table_name)
         
         # If specific file_id is requested
         if file_id:
@@ -398,7 +396,7 @@ def lambda_handler(event, context):
                 
                 # Approach 1: Scan with Attr (correct for FilterExpression)
                 logger.info(f"Trying scan with FilterExpression for file_id: {file_id}")
-                metadata_response = metadata_table.scan(
+                metadata_response = invoice_table.scan(
                     FilterExpression=Attr('file_id').eq(file_id),
                     Limit=10  # Get a few records in case there are multiple with different timestamps
                 )
@@ -409,7 +407,7 @@ def lambda_handler(event, context):
                     
                     # If scan fails, let's try a broader scan to see what's actually in the table
                     logger.info("Attempting broader scan to debug table contents")
-                    debug_response = metadata_table.scan(Limit=5)
+                    debug_response = invoice_table.scan(Limit=5)
                     if debug_response.get('Items'):
                         logger.info(f"DEBUG: Found {len(debug_response['Items'])} items in table")
                         for i, item in enumerate(debug_response['Items'][:2]):  # Log first 2 items
@@ -422,7 +420,7 @@ def lambda_handler(event, context):
                 metadata_response = {'Items': []}
             
             if not metadata_response['Items']:
-                logger.error(f"Invoice {file_id} not found in database table {metadata_table_name}")
+                logger.error(f"Invoice {file_id} not found in database table {invoice_table_name}")
                 return {
                     'statusCode': 404,
                     'headers': {
@@ -431,10 +429,10 @@ def lambda_handler(event, context):
                     },
                     'body': json.dumps({
                         'error': 'Invoice Not Found',
-                        'message': f'Invoice {file_id} not found in table {metadata_table_name}. Check logs for debug information.',
+                        'message': f'Invoice {file_id} not found in table {invoice_table_name}. Check logs for debug information.',
                         'debug': {
                             'searchedId': file_id,
-                            'tableName': metadata_table_name,
+                            'tableName': invoice_table_name,
                             'searchMethod': 'scan_with_filter'
                         }
                     })
@@ -571,12 +569,12 @@ def lambda_handler(event, context):
             
             # Scan for invoices (could be optimized with GSI for large datasets)
             if filter_expression:
-                response = metadata_table.scan(
+                response = invoice_table.scan(
                     FilterExpression=filter_expression,
                     Limit=limit
                 )
             else:
-                response = metadata_table.scan(
+                response = invoice_table.scan(
                     Limit=limit
                 )
             

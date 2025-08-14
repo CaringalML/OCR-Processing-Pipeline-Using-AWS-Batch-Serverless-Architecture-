@@ -744,6 +744,15 @@ def lambda_handler(event, context):
                 'cloudFrontUrl': cloudfront_url,
                 'bucket': processing_result.get('bucket', ''),
                 'key': processing_result.get('key', ''),
+                'metadata': {
+                    'publication': processing_result.get('publication', ''),
+                    'publication_year': processing_result.get('publication_year', ''),
+                    'publication_title': processing_result.get('publication_title', ''),
+                    'publication_author': processing_result.get('publication_author', ''),
+                    'publication_description': processing_result.get('publication_description', ''),
+                    'publication_page': processing_result.get('publication_page', ''),
+                    'publication_tags': processing_result.get('publication_tags', [])
+                },
                 'processingModel': processing_result.get('processing_model', '')
             }
             
@@ -891,52 +900,27 @@ def lambda_handler(event, context):
                 # Handle batch type filtering based on endpoint
                 if batch_type_filter == 'short-batch':
                     # Only get short-batch files (status = 'completed')
-                    response = metadata_table.query(
-                        IndexName='StatusIndex',
-                        KeyConditionExpression=Key('processing_status').eq('completed'),
-                        Limit=limit,
-                        ScanIndexForward=False  # Most recent first
+                    response = results_table.scan(
+                        FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('short-batch'),
+                        Limit=limit
                     )
                 elif batch_type_filter == 'long-batch':
-                    # Only get long-batch files (status = 'processed')
-                    response = metadata_table.query(
-                        IndexName='StatusIndex',
-                        KeyConditionExpression=Key('processing_status').eq('processed'),
-                        Limit=limit,
-                        ScanIndexForward=False  # Most recent first
+                    # Only get long-batch files (status = 'completed')
+                    response = results_table.scan(
+                        FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('long-batch'),
+                        Limit=limit
                     )
                 else:
-                    # For processed files, we need to get both 'processed' (long-batch) and 'completed' (short-batch)
-                    # First get 'processed' files
-                    response1 = metadata_table.query(
-                        IndexName='StatusIndex',
-                        KeyConditionExpression=Key('processing_status').eq('processed'),
-                        Limit=limit//2,  # Split the limit
-                        ScanIndexForward=False  # Most recent first
+                    # For processed files, get both short-batch and long-batch completed files
+                    response = results_table.scan(
+                        FilterExpression=Attr('processing_status').eq('completed'),
+                        Limit=limit
                     )
-                    # Then get 'completed' files
-                    response2 = metadata_table.query(
-                        IndexName='StatusIndex', 
-                        KeyConditionExpression=Key('processing_status').eq('completed'),
-                        Limit=limit//2,  # Split the limit
-                        ScanIndexForward=False  # Most recent first
-                    )
-                    # Combine results
-                    all_items = response1.get('Items', []) + response2.get('Items', [])
-                    # Sort by upload_timestamp descending (most recent first)
-                    all_items.sort(key=lambda x: x.get('upload_timestamp', ''), reverse=True)
-                    # Limit to requested number
-                    response = {
-                        'Items': all_items[:limit],
-                        'LastEvaluatedKey': None  # Simplified pagination
-                    }
             else:
-                # Query by specific status using GSI
-                response = metadata_table.query(
-                    IndexName='StatusIndex',
-                    KeyConditionExpression=Key('processing_status').eq(status_filter),
-                    Limit=limit,
-                    ScanIndexForward=False  # Most recent first
+                # Query by specific status
+                response = results_table.scan(
+                    FilterExpression=Attr('processing_status').eq(status_filter),
+                    Limit=limit
                 )
             
             items = decimal_to_json(response.get('Items', []))
@@ -944,18 +928,13 @@ def lambda_handler(event, context):
             # Enrich items with CloudFront URLs and results
             processed_items = []
             for item in items:
-                # Get processing results from shared table for both short and long batch
-                if item.get('processing_status') in ['processed', 'completed']:
-                    # Query shared results table for both processing types
-                    results_response = results_table.get_item(
-                        Key={'file_id': item['file_id']}
-                    )
-                    processing_result = decimal_to_json(results_response.get('Item', {}))
-                else:
-                    processing_result = {}
+                # Since we're using a single table, all data is already in 'item'
+                # No need for additional queries
+                processing_result = item  # All data is already here
                 
                 # Generate CloudFront URL
-                cloudfront_url = f"https://{cloudfront_domain}/{item['s3_key']}"
+                s3_key = item.get('key', '')  # 'key' is the field name in results table
+                cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else None
                 
                 # Build item data
                 item_data = {
@@ -968,95 +947,64 @@ def lambda_handler(event, context):
                     'cloudFrontUrl': cloudfront_url,
                     'metadata': {
                         'publication': item.get('publication', ''),
-                        'year': item.get('year', ''),
-                        'title': item.get('title', ''),
-                        'author': item.get('author', ''),
-                        'description': item.get('description', ''),
-                        'tags': item.get('tags', [])
+                        'publication_year': item.get('publication_year', ''),
+                        'publication_title': item.get('publication_title', ''),
+                        'publication_author': item.get('publication_author', ''),
+                        'publication_description': item.get('publication_description', ''),
+                        'publication_page': item.get('publication_page', ''),
+                        'publication_tags': item.get('publication_tags', [])
                     }
                 }
                 
                 # Add processing results if available
                 if item.get('processing_status') in ['processed', 'completed']:
                     # Determine processing type and add appropriate results
-                    processing_route = item.get('processing_route', 'long-batch')
+                    processing_type = item.get('processing_type', 'long-batch')
                     
-                    if processing_result:
-                        # Results found in shared table
-                        processing_type = processing_result.get('processing_type', processing_route)
-                        
-                        if processing_type == 'short-batch':
-                            # Short-batch results from shared table
-                            item_data['ocrResults'] = {
-                                'formattedText': processing_result.get('formatted_text', ''),
-                                'refinedText': processing_result.get('refined_text', ''),
-                                'extractedText': processing_result.get('extracted_text', ''),
-                                'processingModel': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
-                                'processingType': 'short-batch',
-                                'processingCost': processing_result.get('processing_cost', 0),
-                                'processedAt': processing_result.get('processed_at', ''),
-                                'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
-                                'tokenUsage': processing_result.get('token_usage', {}),
-                                'languageDetection': processing_result.get('language_detection', {})
-                            }
-                        else:
-                            # Long-batch results from shared table
-                            item_data['ocrResults'] = {
-                                'extractedText': processing_result.get('extracted_text', ''),
-                                'formattedText': processing_result.get('formatted_text', ''),
-                                'refinedText': processing_result.get('refined_text', ''),
-                                'processingModel': processing_result.get('processing_model', 'aws-textract'),
-                                'processingType': 'long-batch',
-                                'processingDuration': format_duration(calculate_real_time_duration(processing_result))
-                            }
-                    # Legacy short-batch handling removed - now using unified results table
-                    elif processing_result:
-                        # Long-batch (Textract) results - stored in results table
+                    if processing_type == 'short-batch':
+                        # Short-batch results from shared table
                         item_data['ocrResults'] = {
-                            'extractedText': processing_result.get('extracted_text', ''),     # Raw Textract
-                            'formattedText': processing_result.get('formatted_text', ''),    # Processed
-                            'refinedText': processing_result.get('refined_text', ''),        # Final refined
-                            'processingModel': 'aws-textract',
-                            'processingType': 'long-batch',
-                            'processingDuration': format_duration(calculate_real_time_duration(processing_result))
+                            'formattedText': item.get('formatted_text', ''),
+                            'refinedText': item.get('refined_text', ''),
+                            'extractedText': item.get('extracted_text', ''),
+                            'processingModel': item.get('processing_model', 'claude-sonnet-4-20250514'),
+                            'processingType': 'short-batch',
+                            'processingCost': item.get('processing_cost', 0),
+                            'processedAt': item.get('processed_at', ''),
+                            'processingDuration': format_duration(calculate_real_time_duration(item)),
+                            'tokenUsage': item.get('token_usage', {}),
+                            'languageDetection': item.get('language_detection', {})
                         }
                         
-                        # For Textract processing, use existing analysis
-                        enhanced_textract_analysis = processing_result.get('textract_analysis', {})                
+                        # Add text analysis for short-batch
+                        text_analysis = item.get('textAnalysis', {})
+                        if text_analysis:
+                            item_data['textAnalysis'] = text_analysis
+                    else:
+                        # Long-batch results from shared table
+                        item_data['ocrResults'] = {
+                            'extractedText': item.get('extracted_text', ''),
+                            'formattedText': item.get('formatted_text', ''),
+                            'refinedText': item.get('refined_text', ''),
+                            'processingModel': item.get('processing_model', 'aws-textract'),
+                            'processingType': 'long-batch',
+                            'processingDuration': format_duration(calculate_real_time_duration(item))
+                        }
+                        
+                        # Add additional analysis data for long-batch
+                        enhanced_textract_analysis = item.get('textract_analysis', {})                
                         if enhanced_textract_analysis:
                             item_data['textAnalysis'] = enhanced_textract_analysis
-                        else:
-                            # Fallback to legacy construction for backward compatibility
-                            summary_analysis = processing_result.get('summary_analysis', {})
-                            text_refinement_details = processing_result.get('text_refinement_details', {})
-                            
-                            item_data['textAnalysis'] = {
-                                'total_words': summary_analysis.get('word_count', 0),
-                                'total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                                'total_sentences': summary_analysis.get('sentence_count', 0),
-                                'total_improvements': text_refinement_details.get('total_improvements', 0),
-                                'spell_corrections': text_refinement_details.get('spell_corrections', 0),
-                                'grammar_refinements': text_refinement_details.get('grammar_refinements', 0),
-                                'methods_used': text_refinement_details.get('methods_used', []),
-                                'entities_found': len(text_refinement_details.get('entities_found', [])),
-                                'processing_notes': text_refinement_details.get('processing_notes', ''),
-                                'confidence_score': summary_analysis.get('confidence', '0'),
-                                'character_count': summary_analysis.get('character_count', 0),
-                                'line_count': summary_analysis.get('line_count', 0)
-                            }
                         
                         # Add enhanced Comprehend entity analysis for long-batch
-                        comprehend_analysis = processing_result.get('comprehend_analysis', {})
+                        comprehend_analysis = item.get('comprehend_analysis', {})
                         if comprehend_analysis:
                             item_data['comprehendAnalysis'] = comprehend_analysis
                             
                         # Add dedicated Invoice Analysis section
-                        invoice_analysis = processing_result.get('invoice_analysis', {})
+                        invoice_analysis = item.get('invoice_analysis', {})
                         if invoice_analysis:
                             item_data['invoiceAnalysis'] = invoice_analysis
-                    else:
-                        # No OCR results available
-                        item_data['ocrResults'] = None
                 
                 processed_items.append(item_data)
             

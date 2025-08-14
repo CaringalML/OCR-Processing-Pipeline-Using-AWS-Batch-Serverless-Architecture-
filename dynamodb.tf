@@ -88,12 +88,31 @@ resource "aws_dynamodb_table" "ocr_budget_tracking" {
   })
 }
 
+# DynamoDB Table for Invoice Processing Results
+resource "aws_dynamodb_table" "invoice_processing_results" {
+  name         = "ocr-processor-batch-invoice-processing-results"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = var.dynamodb_processing_results_hash_key
+
+  attribute {
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
+  }
+
+  server_side_encryption {
+    enabled = var.dynamodb_server_side_encryption_enabled
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "ocr-processor-batch-invoice-processing-results",
+    Purpose = "Invoice OCR processing results storage"
+  })
+}
+
 # ========================================
-# DEDICATED INVOICE PROCESSING TABLES - DEPRECATED
+# DEPRECATED INVOICE TABLES - REPLACED WITH SINGLE TABLE
 # ========================================
-# These tables have been consolidated into the main file_metadata and processing_results tables
-# All invoice processing now uses the main tables with processing_route = 'invoice-ocr'
-# This consolidation fixes the "Invoice Not Found" issue and simplifies the architecture
+# Old separate invoice metadata/results tables replaced with single invoice processing results table
 
 # DEPRECATED: Invoice Metadata Table - Now using file_metadata table
 # resource "aws_dynamodb_table" "invoice_metadata" {

@@ -28,11 +28,10 @@ def lambda_handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     
     # Get configuration
-    metadata_table_name = os.environ.get('METADATA_TABLE')
     results_table_name = os.environ.get('RESULTS_TABLE')
     recycle_bin_table_name = os.environ.get('RECYCLE_BIN_TABLE')
     
-    if not all([metadata_table_name, results_table_name, recycle_bin_table_name]):
+    if not all([results_table_name, recycle_bin_table_name]):
         return {
             'statusCode': 500,
             'headers': {
@@ -63,8 +62,7 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Initialize tables
-        metadata_table = dynamodb.Table(metadata_table_name)
+        # Initialize tables (using single results table)
         results_table = dynamodb.Table(results_table_name)
         recycle_bin_table = dynamodb.Table(recycle_bin_table_name)
         
@@ -90,12 +88,11 @@ def lambda_handler(event, context):
         recycled_item = recycle_response['Items'][0]
         
         # Check if file already exists (shouldn't happen, but check anyway)
-        existing_metadata = metadata_table.query(
-            KeyConditionExpression=Key('file_id').eq(file_id),
-            Limit=1
+        existing_metadata = results_table.get_item(
+            Key={'file_id': file_id}
         )
         
-        if existing_metadata['Items']:
+        if 'Item' in existing_metadata:
             return {
                 'statusCode': 409,
                 'headers': {
@@ -113,7 +110,7 @@ def lambda_handler(event, context):
         original_metadata['restored_at'] = datetime.now(timezone.utc).isoformat()
         original_metadata['restored_from_recycle_bin'] = True
         
-        metadata_table.put_item(Item=original_metadata)
+        results_table.put_item(Item=original_metadata)
         
         # Restore results if they existed
         if recycled_item.get('original_results'):

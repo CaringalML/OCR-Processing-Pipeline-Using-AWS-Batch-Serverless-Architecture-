@@ -260,7 +260,7 @@ def lambda_handler(event, context):
         metadata_updates = {}
         if metadata:
             print(f"Processing metadata updates: {metadata}")
-            print(f"Metadata table name: {metadata_table_name}")
+            print(f"Results table name: {results_table_name}")
             
             # Validate metadata fields
             allowed_metadata_fields = ['publication', 'year', 'title', 'author', 'description', 'tags']
@@ -269,7 +269,7 @@ def lambda_handler(event, context):
                 if field in allowed_metadata_fields:
                     metadata_updates[field] = value
                     edit_entry['edited_fields'].append(f'metadata.{field}')
-                    edit_entry[f'previous_metadata_{field}'] = file_metadata.get(field, '')
+                    edit_entry[f'previous_metadata_{field}'] = current_results.get(field, '')
                 else:
                     print(f"Ignoring invalid metadata field: {field}")
             
@@ -282,7 +282,7 @@ def lambda_handler(event, context):
                     original_field = f'original_metadata_{field}'
                     if original_field not in current_results:
                         update_expression.append(f'{original_field} = :{original_field.replace(".", "_")}')
-                        expression_attribute_values[f':{original_field.replace(".", "_")}'] = file_metadata.get(field, '')
+                        expression_attribute_values[f':{original_field.replace(".", "_")}'] = current_results.get(field, '')
         
         # Add edit history entry
         edit_history.append(edit_entry)
@@ -313,9 +313,9 @@ def lambda_handler(event, context):
         # Update metadata table if metadata changes were provided
         if metadata_updates:
             try:
-                print(f"Attempting to update metadata table: {metadata_table_name}")
-                print(f"File metadata keys: {list(file_metadata.keys())}")
-                print(f"Upload timestamp: {file_metadata.get('upload_timestamp')}")
+                print(f"Attempting to update results table: {results_table_name}")
+                print(f"File metadata keys: {list(current_results.keys())}")
+                print(f"Upload timestamp: {current_results.get('upload_timestamp')}")
                 
                 metadata_update_expression = []
                 metadata_expression_values = {}
@@ -328,21 +328,20 @@ def lambda_handler(event, context):
                 metadata_update_expression.append('last_updated = :lu')
                 metadata_expression_values[':lu'] = datetime.now(timezone.utc).isoformat()
                 
-                upload_timestamp = file_metadata.get('upload_timestamp')
+                upload_timestamp = current_results.get('upload_timestamp')
                 
                 if not upload_timestamp:
-                    print(f"ERROR: Missing upload_timestamp in file_metadata: {file_metadata}")
+                    print(f"ERROR: Missing upload_timestamp in current_results: {current_results}")
                     raise ValueError(f'Missing upload_timestamp for file {file_id}')
                 
                 print(f"About to update metadata table with keys: file_id={file_id}, upload_timestamp={upload_timestamp}")
                 
-                # metadata_table is already initialized at the top of the function
+                # results_table is already initialized at the top of the function
                 
-                # Update metadata table
-                update_result = metadata_table.update_item(
+                # Update metadata in results table (single key)
+                update_result = results_table.update_item(
                     Key={
-                        'file_id': file_id,
-                        'upload_timestamp': upload_timestamp
+                        'file_id': file_id
                     },
                     UpdateExpression='SET ' + ', '.join(metadata_update_expression),
                     ExpressionAttributeValues=metadata_expression_values,
@@ -378,13 +377,12 @@ def lambda_handler(event, context):
         updated_metadata = {}
         if metadata_updates:
             try:
-                # Use the already initialized metadata_table
-                updated_metadata_response = metadata_table.query(
-                    KeyConditionExpression=Key('file_id').eq(file_id),
-                    Limit=1
+                # Use the already initialized results_table
+                updated_metadata_response = results_table.get_item(
+                    Key={'file_id': file_id}
                 )
-                if updated_metadata_response['Items']:
-                    updated_file_metadata = decimal_to_json(updated_metadata_response['Items'][0])
+                if 'Item' in updated_metadata_response:
+                    updated_file_metadata = decimal_to_json(updated_metadata_response['Item'])
                     updated_metadata = {
                         'publication': updated_file_metadata.get('publication', ''),
                         'year': updated_file_metadata.get('year', ''),

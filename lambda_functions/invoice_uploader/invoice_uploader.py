@@ -68,7 +68,7 @@ logger.setLevel(logging.INFO)
 
 # Environment variables
 UPLOAD_BUCKET = os.environ.get('UPLOAD_BUCKET')
-METADATA_TABLE = os.environ.get('METADATA_TABLE')
+INVOICE_TABLE = os.environ.get('INVOICE_TABLE', 'ocr-processor-batch-invoice-processing-results')
 INVOICE_QUEUE_URL = os.environ.get('INVOICE_QUEUE_URL')
 
 # Initialize AWS clients
@@ -405,8 +405,8 @@ def lambda_handler(event, context):
         }
         
         try:
-            if METADATA_TABLE:
-                table = dynamodb.Table(METADATA_TABLE)
+            if INVOICE_TABLE:
+                table = dynamodb.Table(INVOICE_TABLE)
                 logger.info(f"DEBUG: Storing metadata item keys: {list(metadata_item.keys())}")
                 logger.info(f"DEBUG: Storing metadata - original_filename: '{metadata_item.get('original_filename')}', file_name: '{metadata_item.get('file_name')}', file_size: '{metadata_item.get('file_size')}', content_type: '{metadata_item.get('content_type')}', s3_key: '{metadata_item.get('s3_key')}'")
                 table.put_item(Item=metadata_item)
