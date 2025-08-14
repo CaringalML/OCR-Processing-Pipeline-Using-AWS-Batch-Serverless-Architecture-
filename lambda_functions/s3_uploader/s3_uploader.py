@@ -202,15 +202,15 @@ def get_processing_route_from_path(path: str, query_params: Dict[str, str] = Non
         return route_override, 'query-override', True
     
     # Route based on API path - consolidated routing
-    if '/batch/short-batch/upload' in path or '/short-batch/upload' in path:
+    if '/short-batch/upload' in path:
         return 'short-batch', 'endpoint-specific', True
-    elif '/batch/long-batch/upload' in path or '/long-batch/upload' in path:
+    elif '/long-batch/upload' in path:
         return 'long-batch', 'endpoint-specific', True
     elif '/batch/upload' in path:
         return 'auto', 'smart-router', False
     else:
-        # Default smart routing for legacy /upload endpoint
-        return 'auto', 'legacy', False
+        # Default to smart routing if no specific path matched
+        return 'auto', 'smart-router', False
 
 def validate_file_size_for_route(file_size_bytes: int, route: str, max_lambda_size_mb: int = 50) -> Dict[str, Any]:
     """
@@ -233,9 +233,9 @@ def lambda_handler(event, context):
     Unified S3 file upload handler supporting multiple routing strategies:
     
     Routes:
-    - /batch/upload (or /upload) - Smart routing based on file size (≤300KB -> short-batch, >300KB -> long-batch)
-    - /batch/short-batch/upload or /short-batch/upload - Force short-batch processing (Lambda), rejects files >50MB
-    - /batch/long-batch/upload or /long-batch/upload - Force long-batch processing (AWS Batch), no size limit
+    - /batch/upload - Smart routing based on file size (≤300KB -> short-batch, >300KB -> long-batch)
+    - /short-batch/upload - Force short-batch processing (Lambda), rejects files >50MB
+    - /long-batch/upload - Force long-batch processing (AWS Batch), no size limit
     
     Query Parameters:
     - route=short-batch|long-batch - Override routing decision
@@ -248,7 +248,7 @@ def lambda_handler(event, context):
     table = dynamodb.Table(table_name)
     
     # Get processing route from path and query parameters
-    path = event.get('path', '/upload')
+    path = event.get('path', '/batch/upload')
     query_params = event.get('queryStringParameters') or {}
     route_decision, endpoint_type, force_routing = get_processing_route_from_path(path, query_params)
     
@@ -443,10 +443,8 @@ def lambda_handler(event, context):
                 },
                 'available_endpoints': {
                     '/batch/upload': 'Smart routing based on file size and priority',
-                    '/batch/short-batch/upload': 'Force Lambda processing (files ≤50MB)',
-                    '/batch/long-batch/upload': 'Force AWS Batch processing (any size)',
-                    '/short-batch/upload': 'Legacy - Force Lambda processing (files ≤50MB)',
-                    '/long-batch/upload': 'Legacy - Force AWS Batch processing (any size)'
+                    '/short-batch/upload': 'Force Lambda processing (files ≤50MB)',
+                    '/long-batch/upload': 'Force AWS Batch processing (any size)'
                 }
             })
         }

@@ -50,9 +50,10 @@ terraform output docker_push_command | bash
 API_URL=$(terraform output -raw api_gateway_url)
 
 # Upload a document (any PDF, image, etc.)
-curl -X POST "$API_URL/upload" \
+curl -X POST "$API_URL/batch/upload" \
   -F "file=@your-document.pdf" \
-  -F 'metadata={"title":"Test Doc","publication":"Demo"}'
+  -F "title=Test Doc" \
+  -F "publication=Demo"
 
 # Search your documents
 curl "$API_URL/search?q=your+search+term&fuzzy=true"
@@ -170,20 +171,18 @@ Upload any document (PDF, images, text files) with optional metadata:
 
 ```bash
 # Basic upload
-curl -X POST "$API_URL/upload" \
+curl -X POST "$API_URL/batch/upload" \
   -F "file=@document.pdf" 
 
 # Upload with rich metadata  
-curl -X POST "$API_URL/upload" \
+curl -X POST "$API_URL/batch/upload" \
   -F "file=@research-paper.pdf" \
-  -F 'metadata={
-    "title": "Climate Change Solutions", 
-    "author": "Dr. Sarah Chen",
-    "publication": "Nature Climate Journal",
-    "year": "2024",
-    "tags": ["climate", "renewable", "carbon"],
-    "description": "Comprehensive analysis of renewable energy adoption"
-  }'
+  -F "title=Climate Change Solutions" \
+  -F "author=Dr. Sarah Chen" \
+  -F "publication=Nature Climate Journal" \
+  -F "year=2024" \
+  -F "tags=climate,renewable,carbon" \
+  -F "description=Comprehensive analysis of renewable energy adoption"
 
 # Check upload status
 curl "$API_URL/processed?fileId=YOUR_FILE_ID"

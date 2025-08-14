@@ -55,13 +55,16 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 # Unified Endpoints (All Batch Types)
 
 ## Smart Upload
-**Endpoint:** `POST /upload`
+**Endpoint:** `POST /v1/upload`
 
 **Purpose:** Intelligent file upload with automatic routing based on file size and complexity.
 
+**Note:** The `/v1/batch/upload` endpoint is planned but not yet implemented. Currently use `/v1/upload`.
+
 **Request:** Multipart form data
 ```bash
-curl -X POST '/upload' -F 'file=@document.pdf' \
+curl -X POST 'https://your-api.execute-api.region.amazonaws.com/v1/upload' \
+  -F 'file=@document.pdf' \
   -F 'publication=Magazine' -F 'year=2024' -F 'title=Article Title'
 ```
 
@@ -403,7 +406,7 @@ Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as al
 ## 1. Smart Upload + Unified Retrieval
 ```javascript
 // Upload with smart routing
-const uploadResponse = await fetch('/v1/upload', {
+const uploadResponse = await fetch('/v1/batch/upload', {
   method: 'POST',
   body: formData
 });

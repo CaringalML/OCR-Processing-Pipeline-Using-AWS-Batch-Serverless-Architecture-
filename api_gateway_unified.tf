@@ -98,11 +98,8 @@ resource "aws_api_gateway_resource" "long_batch_restore" {
 # ========================================
 
 # Upload Resource (smart routing)
-resource "aws_api_gateway_resource" "upload" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = var.api_path_upload
-}
+# Upload resource moved to /batch/upload for consistency
+# See batch_upload resource below
 
 # Smart route endpoint removed - routing now integrated into /upload endpoint
 
@@ -111,6 +108,13 @@ resource "aws_api_gateway_resource" "batch" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
   path_part   = "batch"
+}
+
+# Batch Upload Resource (unified upload endpoint)
+resource "aws_api_gateway_resource" "batch_upload" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.batch.id
+  path_part   = var.api_path_upload
 }
 
 # Batch Processed Resource (view processed files)
@@ -182,32 +186,32 @@ resource "aws_api_gateway_resource" "restore_file_id" {
 # NEUTRAL ENDPOINT METHODS & INTEGRATIONS
 # ========================================
 
-# Upload POST Method (smart routing)
-resource "aws_api_gateway_method" "upload_post" {
+# Batch Upload POST Method (smart routing)
+resource "aws_api_gateway_method" "batch_upload_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.upload.id
+  resource_id   = aws_api_gateway_resource.batch_upload.id
   http_method   = "POST"
   authorization = "NONE"
 }
 
-# Upload POST Integration (to uploader Lambda)
-resource "aws_api_gateway_integration" "upload_post" {
+# Batch Upload POST Integration (to uploader Lambda)
+resource "aws_api_gateway_integration" "batch_upload_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.upload.id
-  http_method = aws_api_gateway_method.upload_post.http_method
+  resource_id = aws_api_gateway_resource.batch_upload.id
+  http_method = aws_api_gateway_method.batch_upload_post.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
-# Lambda Permission for Upload
-resource "aws_lambda_permission" "upload_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Lambda Permission for Batch Upload
+resource "aws_lambda_permission" "batch_upload_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchUpload"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.uploader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/upload"
 }
 
 # Batch Processed GET Method (view processed files)
@@ -948,6 +952,7 @@ resource "aws_api_gateway_integration_response" "invoice_processed_options" {
 resource "aws_api_gateway_deployment" "main" {
   depends_on = [
     # Unified Batch Dependencies
+    aws_api_gateway_integration.batch_upload_post,
     aws_api_gateway_integration.batch_processed_get,
     aws_api_gateway_integration.batch_processed_edit_put,
     # Long Batch Dependencies
@@ -976,8 +981,10 @@ resource "aws_api_gateway_deployment" "main" {
   triggers = {
     redeployment = sha1(jsonencode([
       aws_api_gateway_resource.batch.id,
+      aws_api_gateway_resource.batch_upload.id,
       aws_api_gateway_resource.batch_processed.id,
       aws_api_gateway_resource.batch_processed_edit.id,
+      aws_api_gateway_integration.batch_upload_post.id,
       aws_api_gateway_integration.batch_processed_get.id,
       aws_api_gateway_integration.batch_processed_edit_put.id,
       aws_api_gateway_resource.long_batch.id,
