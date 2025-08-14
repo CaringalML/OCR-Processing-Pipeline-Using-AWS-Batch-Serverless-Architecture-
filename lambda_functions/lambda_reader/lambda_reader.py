@@ -761,7 +761,6 @@ def lambda_handler(event, context):
                     'extractedText': processing_result.get('extracted_text', ''),
                     'formattedText': processing_result.get('formatted_text', ''),
                     'refinedText': processing_result.get('refined_text', ''),
-                    'processingType': processing_result.get('processing_type', ''),
                     'processingCost': processing_result.get('processing_cost', 0),
                     'processedAt': processing_result.get('processed_at', ''),
                     'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
@@ -814,7 +813,6 @@ def lambda_handler(event, context):
                             'raw_total_word_count': len(words),  # Approximation for old records
                             'raw_total_sentences': len([s for s in sentences if s.strip()]),
                             'raw_total_paragraphs': len([p for p in paragraphs if p.strip()]),
-                            'processing_model': processing_result.get('processing_model', 'claude-sonnet-4-20250514'),
                             'processing_notes': 'Dual-pass Claude processing: OCR extraction + grammar refinement (legacy fallback)',
                             'methods_used': ['claude_ocr', 'grammar_refinement'],
                             'qualityAssessment': {
@@ -866,7 +864,6 @@ def lambda_handler(event, context):
                             'raw_total_word_count': summary_analysis.get('word_count', 0),
                             'raw_total_sentences': summary_analysis.get('sentence_count', 0),
                             'raw_total_paragraphs': summary_analysis.get('paragraph_count', 0),
-                            'processing_model': 'aws-textract-comprehend',
                             'processing_notes': text_refinement_details.get('processing_notes', 'Legacy Textract processing'),
                             'methods_used': text_refinement_details.get('methods_used', ['textract', 'comprehend']),
                             'qualityAssessment': {
@@ -934,15 +931,18 @@ def lambda_handler(event, context):
                 s3_key = item.get('key', '')  # 'key' is the field name in results table
                 cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else None
                 
-                # Build item data
+                # Build item data (match individual file response structure)
                 item_data = {
                     'fileId': item['file_id'],
                     'fileName': item.get('file_name', ''),
                     'uploadTimestamp': item.get('upload_timestamp', ''),
                     'processingStatus': item.get('processing_status', ''),
+                    'processingType': item.get('processing_type', ''),  # Add missing field
                     'fileSize': format_file_size(item.get('file_size', 0)),
                     'contentType': item.get('content_type', ''),
                     'cloudFrontUrl': cloudfront_url,
+                    'bucket': item.get('bucket', ''),  # Add missing field
+                    'key': item.get('key', ''),  # Add missing field
                     'metadata': {
                         'publication': item.get('publication', ''),
                         'publication_year': item.get('publication_year', ''),
@@ -962,16 +962,17 @@ def lambda_handler(event, context):
                     if processing_type == 'short-batch':
                         # Short-batch results from shared table
                         item_data['ocrResults'] = {
+                            'extractedText': item.get('extracted_text', ''),
                             'formattedText': item.get('formatted_text', ''),
                             'refinedText': item.get('refined_text', ''),
-                            'extractedText': item.get('extracted_text', ''),
-                            'processingModel': item.get('processing_model', 'claude-sonnet-4-20250514'),
-                            'processingType': 'short-batch',
                             'processingCost': item.get('processing_cost', 0),
                             'processedAt': item.get('processed_at', ''),
                             'processingDuration': format_duration(calculate_real_time_duration(item)),
                             'tokenUsage': item.get('token_usage', {}),
-                            'languageDetection': item.get('language_detection', {})
+                            'languageDetection': item.get('language_detection', {}),
+                            'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),  # Add missing field
+                            'userEdited': item.get('user_edited', False),  # Add missing field
+                            'editHistory': item.get('edit_history', [])  # Add missing field
                         }
                         
                         # Add text analysis for short-batch
@@ -984,15 +985,25 @@ def lambda_handler(event, context):
                             'extractedText': item.get('extracted_text', ''),
                             'formattedText': item.get('formatted_text', ''),
                             'refinedText': item.get('refined_text', ''),
-                            'processingModel': item.get('processing_model', 'aws-textract'),
-                            'processingType': 'long-batch',
-                            'processingDuration': format_duration(calculate_real_time_duration(item))
+                            'processingCost': item.get('processing_cost', 0),  # Add missing field
+                            'processedAt': item.get('processed_at', ''),  # Add missing field
+                            'processingDuration': format_duration(calculate_real_time_duration(item)),
+                            'tokenUsage': item.get('token_usage', {}),  # Add missing field
+                            'languageDetection': item.get('language_detection', {}),  # Add missing field
+                            'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),  # Add missing field
+                            'userEdited': item.get('user_edited', False),  # Add missing field
+                            'editHistory': item.get('edit_history', [])  # Add missing field
                         }
                         
                         # Add additional analysis data for long-batch
-                        enhanced_textract_analysis = item.get('textract_analysis', {})                
-                        if enhanced_textract_analysis:
-                            item_data['textAnalysis'] = enhanced_textract_analysis
+                        # First try the unified textAnalysis field, then fall back to legacy textract_analysis
+                        text_analysis = item.get('textAnalysis', {})
+                        if text_analysis:
+                            item_data['textAnalysis'] = text_analysis
+                        else:
+                            enhanced_textract_analysis = item.get('textract_analysis', {})                
+                            if enhanced_textract_analysis:
+                                item_data['textAnalysis'] = enhanced_textract_analysis
                         
                         # Add enhanced Comprehend entity analysis for long-batch
                         comprehend_analysis = item.get('comprehend_analysis', {})

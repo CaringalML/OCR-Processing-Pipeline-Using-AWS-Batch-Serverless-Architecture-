@@ -537,9 +537,12 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
             dynamodb = get_aws_client('dynamodb')
             table = dynamodb.Table(DOCUMENTS_TABLE)
             table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
-                UpdateExpression='SET processing_status = :status',
-                ExpressionAttributeValues={':status': 'downloading_invoice'}
+                Key={'file_id': document_id},
+                UpdateExpression='SET processing_status = :status, upload_timestamp = :timestamp',
+                ExpressionAttributeValues={
+                    ':status': 'downloading_invoice',
+                    ':timestamp': upload_timestamp
+                }
             )
         
         # Download invoice from S3
@@ -554,7 +557,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
         # Update status to processing
         if DOCUMENTS_TABLE:
             table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
+                Key={'file_id': document_id},
                 UpdateExpression='SET processing_status = :status',
                 ExpressionAttributeValues={':status': 'processing_invoice_ocr'}
             )
@@ -601,7 +604,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
         # Update status to saving results
         if DOCUMENTS_TABLE:
             table.update_item(
-                Key={'file_id': document_id, 'upload_timestamp': upload_timestamp},
+                Key={'file_id': document_id},
                 UpdateExpression='SET processing_status = :status',
                 ExpressionAttributeValues={':status': 'saving_invoice_results'}
             )
@@ -696,10 +699,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
                 expression_values[':currency'] = financial_summary.get('currency_code', 'USD')
             
             table.update_item(
-                Key={
-                    'file_id': document_id,
-                    'upload_timestamp': upload_timestamp
-                },
+                Key={'file_id': document_id},
                 UpdateExpression=update_expression,
                 ExpressionAttributeValues=expression_values
             )
@@ -733,10 +733,7 @@ def process_invoice(message: dict[str, Any]) -> dict[str, Any]:
                 dynamodb = get_aws_client('dynamodb')
                 table = dynamodb.Table(DOCUMENTS_TABLE)
                 table.update_item(
-                    Key={
-                        'file_id': document_id,
-                        'upload_timestamp': upload_timestamp
-                    },
+                    Key={'file_id': document_id},
                     UpdateExpression='SET processing_status = :status, error_message = :error',
                     ExpressionAttributeValues={
                         ':status': 'failed',

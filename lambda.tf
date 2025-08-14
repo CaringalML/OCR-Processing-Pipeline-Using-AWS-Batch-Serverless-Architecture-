@@ -776,8 +776,8 @@ resource "aws_lambda_function" "invoice_processor" {
 
   environment {
     variables = {
-      DOCUMENTS_TABLE       = aws_dynamodb_table.processing_results.name
-      RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
+      DOCUMENTS_TABLE       = aws_dynamodb_table.invoice_processing_results.name
+      RESULTS_TABLE         = aws_dynamodb_table.invoice_processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.bucket
       DEAD_LETTER_QUEUE_URL = "" # Will be set if needed
       SNS_TOPIC_ARN         = aws_sns_topic.critical_alerts.arn
