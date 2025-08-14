@@ -1911,21 +1911,38 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
         unified_item_converted = convert_to_dynamodb_compatible(unified_item)
         
         # Use update_item to preserve existing publication metadata and upload_timestamp
-        # Build update expression dynamically
+        # Build update expression dynamically with ExpressionAttributeNames for reserved keywords
         update_expression_parts = []
         expression_attribute_values = {}
+        expression_attribute_names = {}
+        
+        # DynamoDB reserved keywords that need attribute names
+        reserved_keywords = {'bucket', 'key', 'status', 'type', 'date', 'time', 'name', 'size', 'count', 'data'}
         
         for key, value in unified_item_converted.items():
             if key != 'file_id':  # Don't update the primary key
-                update_expression_parts.append(f"{key} = :{key}")
+                if key.lower() in reserved_keywords:
+                    # Use expression attribute name for reserved keywords
+                    attr_name = f"#{key}"
+                    update_expression_parts.append(f"{attr_name} = :{key}")
+                    expression_attribute_names[attr_name] = key
+                else:
+                    # Use direct attribute name for non-reserved keywords
+                    update_expression_parts.append(f"{key} = :{key}")
                 expression_attribute_values[f":{key}"] = value
         
         if update_expression_parts:
-            table.update_item(
-                Key={'file_id': file_id},
-                UpdateExpression='SET ' + ', '.join(update_expression_parts),
-                ExpressionAttributeValues=expression_attribute_values
-            )
+            update_params = {
+                'Key': {'file_id': file_id},
+                'UpdateExpression': 'SET ' + ', '.join(update_expression_parts),
+                'ExpressionAttributeValues': expression_attribute_values
+            }
+            
+            # Only add ExpressionAttributeNames if we have reserved keywords
+            if expression_attribute_names:
+                update_params['ExpressionAttributeNames'] = expression_attribute_names
+                
+            table.update_item(**update_params)
         log('DEBUG', 'Unified results stored for edit compatibility', {
             'fileId': file_id, 
             'table': unified_results_table_name,
@@ -2036,18 +2053,35 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
         # Use update_item to preserve existing metadata (like publication fields)
         update_expression_parts = []
         expression_attribute_values = {}
+        expression_attribute_names = {}
+        
+        # DynamoDB reserved keywords that need attribute names
+        reserved_keywords = {'bucket', 'key', 'status', 'type', 'date', 'time', 'name', 'size', 'count', 'data'}
         
         for key, value in error_item_converted.items():
             if key != 'file_id':  # Don't update the primary key
-                update_expression_parts.append(f"{key} = :{key}")
+                if key.lower() in reserved_keywords:
+                    # Use expression attribute name for reserved keywords
+                    attr_name = f"#{key}"
+                    update_expression_parts.append(f"{attr_name} = :{key}")
+                    expression_attribute_names[attr_name] = key
+                else:
+                    # Use direct attribute name for non-reserved keywords
+                    update_expression_parts.append(f"{key} = :{key}")
                 expression_attribute_values[f":{key}"] = value
         
         if update_expression_parts:
-            table.update_item(
-                Key={'file_id': file_id},
-                UpdateExpression='SET ' + ', '.join(update_expression_parts),
-                ExpressionAttributeValues=expression_attribute_values
-            )
+            update_params = {
+                'Key': {'file_id': file_id},
+                'UpdateExpression': 'SET ' + ', '.join(update_expression_parts),
+                'ExpressionAttributeValues': expression_attribute_values
+            }
+            
+            # Only add ExpressionAttributeNames if we have reserved keywords
+            if expression_attribute_names:
+                update_params['ExpressionAttributeNames'] = expression_attribute_names
+                
+            table.update_item(**update_params)
         log('DEBUG', 'Error result stored in results table', {
             'fileId': file_id,
             'table': unified_results_table_name,
