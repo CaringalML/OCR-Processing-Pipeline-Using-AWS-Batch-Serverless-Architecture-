@@ -1885,7 +1885,6 @@ def store_unified_results(file_id: str, results: Dict[str, Any], bucket: str, ob
             'extracted_text': extracted_text,
             'formatted_text': formatted_text,
             'refined_text': refined_text,
-            'processing_model': 'aws-textract-comprehend',
             'processing_type': 'long-batch',
             'processing_duration': results.get('processing_duration', '0s'),
             'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration
@@ -2019,7 +2018,6 @@ def store_error_result(file_id: str, error_message: str, bucket: str, object_key
             'extracted_text': '',
             'formatted_text': '',
             'refined_text': '',
-            'processing_model': 'aws-textract-comprehend',
             'processing_type': 'long-batch',
             'processing_duration': '0s',
             'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration

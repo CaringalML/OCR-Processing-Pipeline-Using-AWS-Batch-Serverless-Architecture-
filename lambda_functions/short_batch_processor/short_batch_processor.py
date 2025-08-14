@@ -1250,7 +1250,6 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 'extracted_text': ocr_result['formatted_text'],  # Raw OCR text
                 'formatted_text': ocr_result['formatted_text'],  # Same as extracted for consistency
                 'refined_text': ocr_result['refined_text'],      # Grammar improved text
-                'processing_model': ocr_result.get('model', 'claude-sonnet-4-20250514'),
                 'processing_type': 'short-batch',
                 'processing_duration': format_duration(ocr_result['processing_time']),
                 'textAnalysis': text_analysis,  # Add textAnalysis right after processingDuration

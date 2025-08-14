@@ -752,8 +752,7 @@ def lambda_handler(event, context):
                     'publication_description': processing_result.get('publication_description', ''),
                     'publication_page': processing_result.get('publication_page', ''),
                     'publication_tags': processing_result.get('publication_tags', [])
-                },
-                'processingModel': processing_result.get('processing_model', '')
+                }
             }
             
             # Add OCR results from unified table structure
@@ -762,7 +761,6 @@ def lambda_handler(event, context):
                     'extractedText': processing_result.get('extracted_text', ''),
                     'formattedText': processing_result.get('formatted_text', ''),
                     'refinedText': processing_result.get('refined_text', ''),
-                    'processingModel': processing_result.get('processing_model', ''),
                     'processingType': processing_result.get('processing_type', ''),
                     'processingCost': processing_result.get('processing_cost', 0),
                     'processedAt': processing_result.get('processed_at', ''),
