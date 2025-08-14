@@ -21,23 +21,33 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 
 # API Architecture Overview
 
+## Single Table Architecture with Smart Routing
+
+### Database Design
+- **Single DynamoDB Table:** All OCR results stored in `processing_results` table
+- **Unified Data Access:** Edit functionality works across all processing types
+- **Consistent Schema:** Same data structure regardless of processing pipeline
+
 ## Three-Tier Endpoint Structure
 
 ### 1. **Unified Endpoints** (Combines both batch types)
 - **Purpose:** Access all processed files regardless of processing method
 - **Base Path:** `/`
+- **Database:** Single `processing_results` table
 - **Use Case:** When you want to work with all processed documents together
 
 ### 2. **Long-Batch Endpoints** (AWS Batch + Textract)
 - **Purpose:** Heavy processing for complex documents
 - **Base Path:** `/long-batch/`
 - **Processing:** AWS Batch → Textract → Comprehend
+- **Storage:** Results saved to unified `processing_results` table
 - **Use Case:** Large files, complex documents, detailed analysis
 
 ### 3. **Short-Batch Endpoints** (Lambda + Claude AI)  
 - **Purpose:** Fast processing with Claude AI OCR
 - **Base Path:** `/short-batch/`
 - **Processing:** Lambda → Claude Sonnet 4 → Analysis
+- **Storage:** Results saved to unified `processing_results` table
 - **Use Case:** Quick processing, high-quality OCR, small to medium files
 
 ---
@@ -87,12 +97,13 @@ curl -X POST '/upload' -F 'file=@document.pdf' \
 ---
 
 ## Edit Processed Files ✅ UNIFIED ENDPOINT
-**Endpoint:** `PUT /v1/batch/processed/edit?fileId={fileId}`
+**Endpoint:** `GET /v1/batch/processed/edit?fileId={fileId}`
 
-**Purpose:** Edit OCR results for files from BOTH short-batch (Claude AI) and long-batch (AWS Textract) processing pipelines using a single unified endpoint.
+**Purpose:** Edit OCR results for ANY processed file using a single unified endpoint. All files are stored in one DynamoDB table regardless of processing method.
 
 **Key Features:**
-- ✅ **Works with both pipelines**: Edit files regardless of processing method
+- ✅ **Single table architecture**: All OCR results stored in one table (processing_results)
+- ✅ **Works with both pipelines**: Edit files from short-batch OR long-batch processing
 - ✅ **Partial updates**: Update only the fields you want to change
 - ✅ **Edit history**: Automatically tracks all changes with timestamps
 - ✅ **Metadata support**: Update publication info, titles, authors, etc.
@@ -112,21 +123,11 @@ curl -X POST '/upload' -F 'file=@document.pdf' \
 
 **Example:**
 ```bash
-# Edit refined text only
-curl -X PUT "https://your-api.execute-api.region.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id" \
-  -H "Content-Type: application/json" \
-  -d '{"refinedText": "Transport for Tomorrow - EDITED VERSION..."}'
+# Get the edit interface for a file
+curl "https://5t6zm66a59.execute-api.ap-southeast-2.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id"
 
-# Edit multiple fields
-curl -X PUT "https://your-api.execute-api.region.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "refinedText": "Updated text...",
-    "metadata": {
-      "title": "New Document Title",
-      "author": "Updated Author"
-    }
-  }'
+# The endpoint returns an HTML interface for editing the OCR results
+# You can then submit changes through the web interface
 ```
 
 **Response:**
@@ -228,7 +229,7 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 ---
 
 ## Other Unified Operations
-- `POST /edit` - Edit OCR results
+- `GET /batch/processed/edit?fileId={fileId}` - Edit OCR results
 - `DELETE /delete/{fileId}` - Delete file (moves to recycle bin)
 - `GET /recycle-bin` - List deleted files
 - `POST /restore/{fileId}` - Restore from recycle bin
@@ -275,10 +276,10 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ## Long-Batch Operations
 - `GET /long-batch/search` - Search only long-batch documents
-- `PUT /long-batch/edit` - Edit long-batch OCR results  
 - `DELETE /long-batch/delete/{fileId}` - Delete long-batch file
 - `GET /long-batch/recycle-bin` - Long-batch recycle bin
 - `POST /long-batch/restore/{fileId}` - Restore long-batch file
+Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
 
 ---
 
@@ -322,10 +323,10 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ## Short-Batch Operations
 - `GET /short-batch/search` - Search only short-batch documents
-- `PUT /short-batch/edit` - Edit short-batch OCR results
 - `DELETE /short-batch/delete/{fileId}` - Delete short-batch file
 - `GET /short-batch/recycle-bin` - Short-batch recycle bin  
 - `POST /short-batch/restore/{fileId}` - Restore short-batch file
+Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
 
 ---
 
