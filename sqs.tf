@@ -85,7 +85,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
     QueueName = aws_sqs_queue.batch_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -129,50 +129,7 @@ resource "aws_sqs_queue" "short_batch_queue" {
   })
 }
 
-# CloudWatch Alarm for Short Batch DLQ
-resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_messages" {
-  alarm_name          = "${var.project_name}-${var.environment}-short-batch-dlq-messages"
-  comparison_operator = var.cloudwatch_comparison_operator_greater_than
-  evaluation_periods  = var.cloudwatch_evaluation_periods_single
-  metric_name         = var.cloudwatch_metric_messages_visible
-  namespace           = var.cloudwatch_namespace_sqs
-  period              = var.cloudwatch_period_standard
-  statistic           = var.cloudwatch_statistic_average
-  threshold           = var.cloudwatch_threshold_zero
-  alarm_description   = <<-EOF
-    ALERT: Messages detected in Short Batch Dead Letter Queue!
-    
-    Environment: ${var.environment}
-    Project: ${var.project_name}
-    Queue: ${var.project_name}-${var.environment}-short-batch-dlq
-    
-    This indicates that short batch messages have failed processing after 3 attempts.
-    
-    Possible causes:
-    - Lambda processor function errors
-    - S3 access issues
-    - DynamoDB write failures
-    - Invalid message format
-    - Timeout issues (current limit: 20 minutes)
-    
-    Action required:
-    1. Check short_batch_processor Lambda logs in CloudWatch
-    2. Review failed messages in DLQ via AWS Console
-    3. Verify S3 bucket permissions and file accessibility
-    4. Check DynamoDB table for throttling or errors
-    5. Investigate and fix root cause
-    6. Redrive messages from DLQ once issue is resolved
-  EOF
-  treat_missing_data  = var.cloudwatch_treat_missing_data
-
-  dimensions = {
-    QueueName = aws_sqs_queue.short_batch_dlq.name
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-
-  tags = var.common_tags
-}
+# DLQ alarms moved to cloudwatch.tf for centralized monitoring
 # Additional CloudWatch Alarms for enhanced DLQ monitoring
 
 # Alarm for messages aging in Long Batch DLQ
@@ -202,7 +159,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_message_age" {
     QueueName = aws_sqs_queue.batch_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -233,7 +190,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_high_message_count" {
     QueueName = aws_sqs_queue.batch_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -265,7 +222,7 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_message_age" {
     QueueName = aws_sqs_queue.short_batch_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -296,7 +253,7 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_high_message_count" {
     QueueName = aws_sqs_queue.short_batch_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -382,7 +339,7 @@ resource "aws_cloudwatch_metric_alarm" "invoice_dlq_messages" {
     QueueName = aws_sqs_queue.invoice_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }
@@ -413,7 +370,7 @@ resource "aws_cloudwatch_metric_alarm" "invoice_dlq_high_message_count" {
     QueueName = aws_sqs_queue.invoice_dlq.name
   }
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.critical_alerts.arn]
 
   tags = var.common_tags
 }

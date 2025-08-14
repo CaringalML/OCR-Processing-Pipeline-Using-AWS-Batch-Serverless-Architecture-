@@ -1,15 +1,4 @@
-# SNS Topic for alerts
-resource "aws_sns_topic" "alerts" {
-  name = "${var.project_name}-${var.environment}-alerts"
-  tags = var.common_tags
-}
-
-# SNS Topic Subscription for email alerts
-resource "aws_sns_topic_subscription" "admin_email_alerts" {
-  topic_arn = aws_sns_topic.alerts.arn
-  protocol  = var.sns_email_protocol
-  endpoint  = var.admin_alert_email
-}
+# SNS topic moved to cloudwatch.tf for centralized alert management
 
 # Archive files for Lambda functions
 data "archive_file" "uploader_zip" {
@@ -341,7 +330,7 @@ resource "aws_lambda_function" "short_batch_processor" {
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.id
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
-      SNS_TOPIC_ARN         = aws_sns_topic.alerts.arn
+      SNS_TOPIC_ARN         = aws_sns_topic.critical_alerts.arn
       ANTHROPIC_API_KEY     = var.anthropic_api_key
       BUDGET_LIMIT          = var.budget_limit_default
       LOG_LEVEL             = var.lambda_log_level
@@ -791,7 +780,7 @@ resource "aws_lambda_function" "invoice_processor" {
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.bucket
       DEAD_LETTER_QUEUE_URL = "" # Will be set if needed
-      SNS_TOPIC_ARN         = aws_sns_topic.alerts.arn
+      SNS_TOPIC_ARN         = aws_sns_topic.critical_alerts.arn
       ANTHROPIC_API_KEY     = var.anthropic_api_key
       BUDGET_LIMIT          = "10.0"
       BUDGET_TRACKING_TABLE = aws_dynamodb_table.ocr_budget_tracking.name

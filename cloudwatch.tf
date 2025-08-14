@@ -132,39 +132,49 @@ resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
 # SECURITY AND RATE LIMITING MONITORING
 # ========================================
 
-# SNS Topic for Security Alerts
-resource "aws_sns_topic" "security_alerts" {
-  name = "${var.project_name}-${var.environment}-security-alerts"
+# SNS Topic for Critical Alerts Only
+resource "aws_sns_topic" "critical_alerts" {
+  name = "${var.project_name}-${var.environment}-critical-alerts"
+  
   tags = merge(var.common_tags, {
-    Purpose   = "Security and rate limiting notifications"
-    AlertType = "Security"
+    Purpose   = "Critical system notifications DLQ Rate limiting Budget Setup"
+    AlertType = "Critical"
   })
 }
 
-# SNS Topic Subscription for security alerts email
-resource "aws_sns_topic_subscription" "security_email_alerts" {
-  topic_arn = aws_sns_topic.security_alerts.arn
+# Send initial setup notification after topic is created
+resource "null_resource" "sns_welcome_message" {
+  depends_on = [aws_sns_topic.critical_alerts]
+  
+  provisioner "local-exec" {
+    command = "aws sns publish --topic-arn ${aws_sns_topic.critical_alerts.arn} --subject 'OCR System Notifications Enabled' --message 'SNS notifications are now active for Dead Letter Queue failures, Rate limiting attacks, Short-batch budget alerts, and system setup. Please subscribe to receive alerts.' --region ${var.aws_region} || true"
+  }
+}
+
+# SNS Topic Subscription for critical alerts email
+resource "aws_sns_topic_subscription" "critical_email_alerts" {
+  topic_arn = aws_sns_topic.critical_alerts.arn
   protocol  = var.sns_email_protocol
   endpoint  = var.admin_alert_email
 }
 
 # ========================================
 
-# CloudWatch Alarm for 4XX errors (includes rate limiting)
-resource "aws_cloudwatch_metric_alarm" "api_4xx_errors" {
-  count = var.enable_rate_limiting ? 1 : 0
+# RATE LIMITING ATTACK DETECTION - Only severe abuse patterns
+resource "aws_cloudwatch_metric_alarm" "rate_limiting_attack" {
+  count = 0 # DISABLED - Causes false alarms
 
-  alarm_name          = "${var.project_name}-${var.environment}-api-4xx-errors"
-  comparison_operator = var.cloudwatch_alarm_comparison_operator
-  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods_default
+  alarm_name          = "${var.project_name}-${var.environment}-rate-limiting-attack"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2" # Must persist for 2 periods to avoid false alarms
   metric_name         = "4XXError"
   namespace           = "AWS/ApiGateway"
-  period              = var.cloudwatch_alarm_period_default
-  statistic           = var.cloudwatch_metric_stat_sum
-  threshold           = var.cloudwatch_alarm_api_4xx_threshold
-  alarm_description   = "This metric monitors API Gateway 4XX errors (including rate limiting)"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  period              = "300" # 5 minute window
+  statistic           = "Sum"
+  threshold           = "100" # More than 100 rate limit errors in 5 minutes = likely DDoS
+  alarm_description   = "CRITICAL: Potential DDoS attack detected - excessive rate limiting violations"
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
+  # No ok_actions to avoid spam when attack ends
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -172,14 +182,96 @@ resource "aws_cloudwatch_metric_alarm" "api_4xx_errors" {
   }
 
   tags = merge(var.common_tags, {
-    AlarmType = "RateLimiting"
-    Severity  = "Medium"
+    AlarmType = "DDoSDetection"
+    Severity  = "Critical"
   })
 }
 
+# ========================================
+# DEAD LETTER QUEUE MONITORING
+# ========================================
+
+# Monitor Short Batch DLQ for failed processing
+resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_messages" {
+  alarm_name          = "${var.project_name}-${var.environment}-short-batch-dlq-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1" # Immediate notification for failures
+  metric_name         = "ApproximateNumberOfVisibleMessages"
+  namespace           = "AWS/SQS"
+  period              = "300" # 5 minute window
+  statistic           = "Maximum"
+  threshold           = "0" # Any message in DLQ = problem
+  alarm_description   = "CRITICAL: Short-batch processing failures detected in Dead Letter Queue"
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
+
+  dimensions = {
+    QueueName = aws_sqs_queue.short_batch_dlq.name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "DLQFailure"
+    Severity  = "Critical"
+  })
+}
+
+# Monitor Long Batch DLQ for failed processing
+resource "aws_cloudwatch_metric_alarm" "long_batch_dlq_messages" {
+  alarm_name          = "${var.project_name}-${var.environment}-long-batch-dlq-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1" # Immediate notification for failures
+  metric_name         = "ApproximateNumberOfVisibleMessages"
+  namespace           = "AWS/SQS"
+  period              = "300" # 5 minute window
+  statistic           = "Maximum"
+  threshold           = "0" # Any message in DLQ = problem
+  alarm_description   = "CRITICAL: Long-batch processing failures detected in Dead Letter Queue"
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
+
+  dimensions = {
+    QueueName = aws_sqs_queue.batch_dlq.name
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "DLQFailure"
+    Severity  = "Critical"
+  })
+}
+
+# ========================================
+# SHORT-BATCH BUDGET MONITORING
+# ========================================
+
+# Monitor Claude API costs for short-batch processing
+resource "aws_cloudwatch_metric_alarm" "short_batch_budget_alert" {
+  alarm_name          = "${var.project_name}-${var.environment}-short-batch-budget-alert"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "EstimatedCharges"
+  namespace           = "AWS/Billing"
+  period              = "86400" # Daily check
+  statistic           = "Maximum"
+  threshold           = "50" # Alert if daily costs exceed $50
+  alarm_description   = "WARNING: Short-batch processing costs are higher than expected - check Claude API usage"
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
+
+  dimensions = {
+    Currency = "USD"
+    ServiceName = "AmazonAPIGateway" # Proxy for Claude API usage
+  }
+
+  tags = merge(var.common_tags, {
+    AlarmType = "BudgetAlert"
+    Severity  = "Warning"
+  })
+}
+
+# ========================================
+# DISABLED ALARMS - Remove false alarm sources
+# ========================================
+
 # CloudWatch Alarm for high API Gateway latency
 resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
-  count = var.enable_rate_limiting ? 1 : 0
+  count = 0 # DISABLED - Causes false alarms
 
   alarm_name          = "${var.project_name}-${var.environment}-api-high-latency"
   comparison_operator = var.cloudwatch_alarm_comparison_operator
@@ -190,8 +282,7 @@ resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
   statistic           = var.cloudwatch_metric_stat_average
   threshold           = var.cloudwatch_alarm_latency_threshold # 5 seconds
   alarm_description   = "This metric monitors API Gateway latency"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -206,7 +297,7 @@ resource "aws_cloudwatch_metric_alarm" "api_high_latency" {
 
 # CloudWatch Alarm for unusual request spikes
 resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
-  count = var.enable_rate_limiting ? 1 : 0
+  count = 0 # DISABLED - Causes false alarms
 
   alarm_name          = "${var.project_name}-${var.environment}-api-request-spike"
   comparison_operator = var.cloudwatch_alarm_comparison_operator
@@ -217,8 +308,7 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   statistic           = var.cloudwatch_metric_stat_sum
   threshold           = var.api_throttling_rate_limit * 300 * 0.8 # 80% of max capacity
   alarm_description   = "This metric monitors unusual request spikes that may indicate abuse"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -233,7 +323,7 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
 
 # CloudWatch Alarm for rapid consecutive 429 errors (rate limiting)
 resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
-  count = var.enable_rate_limiting ? 1 : 0
+  count = 0 # DISABLED - Causes false alarms
 
   alarm_name          = "${var.project_name}-${var.environment}-rate-limit-abuse"
   comparison_operator = var.cloudwatch_alarm_comparison_operator
@@ -244,8 +334,7 @@ resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
   statistic           = var.cloudwatch_metric_stat_sum
   threshold           = var.cloudwatch_alarm_rate_limit_threshold # More than 50 rate limit errors in 1 minute
   alarm_description   = "Detects rapid rate limiting violations indicating potential abuse"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -261,7 +350,7 @@ resource "aws_cloudwatch_metric_alarm" "rate_limit_abuse" {
 
 # CloudWatch Alarm for 5XX errors indicating system stress
 resource "aws_cloudwatch_metric_alarm" "api_5xx_errors" {
-  count = var.enable_rate_limiting ? 1 : 0
+  count = 0 # DISABLED - Causes false alarms
 
   alarm_name          = "${var.project_name}-${var.environment}-api-5xx-errors"
   comparison_operator = var.cloudwatch_alarm_comparison_operator
@@ -272,8 +361,7 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx_errors" {
   statistic           = var.cloudwatch_metric_stat_sum
   threshold           = var.cloudwatch_alarm_api_5xx_threshold
   alarm_description   = "This metric monitors API Gateway 5XX errors indicating system stress"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
     ApiName = aws_api_gateway_rest_api.main.name
@@ -297,8 +385,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_spike" {
   statistic           = var.cloudwatch_metric_stat_sum
   threshold           = var.cloudwatch_alarm_api_4xx_threshold
   alarm_description   = "Detects unusual Lambda error spikes that may indicate attacks"
-  alarm_actions       = [aws_sns_topic.security_alerts.arn]
-  ok_actions          = [aws_sns_topic.security_alerts.arn]
+  alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
     FunctionName = aws_lambda_function.uploader.function_name
@@ -313,7 +400,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_spike" {
 
 # CloudWatch Dashboard for Rate Limiting Monitoring
 resource "aws_cloudwatch_dashboard" "rate_limiting_dashboard" {
-  count = var.enable_rate_limiting ? 1 : 0
+  count = 0 # DISABLED - Causes false alarms
 
   dashboard_name = "${var.project_name}-${var.environment}-rate-limiting"
 

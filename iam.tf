@@ -613,7 +613,7 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
         Action = [
           "sns:Publish"
         ]
-        Resource = aws_sns_topic.alerts.arn
+        Resource = aws_sns_topic.critical_alerts.arn
       },
       {
         Effect = var.iam_effect_allow
@@ -1202,7 +1202,7 @@ resource "aws_iam_policy" "invoice_processor_policy" {
         Action = [
           "sns:Publish"
         ]
-        Resource = aws_sns_topic.alerts.arn
+        Resource = aws_sns_topic.critical_alerts.arn
       },
       # SQS - Receive and delete messages from invoice queue
       {

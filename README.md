@@ -159,6 +159,7 @@ Total:             $63-178
 - **🔐 Zero-Trust Network**: Private subnets, VPC endpoints, no internet access
 - **📊 Real-Time Monitoring**: CloudWatch dashboards, automated alerts
 - **⚖️ Enterprise Ready**: GDPR-friendly, audit logs, data retention policies
+- **🚨 DDoS Protection**: Automated attack detection, 429 rate limit responses
 
 ---
 
@@ -524,7 +525,7 @@ curl "$API/search?q=machine+learning+artificial+intelligence&fuzzy=true"
 | Metric | Quick Path (Claude AI) | Deep Path (Textract) | 
 |--------|------------------------|----------------------|
 | **File Size Limit** | ≤300KB | No limit |
-| **Processing Time** | 30-60 seconds | 2-5 minutes |
+| **Processing Time** | 30 seconds - 10 minutes (15min Lambda max) | 5-60 minutes (up to 24 hours for very large files) |
 | **Concurrent Jobs** | 50 simultaneous | 100 simultaneous |
 | **OCR Accuracy** | 95%+ (AI-enhanced) | 99%+ (AWS Textract) |
 | **Text Refinement** | Advanced grammar/context | Basic cleanup |
@@ -563,6 +564,25 @@ Internet → API Gateway → Lambda (Private Subnets)
          
 # No internet access for compute resources
 # All AWS service communication via private endpoints
+```
+
+### **Rate Limiting & DDoS Protection**
+```bash
+# Three-tier rate limiting with API Gateway (Token Bucket Algorithm)
+Public Tier:     10 requests/second   (burst: 20)
+Registered Tier: 50 requests/second   (burst: 100)  
+Premium Tier:    200 requests/second  (burst: 400)
+
+# Automated attack detection
+- Rate limit violation monitoring (100+ violations/5min = alert)
+- Token bucket algorithm for burst handling
+- 429 HTTP responses for rate limit exceeded
+- CloudWatch alarms for DDoS pattern detection
+
+# Human-friendly thresholds designed for real-world usage:
+- Public tier: Suitable for testing and light personal usage
+- Registered tier: Handles typical business workflows (1 doc every 1.2s)
+- Premium tier: Supports high-volume enterprise usage (5 docs/second)
 ```
 
 ### **Data Protection & Encryption**
@@ -606,14 +626,17 @@ Premium Tier:    API key + additional verification
 # SNS alert configuration (configured in variables.tf)
 admin_alert_email = "ops@yourcompany.com"
 
-# Automatic alerts for:
-✅ Failed document processing (>5% error rate)
-✅ API Gateway error rate spike (>1% errors)  
-✅ Lambda function failures or timeouts
-✅ DynamoDB throttling events
-✅ Batch job failures or stuck queues
-✅ Unusual cost increases (>20% daily change)
-✅ Search performance degradation
+# Critical alerts only (4 notification types to reduce false alarms):
+✅ Dead Letter Queue failures (processing jobs that failed after retries)
+✅ Rate limiting attacks (100+ violations in 5 minutes = potential DDoS)
+✅ Short-batch budget alerts (daily costs exceed $50 threshold)
+✅ Initial setup notification (confirms SNS system is working)
+
+# Disabled alerts (prevent false alarms):
+❌ API latency spikes (too sensitive)
+❌ General request volume changes (normal business variance)
+❌ Lambda timeout warnings (expected for large files)
+❌ Minor DynamoDB throttling (auto-scaling handles this)
 ```
 
 ### **Cost Monitoring & Optimization**
@@ -654,13 +677,45 @@ aws logs insights start-query --log-group-name /aws/lambda/ocr-processor-prod-do
 
 ---
 
-## 🚀 Advanced Features & Future Roadmap
+## 📋 Recent Updates & System Improvements
 
-### **Current Advanced Capabilities**
+### **Latest V4 Updates (January 2025)**
 ```bash
-# Intelligent document processing with dual AI engines  
-✅ Claude Sonnet 4 for quick, context-aware OCR
-✅ AWS Textract for high-accuracy document analysis
+# Publication Metadata Support
+✅ Added support for publication, year, title, author, description, page, tags metadata
+✅ Enhanced search functionality with metadata filtering
+✅ Rich document categorization and organization
+
+# Processing Performance Improvements  
+✅ Updated processing time estimates to reflect actual capabilities:
+   - Short-batch: 30 seconds - 10 minutes (15min Lambda timeout limit)
+   - Long-batch: 5-60 minutes (up to 24 hours for very large files via AWS Batch)
+✅ Fixed DynamoDB reserved keyword issue preventing batch processing results
+✅ Removed duplicate processingModel fields from API responses
+
+# Enhanced Monitoring & Alerting
+✅ Streamlined SNS notifications to only 4 critical alert types:
+   - Dead Letter Queue failures (processing failures after retries)
+   - Rate limiting attacks (100+ violations in 5 minutes)
+   - Short-batch budget alerts (daily costs exceed $50)
+   - Initial setup notifications (system health confirmation)
+✅ Disabled false alarm sources (latency spikes, minor volume changes)
+✅ Added clickable API endpoint URLs in Terraform outputs
+
+# Infrastructure Fixes
+✅ Resolved Terraform deployment issues with duplicate resources
+✅ Fixed SNS topic configuration and tag validation
+✅ Updated to Sydney region (ap-southeast-2) configuration
+✅ Centralized CloudWatch alarms in dedicated configuration
+```
+
+## 🚀 Advanced Features & Current Capabilities
+
+### **Intelligent Document Processing Engine**
+```bash
+# Dual AI processing with smart routing
+✅ Claude Sonnet 4 for quick, context-aware OCR (≤300KB files)
+✅ AWS Textract for high-accuracy document analysis (>300KB files)
 ✅ Advanced text refinement with grammar correction
 ✅ Entity recognition and metadata extraction
 ✅ Fuzzy search with 95%+ accuracy for typos
