@@ -70,14 +70,14 @@ def make_routing_decision(file_size_bytes: int, file_type: str, priority: str) -
     if file_size_kb <= FILE_SIZE_THRESHOLD_KB:
         decision['route'] = 'short-batch'
         decision['reason'].append(f'File size ({file_size_kb:.0f}KB) ≤ {FILE_SIZE_THRESHOLD_KB}KB threshold')
-        decision['estimated_processing_time'] = '30 seconds - 5 minutes'
+        decision['estimated_processing_time'] = '30 seconds - 10 minutes (15min Lambda max)'
         decision['processor_type'] = 'lambda'
         decision['s3_folder'] = 'short-batch-files'
         decision['queue_url'] = os.environ.get('SHORT_BATCH_QUEUE_URL')
     else:
         decision['route'] = 'long-batch'
         decision['reason'].append(f'File size ({file_size_kb:.0f}KB) > {FILE_SIZE_THRESHOLD_KB}KB threshold')
-        decision['estimated_processing_time'] = '5-30 minutes'
+        decision['estimated_processing_time'] = '5-60 minutes (up to 24 hours for very large files)'
         decision['processor_type'] = 'aws_batch'
         decision['s3_folder'] = 'long-batch-files'
         decision['queue_url'] = os.environ.get('LONG_BATCH_QUEUE_URL')
@@ -319,7 +319,7 @@ def lambda_handler(event, context):
                 routing_decision = {
                     'route': final_route,
                     'reason': routing_reasons,
-                    'estimated_processing_time': '30 seconds - 5 minutes' if final_route == 'short-batch' else '5-30 minutes',
+                    'estimated_processing_time': '30 seconds - 10 minutes (15min Lambda max)' if final_route == 'short-batch' else '5-60 minutes (up to 24 hours for very large files)',
                     'processor_type': 'lambda' if final_route == 'short-batch' else 'aws_batch',
                     's3_folder': f'{final_route}-files',
                     'queue_url': os.environ.get('SHORT_BATCH_QUEUE_URL') if final_route == 'short-batch' else os.environ.get('LONG_BATCH_QUEUE_URL')

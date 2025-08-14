@@ -97,8 +97,8 @@ output "system_overview" {
     📱 UPLOAD → 🤖 SMART ROUTING → ⚡ PROCESSING → 💾 STORAGE → 🔍 SEARCH
     
     Routes:
-    • ≤300KB → Short-batch (Claude AI, 30s-5min)
-    • >300KB → Long-batch (AWS Textract, 5-30min)
+    • ≤300KB → Short-batch (Claude AI, 30s-10min, 15min Lambda max)
+    • >300KB → Long-batch (AWS Textract, 5-60min, up to 24hrs for very large files)
     • Invoice → Specialized processing
     
     Publication Metadata:
