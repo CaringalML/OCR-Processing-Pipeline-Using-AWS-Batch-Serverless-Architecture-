@@ -59,9 +59,9 @@ Week 5-6: 🔍  Intelligent Search & Production Polish
 
 ---
 
-## 🚀 Quick Start (5 Minutes)
+## 🚀 Quick Start (Complete Setup)
 
-**Get your OCR system running in under 5 minutes:**
+**Get your enterprise OCR system running with all components:**
 
 ### Prerequisites
 ```bash
@@ -71,44 +71,184 @@ terraform --version # v1.0+
 docker --version   # Latest
 ```
 
-### 1. **Deploy Infrastructure** (3 minutes)
+### 1. **Clone & Initial Setup** (2 minutes)
 ```bash
-# Clone and configure
+# Clone repository
 git clone <your-repo-url>
 cd OCR-AWS-Batch-Serverless-Python
 
-# Set your API key (get from https://console.anthropic.com/)
-cp terraform.tfvars.example terraform.tfvars
-echo 'anthropic_api_key = "sk-ant-api03-YOUR_KEY_HERE"' >> terraform.tfvars
-
-# Deploy everything
-terraform init && terraform apply -auto-approve
+# Configure AWS credentials
+aws configure
+# Enter: Access Key, Secret Key, Region (ap-southeast-2), Format (json)
 ```
 
-### 2. **Deploy Container** (2 minutes) 
+### 2. **OCR System Configuration** (5 minutes)
+
+#### **2A. Claude AI Setup (Required for Short-batch)**
 ```bash
-# Get ECR commands from Terraform output
+# Add Claude API key to terraform.tfvars
+echo 'anthropic_api_key = "your-claude-api-key-here"' >> terraform.tfvars
+
+# Get Claude API key from: https://console.anthropic.com/
+# Required for intelligent OCR processing (≤300KB files)
+```
+
+#### **2B. AWS Batch Setup (Required for Long-batch)**
+```bash
+# Configure GitHub Actions for Docker deployment
+# Edit .github/workflows/aws-deploy.yml with your values:
+
+# Required GitHub Secrets:
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key  
+AWS_REGION=ap-southeast-2
+ECR_REPOSITORY=ocr-processor-batch
+
+# Test Docker build locally (optional)
+cd aws_batch
+docker build -t ocr-processor-test .
+docker run --rm ocr-processor-test python index.py --help
+cd ..
+```
+
+#### **2C. GitHub Actions ECR Pipeline**
+```yaml
+# Verify .github/workflows/aws-deploy.yml contains:
+name: Deploy to AWS Batch
+on:
+  push:
+    paths: ['aws_batch/**']
+    
+jobs:
+  deploy:
+    steps:
+      - name: Configure AWS credentials
+      - name: Login to Amazon ECR  
+      - name: Build and push Docker image
+      - name: Update Batch job definition
+```
+
+### 3. **Infrastructure Deployment** (3-5 minutes)
+```bash
+# Initialize and validate
+terraform init
+terraform validate
+terraform plan
+
+# Deploy complete infrastructure
+terraform apply -auto-approve
+
+# Expected output: 15+ AWS resources created
+# - Lambda functions (7)
+# - API Gateway endpoints  
+# - DynamoDB tables (3)
+# - AWS Batch compute environment
+# - ECR repository
+# - CloudFront distribution
+# - VPC endpoints
+```
+
+### 4. **Docker Container Deployment** (3 minutes)
+```bash
+# Method 1: Automatic via GitHub Actions (Recommended)
+git add . && git commit -m "Initial setup"
+git push origin main
+# GitHub Actions will automatically build and push to ECR
+
+# Method 2: Manual Docker deployment
 terraform output ecr_login_command | bash
 terraform output docker_build_command | bash  
 terraform output docker_push_command | bash
+
+# Verify container deployment
+aws batch describe-job-definitions --job-definition-name ocr-processor-batch
 ```
 
-### 3. **Test Your System** (30 seconds)
+### 5. **System Testing & Verification** (2 minutes)
 ```bash
 # Get your API endpoint
 API_URL=$(terraform output -raw api_gateway_url)
+echo "API Gateway URL: $API_URL"
 
-# Upload a document (any PDF, image, etc.)
-curl -X POST "$API_URL/batch/upload" \
+# Test 1: Upload a document (any PDF, image, etc.)
+curl -X POST "$API_URL/upload" \
   -F "file=@your-document.pdf" \
-  -F "title=Test Doc" \
-  -F "publication=Demo"
+  -F "title=Test Document" \
+  -F "publication=Demo" \
+  -F "author=Test Author"
 
-# Search your documents
-curl "$API_URL/search?q=your+search+term&fuzzy=true"
+# Test 2: Check processing status
+curl "$API_URL/batch/processed"
+
+# Test 3: Test intelligent search (wait 30s-5min for processing)
+curl "$API_URL/batch/search?q=your+search+term&fuzzy=true"
+
+# Test 4: Verify both processing paths work
+# Short-batch: Upload file ≤300KB (goes to Claude AI)
+# Long-batch: Upload file >300KB (goes to AWS Batch + Textract)
 ```
 
-**🎉 Done!** Your intelligent OCR system is now processing documents with dual AI engines.
+### 6. **Production Configuration** (Optional)
+```bash
+# Enable production monitoring
+terraform apply -var="enable_monitoring=true"
+
+# Configure custom domain (optional)
+terraform apply -var="custom_domain=your-domain.com"
+
+# Set up alerts and notifications
+terraform apply -var="notification_email=your-email@domain.com"
+```
+
+**🎉 Complete Setup Done!** 
+
+Your enterprise OCR system is now running with:
+- ✅ **Dual AI Processing** (Claude + AWS Textract)
+- ✅ **Intelligent Search** with 70-80% fuzzy accuracy
+- ✅ **Auto-scaling Infrastructure** handling any file size
+- ✅ **Production Monitoring** and error recovery
+- ✅ **Cost-optimized Architecture** saving $300-500/month
+
+### **🔧 Troubleshooting Common Setup Issues**
+
+#### **Docker/ECR Issues**
+```bash
+# If ECR push fails
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin YOUR_ECR_URI
+
+# If Docker build fails
+cd aws_batch
+docker build --no-cache -t ocr-processor-batch .
+
+# Check container locally
+docker run --rm -it ocr-processor-batch /bin/bash
+```
+
+#### **GitHub Actions Issues**
+```bash
+# Verify GitHub secrets are set:
+# Go to: Repository > Settings > Secrets and Variables > Actions
+# Required secrets:
+# - AWS_ACCESS_KEY_ID
+# - AWS_SECRET_ACCESS_KEY  
+# - AWS_REGION (ap-southeast-2)
+
+# Check workflow status:
+# GitHub repository > Actions tab
+```
+
+#### **AWS Batch Issues**
+```bash
+# Check Batch environment status
+aws batch describe-compute-environments
+aws batch describe-job-queues
+aws batch describe-job-definitions
+
+# Force update job definition
+terraform apply -replace="aws_batch_job_definition.ocr_processor"
+```
+
+---
 
 ## 🏗️ Architecture Overview
 
