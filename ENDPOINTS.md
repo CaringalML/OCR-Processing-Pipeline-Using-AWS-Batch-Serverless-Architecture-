@@ -248,35 +248,6 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Process Long-Batch
-**Endpoint:** `POST /long-batch/process`
-
-**Purpose:** Submit file for heavy processing using AWS Batch + Textract.
-
-**Request:**
-```json
-{
-  "fileId": "uuid-of-uploaded-file"
-}
-```
-
-**Response:**
-```json
-{
-  "message": "Job submitted successfully",
-  "fileId": "uuid-of-uploaded-file",
-  "jobId": "aws-batch-job-id",
-  "jobName": "textract-job-uuid",
-  "estimatedTime": "5-15 minutes",
-  "status": "submitted"
-}
-```
-
----
-
-
----
-
 ## Long-Batch Operations
 - `GET /long-batch/search` - Search only long-batch documents
 - `DELETE /long-batch/delete/{fileId}` - Delete long-batch file
@@ -292,35 +263,6 @@ Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as al
 **Endpoint:** `POST /short-batch/upload`
 
 **Purpose:** Force upload to short-batch processing (bypasses smart routing).
-
----
-
-## Process Short-Batch
-**Endpoint:** `POST /short-batch/process`
-
-**Purpose:** Submit file for fast processing using Claude AI OCR.
-
-**Request:**
-```json
-{
-  "fileId": "uuid-of-uploaded-file"
-}
-```
-
-**Response:**
-```json
-{
-  "message": "File queued for short batch processing",
-  "fileId": "uuid-of-uploaded-file",
-  "messageId": "sqs-message-id",
-  "status": "queued",
-  "estimatedProcessingTime": "10-30 seconds",
-  "checkStatusUrl": "/short-batch/processed?fileId=uuid-of-uploaded-file"
-}
-```
-
----
-
 
 ---
 
@@ -425,19 +367,16 @@ setTimeout(async () => {
 
 ## 2. Forced Short-Batch Processing
 ```javascript
-// Force short-batch processing
+// Force short-batch processing (bypasses smart routing)
 const uploadResponse = await fetch('/v1/short-batch/upload', {
   method: 'POST',
   body: formData
 });
 
-const processResponse = await fetch('/v1/short-batch/process', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ fileId })
-});
+const { fileId } = await uploadResponse.json();
 
-// Check results using unified endpoint
+// Processing starts automatically after upload
+// Check results using unified endpoint after processing time
 setTimeout(async () => {
   const results = await fetch(`/v1/batch/processed?fileId=${fileId}`);
   const data = await results.json();

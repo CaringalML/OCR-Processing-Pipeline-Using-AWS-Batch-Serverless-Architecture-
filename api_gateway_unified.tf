@@ -37,13 +37,6 @@ resource "aws_api_gateway_resource" "long_batch_upload" {
   path_part   = var.api_path_upload
 }
 
-# Long Batch - Process
-resource "aws_api_gateway_resource" "long_batch_process" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = var.api_path_process
-}
-
 # Long Batch - Processed
 resource "aws_api_gateway_resource" "long_batch_processed" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -145,38 +138,38 @@ resource "aws_api_gateway_resource" "edit" {
   path_part   = var.api_path_edit
 }
 
-# Delete Resource (file management)
-resource "aws_api_gateway_resource" "delete" {
+# Batch Delete Resource (file management under /batch/)
+resource "aws_api_gateway_resource" "batch_delete" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  parent_id   = aws_api_gateway_resource.batch.id
   path_part   = var.api_path_delete
 }
 
-# Delete with fileId
-resource "aws_api_gateway_resource" "delete_file_id" {
+# Batch Delete with fileId
+resource "aws_api_gateway_resource" "batch_delete_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.delete.id
+  parent_id   = aws_api_gateway_resource.batch_delete.id
   path_part   = "{fileId}"
 }
 
-# Recycle Bin Resource (recycle bin management)
-resource "aws_api_gateway_resource" "recycle_bin" {
+# Batch Recycle Bin Resource (recycle bin management under /batch/)
+resource "aws_api_gateway_resource" "batch_recycle_bin" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  parent_id   = aws_api_gateway_resource.batch.id
   path_part   = var.api_path_recycle_bin
 }
 
-# Restore Resource (restore from recycle bin)
-resource "aws_api_gateway_resource" "restore" {
+# Batch Restore Resource (restore from recycle bin under /batch/)
+resource "aws_api_gateway_resource" "batch_restore" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  parent_id   = aws_api_gateway_resource.batch.id
   path_part   = var.api_path_restore
 }
 
-# Restore with fileId
-resource "aws_api_gateway_resource" "restore_file_id" {
+# Batch Restore with fileId
+resource "aws_api_gateway_resource" "batch_restore_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.restore.id
+  parent_id   = aws_api_gateway_resource.batch_restore.id
   path_part   = "{fileId}"
 }
 
@@ -326,88 +319,88 @@ resource "aws_lambda_permission" "edit_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
-# Delete POST Method (delete file)
-resource "aws_api_gateway_method" "delete_post" {
+# Batch Delete Method (delete file)
+resource "aws_api_gateway_method" "batch_delete_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.delete_file_id.id
+  resource_id   = aws_api_gateway_resource.batch_delete_file_id.id
   http_method   = "DELETE"
   authorization = "NONE"
 }
 
-# Delete POST Integration (to deleter Lambda)
-resource "aws_api_gateway_integration" "delete_post" {
+# Batch Delete Integration (to deleter Lambda)
+resource "aws_api_gateway_integration" "batch_delete_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.delete_file_id.id
-  http_method = aws_api_gateway_method.delete_post.http_method
+  resource_id = aws_api_gateway_resource.batch_delete_file_id.id
+  http_method = aws_api_gateway_method.batch_delete_post.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.deleter.invoke_arn
 }
 
-# Lambda Permission for Delete
-resource "aws_lambda_permission" "delete_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Lambda Permission for Batch Delete
+resource "aws_lambda_permission" "batch_delete_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchDelete"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.deleter.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/DELETE/batch/delete/*"
 }
 
-# Recycle Bin GET Method (view recycle bin)
-resource "aws_api_gateway_method" "recycle_bin_get" {
+# Batch Recycle Bin GET Method (view recycle bin)
+resource "aws_api_gateway_method" "batch_recycle_bin_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.recycle_bin.id
+  resource_id   = aws_api_gateway_resource.batch_recycle_bin.id
   http_method   = "GET"
   authorization = "NONE"
 }
 
-# Recycle Bin GET Integration (to recycle bin reader Lambda)
-resource "aws_api_gateway_integration" "recycle_bin_get" {
+# Batch Recycle Bin GET Integration (to recycle bin reader Lambda)
+resource "aws_api_gateway_integration" "batch_recycle_bin_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.recycle_bin.id
-  http_method = aws_api_gateway_method.recycle_bin_get.http_method
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_get.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.recycle_bin_reader.invoke_arn
 }
 
-# Lambda Permission for Recycle Bin
-resource "aws_lambda_permission" "recycle_bin_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Lambda Permission for Batch Recycle Bin
+resource "aws_lambda_permission" "batch_recycle_bin_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchRecycleBin"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.recycle_bin_reader.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/recycle-bin"
 }
 
-# Restore POST Method (restore from recycle bin)
-resource "aws_api_gateway_method" "restore_post" {
+# Batch Restore POST Method (restore from recycle bin)
+resource "aws_api_gateway_method" "batch_restore_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.restore_file_id.id
+  resource_id   = aws_api_gateway_resource.batch_restore_file_id.id
   http_method   = "POST"
   authorization = "NONE"
 }
 
-# Restore POST Integration (to restorer Lambda)
-resource "aws_api_gateway_integration" "restore_post" {
+# Batch Restore POST Integration (to restorer Lambda)
+resource "aws_api_gateway_integration" "batch_restore_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.restore_file_id.id
-  http_method = aws_api_gateway_method.restore_post.http_method
+  resource_id = aws_api_gateway_resource.batch_restore_file_id.id
+  http_method = aws_api_gateway_method.batch_restore_post.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.restorer.invoke_arn
 }
 
-# Lambda Permission for Restore
-resource "aws_lambda_permission" "restore_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Lambda Permission for Batch Restore
+resource "aws_lambda_permission" "batch_restore_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchRestore"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.restorer.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/restore/*"
 }
 
 # Long Batch - Restore with fileId
@@ -433,13 +426,6 @@ resource "aws_api_gateway_resource" "short_batch_upload" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.short_batch.id
   path_part   = var.api_path_upload
-}
-
-# Short Batch - Process
-resource "aws_api_gateway_resource" "short_batch_process" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = var.api_path_process
 }
 
 # Short Batch - Processed
@@ -545,26 +531,6 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
-
-# Long Batch Process POST Method
-resource "aws_api_gateway_method" "long_batch_process_post" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_process.id
-  http_method   = "POST"
-  authorization = "NONE"
-}
-
-# Long Batch Process POST Integration
-resource "aws_api_gateway_integration" "long_batch_process_post" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_process.id
-  http_method = aws_api_gateway_method.long_batch_process_post.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.sqs_batch_processor.invoke_arn
-}
-
 
 # Long Batch Search GET Method
 resource "aws_api_gateway_method" "long_batch_search_get" {
@@ -683,26 +649,6 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
-
-# Short Batch Process POST Method
-resource "aws_api_gateway_method" "short_batch_process_post" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.short_batch_process.id
-  http_method   = "POST"
-  authorization = "NONE"
-}
-
-# Short Batch Process POST Integration
-resource "aws_api_gateway_integration" "short_batch_process_post" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.short_batch_process.id
-  http_method = aws_api_gateway_method.short_batch_process_post.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.short_batch_submitter.invoke_arn
-}
-
 
 # Short Batch Search GET Method
 resource "aws_api_gateway_method" "short_batch_search_get" {
@@ -955,9 +901,12 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.batch_upload_post,
     aws_api_gateway_integration.batch_processed_get,
     aws_api_gateway_integration.batch_processed_edit_put,
+    # New Unified Batch File Management
+    aws_api_gateway_integration.batch_delete_post,
+    aws_api_gateway_integration.batch_recycle_bin_get,
+    aws_api_gateway_integration.batch_restore_post,
     # Long Batch Dependencies
     aws_api_gateway_integration.long_batch_upload_post,
-    aws_api_gateway_integration.long_batch_process_post,
     aws_api_gateway_integration.long_batch_search_get,
     aws_api_gateway_integration.long_batch_edit_put,
     aws_api_gateway_integration.long_batch_delete_delete,
@@ -965,7 +914,6 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.long_batch_restore_post,
     # Short Batch Dependencies
     aws_api_gateway_integration.short_batch_upload_post,
-    aws_api_gateway_integration.short_batch_process_post,
     aws_api_gateway_integration.short_batch_search_get,
     aws_api_gateway_integration.short_batch_edit_put,
     aws_api_gateway_integration.short_batch_delete_delete,
@@ -991,8 +939,6 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.long_batch_upload.id,
       aws_api_gateway_resource.short_batch_upload.id,
-      aws_api_gateway_resource.long_batch_process.id,
-      aws_api_gateway_resource.short_batch_process.id,
     ]))
   }
 
@@ -1048,23 +994,6 @@ resource "aws_lambda_permission" "invoice_reader_api_gateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/invoices/processed"
 }
-
-resource "aws_lambda_permission" "sqs_processor" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.sqs_batch_processor.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/long-batch/process"
-}
-
-resource "aws_lambda_permission" "short_batch_submitter" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.short_batch_submitter.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/process"
-}
-
 
 resource "aws_lambda_permission" "search_long_batch" {
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"

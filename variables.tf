@@ -613,11 +613,6 @@ variable "api_path_upload" {
   default     = "upload"
 }
 
-variable "api_path_process" {
-  description = "Path segment for processing trigger actions (manual processing initiation)"
-  type        = string
-  default     = "process"
-}
 
 variable "api_path_processed" {
   description = "Path segment for retrieving processed results (GET operations for completed files)"
