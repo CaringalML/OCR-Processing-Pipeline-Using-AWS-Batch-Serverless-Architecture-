@@ -9,6 +9,13 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 
 **Current Stage:** `v1` (production deployment)
 
+## 🚀 **Key Features**
+- 🤖 **Smart Document Processing**: Automatic routing based on file size and complexity
+- 🌍 **Global Timezone Support**: ISO 8601 date format for worldwide compatibility  
+- 📁 **Advanced File Management**: Complete lifecycle with recycle bin and restoration
+- 🔍 **Unified Search**: Search across all documents regardless of processing method
+- 📊 **Rich Metadata**: Publication details, OCR quality metrics, and processing insights
+
 ## ✅ CONFIRMED WORKING ENDPOINTS
 
 ### **Unified Batch Processing Endpoint**
@@ -49,6 +56,35 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 - **Processing:** Lambda → Claude Sonnet 4 → Analysis
 - **Storage:** Results saved to unified `processing_results` table
 - **Use Case:** Quick processing, high-quality OCR, small to medium files
+
+---
+
+# Date Format Standard
+
+## ISO 8601 Format (Global Best Practice)
+All dates in API responses use **ISO 8601 format** for maximum compatibility with global users:
+```
+"2025-08-16T05:39:00.000000+00:00"
+```
+
+### Client-Side Date Conversion
+Frontend applications can display dates in user's local timezone:
+```javascript
+// Convert to user's local timezone
+const formatLocalDate = (isoDate) => {
+    const date = new Date(isoDate);
+    return date.toLocaleString('en-NZ', {
+        day: 'numeric', month: 'long', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+        timeZoneName: 'short'
+    });
+};
+
+// Example output:
+// NZ Users: "16 August 2025, 5:39 PM NZST"
+// US Users: "16 August 2025, 1:39 AM EDT"
+// UK Users: "16 August 2025, 6:39 AM BST"
+```
 
 ---
 
@@ -231,11 +267,128 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Other Unified Operations
-- `GET /batch/processed/edit?fileId={fileId}` - Edit OCR results
-- `DELETE /delete/{fileId}` - Delete file (moves to recycle bin)
-- `GET /recycle-bin` - List deleted files
-- `POST /restore/{fileId}` - Restore from recycle bin
+# File Management & Recycle Bin
+
+## Delete File (Soft Delete)
+**Endpoint:** `DELETE /batch/delete/{fileId}`
+
+**Purpose:** Moves file to recycle bin with 30-day retention period.
+
+**Response:**
+```json
+{
+    "message": "File xyz moved to recycle bin",
+    "fileId": "xyz",
+    "fileName": "document.pdf",
+    "deletedAt": "2025-08-16T05:39:00.000000+00:00",
+    "willBeDeletedAt": "2025-09-15T05:39:00.000000+00:00",
+    "recycleBinRetentionDays": 30
+}
+```
+
+---
+
+## View Recycle Bin
+**Endpoint:** `GET /batch/recycle-bin`
+
+**Purpose:** List all deleted files with expiry information and complete metadata.
+
+**Query Parameters:**
+- `limit` - Number of items to return (default: 50, max: 100)
+- `fileId` - Get specific deleted file
+- `lastKey` - Pagination token
+
+**Response:**
+```json
+{
+    "items": [
+        {
+            "fileId": "xyz",
+            "deletedAt": "2025-08-16T05:39:00.000000+00:00",
+            "expiresAt": "2025-09-15T05:39:00.000000+00:00",
+            "daysRemaining": 29,
+            "deletedBy": "192.168.1.1",
+            "metadata": {
+                "filename": "document.pdf",
+                "filesize": 194423,
+                "mimeType": "application/pdf",
+                "processingStatus": "completed",
+                "uploadedAt": "2025-08-15T15:30:00.000000+00:00",
+                "title": "Research Paper",
+                "author": "Dr. Smith",
+                "publication": "Nature Journal",
+                "year": "2024",
+                "description": "Climate research findings",
+                "page": "15-23",
+                "tags": ["climate", "research", "environment"]
+            },
+            "hasOcrResults": true,
+            "ocrSummary": {
+                "textLength": 1340,
+                "hasFormattedText": true,
+                "userEdited": false
+            }
+        }
+    ],
+    "count": 1,
+    "hasMore": false
+}
+```
+
+---
+
+## Restore File
+**Endpoint:** `POST /batch/restore/{fileId}`
+
+**Purpose:** Restore file from recycle bin back to active state.
+
+**Response:**
+```json
+{
+    "message": "File xyz restored successfully",
+    "fileId": "xyz",
+    "fileName": "document.pdf",
+    "restoredAt": "2025-08-16T05:45:00.000000+00:00",
+    "wasDeletedAt": "2025-08-16T05:39:00.000000+00:00",
+    "processingStatus": "completed"
+}
+```
+
+---
+
+## Permanent Delete
+**Endpoint:** `DELETE /batch/delete/{fileId}?permanent=true`
+
+**Purpose:** Permanently delete file (bypasses recycle bin - irreversible).
+
+**Response:**
+```json
+{
+    "message": "File xyz permanently deleted",
+    "fileId": "xyz",
+    "fileName": "document.pdf"
+}
+```
+
+---
+
+## Edit OCR Results
+**Endpoint:** `PUT /batch/processed/edit?fileId={fileId}`
+
+**Purpose:** Edit and update OCR results and metadata.
+
+**Request Body:**
+```json
+{
+    "formattedText": "Updated OCR content...",
+    "refinedText": "Grammar-corrected content...",
+    "metadata": {
+        "title": "Updated Title",
+        "author": "Updated Author",
+        "publication": "Updated Publication"
+    }
+}
+```
 
 ---
 
@@ -250,10 +403,8 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ## Long-Batch Operations
 - `GET /long-batch/search` - Search only long-batch documents
-- `DELETE /long-batch/delete/{fileId}` - Delete long-batch file
-- `GET /long-batch/recycle-bin` - Long-batch recycle bin
-- `POST /long-batch/restore/{fileId}` - Restore long-batch file
-Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
+
+**File Management:** All file operations (delete, restore, recycle bin, edit) use the unified `/batch/` endpoints for consistent access across all processing types.
 
 ---
 
@@ -268,10 +419,12 @@ Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as al
 
 ## Short-Batch Operations
 - `GET /short-batch/search` - Search only short-batch documents
-- `DELETE /short-batch/delete/{fileId}` - Delete short-batch file
-- `GET /short-batch/recycle-bin` - Short-batch recycle bin  
-- `POST /short-batch/restore/{fileId}` - Restore short-batch file
-Note: Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
+
+**Note:** File management (delete, restore, recycle bin) should use the unified endpoints:
+- Use `/batch/delete/{fileId}` instead of `/short-batch/delete/{fileId}`
+- Use `/batch/recycle-bin` instead of `/short-batch/recycle-bin`
+- Use `/batch/restore/{fileId}` instead of `/short-batch/restore/{fileId}`
+- Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
 
 ---
 
@@ -411,6 +564,29 @@ const allFiles = await fetch('/v1/batch/processed');
 
 // Get specific processed file
 const specificFile = await fetch('/v1/batch/processed?fileId=your-file-id');
+```
+
+## 5. File Management & Recycle Bin Workflow
+```javascript
+// Delete file (soft delete to recycle bin)
+await fetch(`/v1/batch/delete/${fileId}`, { method: 'DELETE' });
+
+// View recycle bin contents
+const recycleBin = await fetch('/v1/batch/recycle-bin');
+const deletedFiles = await recycleBin.json();
+
+// Restore file from recycle bin
+await fetch(`/v1/batch/restore/${fileId}`, { method: 'POST' });
+
+// Permanent delete (bypasses recycle bin)
+await fetch(`/v1/batch/delete/${fileId}?permanent=true`, { method: 'DELETE' });
+
+// Display dates in user's timezone
+deletedFiles.items.forEach(item => {
+    const localDeletedAt = new Date(item.deletedAt).toLocaleString();
+    const localExpiresAt = new Date(item.expiresAt).toLocaleString();
+    console.log(`Deleted: ${localDeletedAt}, Expires: ${localExpiresAt}`);
+});
 ```
 
 ---

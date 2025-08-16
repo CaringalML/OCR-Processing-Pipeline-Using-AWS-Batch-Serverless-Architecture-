@@ -84,22 +84,32 @@ def lambda_handler(event, context):
             current_timestamp = int(datetime.now(timezone.utc).timestamp())
             days_remaining = max(0, int((ttl_timestamp - current_timestamp) / 86400))
             
+            # The original_metadata contains the entire record from the consolidated table
+            original_data = item.get('original_metadata', {})
+            
+            # Calculate expiry date
+            expiry_date = datetime.fromtimestamp(ttl_timestamp, tz=timezone.utc)
+            
             processed_item = {
                 'fileId': item['file_id'],
-                'deletedAt': item['deleted_timestamp'],
-                'deletionDate': item['deletion_date'],
+                'deletedAt': item['deleted_timestamp'],  # ISO 8601 format
+                'expiresAt': expiry_date.isoformat(),     # ISO 8601 format
                 'daysRemaining': days_remaining,
                 'deletedBy': item.get('deleted_by', 'unknown'),
                 'metadata': {
-                    'filename': item['original_metadata'].get('file_name', ''),
-                    'filesize': item['original_metadata'].get('file_size', 0),
-                    'mimeType': item['original_metadata'].get('content_type', ''),
-                    'processingStatus': item['original_metadata'].get('processing_status', 'unknown'),
-                    'uploadedAt': item['original_metadata'].get('upload_timestamp', ''),
-                    'title': item['original_metadata'].get('title', ''),
-                    'author': item['original_metadata'].get('author', ''),
-                    'publication': item['original_metadata'].get('publication', ''),
-                    'year': item['original_metadata'].get('year', '')
+                    'filename': original_data.get('file_name', ''),
+                    'filesize': original_data.get('file_size', 0),
+                    'mimeType': original_data.get('content_type', ''),
+                    'processingStatus': original_data.get('processing_status', 'unknown'),
+                    'uploadedAt': original_data.get('upload_timestamp', ''),  # Keep ISO format
+                    # Publication metadata from consolidated table structure
+                    'title': original_data.get('publication_title', ''),
+                    'author': original_data.get('publication_author', ''),
+                    'publication': original_data.get('publication', ''),
+                    'year': original_data.get('publication_year', ''),
+                    'description': original_data.get('publication_description', ''),
+                    'page': original_data.get('publication_page', ''),
+                    'tags': original_data.get('publication_tags', [])
                 }
             }
             

@@ -948,12 +948,13 @@ resource "aws_iam_policy" "restorer_policy" {
       {
         Effect = var.iam_effect_allow
         Action = [
+          "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:Query"
         ]
         Resource = [
           aws_dynamodb_table.processing_results.arn,
-          aws_dynamodb_table.processing_results.arn
+          "${aws_dynamodb_table.processing_results.arn}/index/*"
         ]
       },
       {

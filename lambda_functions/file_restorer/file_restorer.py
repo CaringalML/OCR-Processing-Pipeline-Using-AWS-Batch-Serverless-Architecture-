@@ -107,7 +107,8 @@ def lambda_handler(event, context):
         
         # Restore metadata
         original_metadata = recycled_item['original_metadata']
-        original_metadata['restored_at'] = datetime.now(timezone.utc).isoformat()
+        restored_timestamp = datetime.now(timezone.utc)
+        original_metadata['restored_at'] = restored_timestamp.isoformat()
         original_metadata['restored_from_recycle_bin'] = True
         
         results_table.put_item(Item=original_metadata)
@@ -115,7 +116,7 @@ def lambda_handler(event, context):
         # Restore results if they existed
         if recycled_item.get('original_results'):
             original_results = recycled_item['original_results']
-            original_results['restored_at'] = datetime.now(timezone.utc).isoformat()
+            original_results['restored_at'] = restored_timestamp.isoformat()
             
             results_table.put_item(Item=original_results)
         
@@ -137,7 +138,8 @@ def lambda_handler(event, context):
                 'message': f'File {file_id} restored successfully',
                 'fileId': file_id,
                 'fileName': original_metadata.get('file_name', 'Unknown'),
-                'restoredAt': original_metadata['restored_at'],
+                'restoredAt': restored_timestamp.isoformat(),  # ISO 8601 format
+                'wasDeletedAt': recycled_item['deleted_timestamp'],  # ISO 8601 format
                 'processingStatus': original_metadata.get('processing_status', 'unknown')
             })
         }

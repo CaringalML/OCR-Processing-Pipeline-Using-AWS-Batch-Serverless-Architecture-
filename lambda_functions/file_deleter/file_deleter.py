@@ -189,8 +189,9 @@ def lambda_handler(event, context):
                 'message': f'File {file_id} moved to recycle bin',
                 'fileId': file_id,
                 'fileName': file_metadata.get('file_name', 'Unknown'),
-                'deletedAt': deleted_timestamp,
-                'willBeDeletedAt': (current_timestamp + timedelta(days=30)).isoformat()
+                'deletedAt': deleted_timestamp,  # ISO 8601 format for client-side conversion
+                'willBeDeletedAt': (current_timestamp + timedelta(days=30)).isoformat(),
+                'recycleBinRetentionDays': 30
             })
         }
         
