@@ -44,12 +44,6 @@ resource "aws_api_gateway_resource" "long_batch_processed" {
   path_part   = var.api_path_processed
 }
 
-# Long Batch - Search
-resource "aws_api_gateway_resource" "long_batch_search" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = var.api_path_search
-}
 
 # Long Batch - Edit
 resource "aws_api_gateway_resource" "long_batch_edit" {
@@ -124,12 +118,6 @@ resource "aws_api_gateway_resource" "batch_processed_edit" {
   path_part   = "edit"
 }
 
-# Search Resource (search functionality)
-resource "aws_api_gateway_resource" "search" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = var.api_path_search
-}
 
 # Edit Resource (edit OCR results)
 resource "aws_api_gateway_resource" "edit" {
@@ -171,6 +159,13 @@ resource "aws_api_gateway_resource" "batch_restore_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.batch_restore.id
   path_part   = "{fileId}"
+}
+
+# Batch Search Resource (unified search under /batch/)
+resource "aws_api_gateway_resource" "batch_search" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.batch.id
+  path_part   = var.api_path_search
 }
 
 # Smart route methods and integrations removed - routing now integrated into /upload endpoint
@@ -263,33 +258,6 @@ resource "aws_lambda_permission" "batch_processed_edit_put_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/batch/processed/edit"
 }
 
-# Search GET Method (search functionality)
-resource "aws_api_gateway_method" "search_get" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.search.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-# Search GET Integration (to search Lambda)
-resource "aws_api_gateway_integration" "search_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.search.id
-  http_method = aws_api_gateway_method.search_get.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.search.invoke_arn
-}
-
-# Lambda Permission for Search
-resource "aws_lambda_permission" "search_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.search.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
-}
 
 # Edit POST Method (edit OCR results)
 resource "aws_api_gateway_method" "edit_post" {
@@ -403,6 +371,33 @@ resource "aws_lambda_permission" "batch_restore_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/restore/*"
 }
 
+# Batch Search GET Method (unified search)
+resource "aws_api_gateway_method" "batch_search_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_search.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+# Batch Search GET Integration (to search Lambda)
+resource "aws_api_gateway_integration" "batch_search_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_get.http_method
+  integration_http_method = var.api_integration_http_method
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.search.invoke_arn
+}
+
+# Lambda Permission for Batch Search
+resource "aws_lambda_permission" "batch_search_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchSearch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.search.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/search"
+}
+
 # Long Batch - Restore with fileId
 resource "aws_api_gateway_resource" "long_batch_restore_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -435,12 +430,6 @@ resource "aws_api_gateway_resource" "short_batch_processed" {
   path_part   = var.api_path_processed
 }
 
-# Short Batch - Search
-resource "aws_api_gateway_resource" "short_batch_search" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = var.api_path_search
-}
 
 # Short Batch - Edit
 resource "aws_api_gateway_resource" "short_batch_edit" {
@@ -532,24 +521,6 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
-# Long Batch Search GET Method
-resource "aws_api_gateway_method" "long_batch_search_get" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_search.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-# Long Batch Search GET Integration
-resource "aws_api_gateway_integration" "long_batch_search_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_search.id
-  http_method = aws_api_gateway_method.long_batch_search_get.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.search.invoke_arn
-}
 
 # Long Batch Edit PUT Method
 resource "aws_api_gateway_method" "long_batch_edit_put" {
@@ -650,24 +621,6 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
-# Short Batch Search GET Method
-resource "aws_api_gateway_method" "short_batch_search_get" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.short_batch_search.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-# Short Batch Search GET Integration
-resource "aws_api_gateway_integration" "short_batch_search_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.short_batch_search.id
-  http_method = aws_api_gateway_method.short_batch_search_get.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.search.invoke_arn
-}
 
 # Short Batch Edit PUT Method
 resource "aws_api_gateway_method" "short_batch_edit_put" {
@@ -905,16 +858,15 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.batch_delete_post,
     aws_api_gateway_integration.batch_recycle_bin_get,
     aws_api_gateway_integration.batch_restore_post,
+    aws_api_gateway_integration.batch_search_get,
     # Long Batch Dependencies
     aws_api_gateway_integration.long_batch_upload_post,
-    aws_api_gateway_integration.long_batch_search_get,
     aws_api_gateway_integration.long_batch_edit_put,
     aws_api_gateway_integration.long_batch_delete_delete,
     aws_api_gateway_integration.long_batch_recycle_bin_get,
     aws_api_gateway_integration.long_batch_restore_post,
     # Short Batch Dependencies
     aws_api_gateway_integration.short_batch_upload_post,
-    aws_api_gateway_integration.short_batch_search_get,
     aws_api_gateway_integration.short_batch_edit_put,
     aws_api_gateway_integration.short_batch_delete_delete,
     aws_api_gateway_integration.short_batch_recycle_bin_get,
@@ -932,9 +884,11 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.batch_upload.id,
       aws_api_gateway_resource.batch_processed.id,
       aws_api_gateway_resource.batch_processed_edit.id,
+      aws_api_gateway_resource.batch_search.id,
       aws_api_gateway_integration.batch_upload_post.id,
       aws_api_gateway_integration.batch_processed_get.id,
       aws_api_gateway_integration.batch_processed_edit_put.id,
+      aws_api_gateway_integration.batch_search_get.id,
       aws_api_gateway_resource.long_batch.id,
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.long_batch_upload.id,
@@ -995,21 +949,6 @@ resource "aws_lambda_permission" "invoice_reader_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/invoices/processed"
 }
 
-resource "aws_lambda_permission" "search_long_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.search.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/long-batch/search"
-}
-
-resource "aws_lambda_permission" "search_short_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayShortBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.search.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/search"
-}
 
 resource "aws_lambda_permission" "editor_long_batch" {
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"

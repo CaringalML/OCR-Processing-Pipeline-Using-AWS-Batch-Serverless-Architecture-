@@ -20,8 +20,8 @@ output "api_endpoints" {
     
     # 🔍 SEARCH & DISCOVERY
     
-    # Search documents with fuzzy matching and metadata filtering
-    search_documents = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/search?q={query}"
+    # Search documents with fuzzy matching and metadata filtering (UNIFIED - all documents)
+    search_documents = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/search?q={query}"
     
     # 📁 FILE MANAGEMENT & RECYCLE BIN (Now consistent under /batch/)
     

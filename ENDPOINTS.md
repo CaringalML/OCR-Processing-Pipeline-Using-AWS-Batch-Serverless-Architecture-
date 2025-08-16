@@ -2,6 +2,71 @@
 
 This document provides comprehensive documentation for all available API endpoints in the OCR processing system with unified API architecture.
 
+**Author:** Martin Lawrence Caringal  
+**Contact:** [lawrencecaringal5@gmail.com](mailto:lawrencecaringal5@gmail.com)  
+**Last Updated:** August 16, 2025
+
+---
+
+## 🧪 Postman Testing Guide
+
+### **Quick Setup**
+1. **Import Environment Variables**
+```json
+{
+  "name": "OCR API Environment",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "https://fqyxavdri0.execute-api.ap-southeast-2.amazonaws.com/v1",
+      "enabled": true
+    },
+    {
+      "key": "file_id",
+      "value": "your-file-id-here",
+      "enabled": true
+    }
+  ]
+}
+```
+
+2. **Set Global Headers**
+```json
+{
+  "Content-Type": "application/json",
+  "Accept": "application/json"
+}
+```
+
+### **📁 Postman Collection Structure**
+```
+📂 OCR Document Processing API
+├── 📁 1. File Upload & Processing
+│   ├── POST Smart Upload (Auto-routing)
+│   ├── POST Force Short-batch Upload
+│   └── POST Force Long-batch Upload
+├── 📁 2. Document Retrieval
+│   ├── GET All Processed Documents
+│   └── GET Specific Document by ID
+├── 📁 3. Intelligent Search
+│   ├── GET Basic Search
+│   ├── GET Academic Search with Filters
+│   ├── GET Fuzzy Search
+│   └── GET Multi-language Search
+├── 📁 4. File Management
+│   ├── GET Edit Document Interface
+│   ├── PUT Update Document
+│   ├── DELETE Soft Delete (Recycle Bin)
+│   ├── GET View Recycle Bin
+│   ├── POST Restore from Recycle Bin
+│   └── DELETE Permanent Delete
+└── 📁 5. Invoice Processing
+    ├── POST Upload Invoice
+    └── GET Processed Invoice Data
+```
+
+---
+
 ## Base URL Structure
 ```
 https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
@@ -90,16 +155,62 @@ const formatLocalDate = (isoDate) => {
 
 # Unified Endpoints (All Batch Types)
 
-## Smart Upload
+## Smart Upload 📤
 **Endpoint:** `POST /v1/upload`
 
 **Purpose:** Intelligent file upload with automatic routing based on file size and complexity.
 
 **Note:** The `/v1/batch/upload` endpoint is planned but not yet implemented. Currently use `/v1/upload`.
 
-**Request:** Multipart form data
+### **🧪 Postman Setup**
+```
+Method: POST
+URL: {{base_url}}/upload
+Headers:
+  Content-Type: multipart/form-data (auto-set by Postman)
+```
+
+### **📋 Form Data Parameters**
+```
+file: [Select File] (PDF, JPG, PNG, etc.)
+publication: The Morning Chronicle
+year: 2025
+title: Your Document Title
+author: Dr. Jane Smith
+description: Document description
+page: 1
+tags: research,AI,technology
+priority: normal
+```
+
+### **📝 Postman Pre-request Script**
+```javascript
+// Auto-generate metadata for testing
+pm.globals.set("timestamp", new Date().toISOString());
+pm.globals.set("test_title", "Test Document " + new Date().getTime());
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Upload successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains file ID", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData.files[0]).to.have.property('file_id');
+    pm.globals.set("file_id", jsonData.files[0].file_id);
+});
+
+pm.test("Smart routing decision made", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData.files[0].routing).to.have.property('decision');
+});
+```
+
+### **🔧 cURL Example**
 ```bash
-curl -X POST 'https://your-api.execute-api.region.amazonaws.com/v1/upload' \
+curl -X POST '{{base_url}}/upload' \
   -F 'file=@document.pdf' \
   -F 'publication=Magazine' -F 'year=2024' -F 'title=Article Title'
 ```
@@ -122,7 +233,7 @@ curl -X POST 'https://your-api.execute-api.region.amazonaws.com/v1/upload' \
 
 ---
 
-## Get All Processed Files ✅ UNIFIED ENDPOINT
+## Get All Processed Files 📄 ✅ UNIFIED ENDPOINT
 **Endpoint:** `GET /v1/batch/processed`
 
 **Purpose:** Retrieve ALL processed files from both short-batch (Claude AI) and long-batch (AWS Textract) processing pipelines in a single unified response.
@@ -132,6 +243,69 @@ curl -X POST 'https://your-api.execute-api.region.amazonaws.com/v1/upload' \
 - ✅ **Automatic detection**: No need to specify which pipeline the file came from
 - ✅ **Sorted by recency**: Most recently uploaded files first
 - ✅ **Query parameter support**: Filter by specific fileId or limit results
+
+### **🧪 Postman Setup**
+```
+Method: GET
+URL: {{base_url}}/batch/processed
+Headers:
+  Accept: application/json
+```
+
+### **📋 Query Parameters**
+```
+fileId: [Optional] Specific file ID to retrieve
+limit: [Optional] Number of results (default: 50, max: 100)
+status: [Optional] Filter by processing status (default: 'processed')
+```
+
+### **📝 Postman Examples**
+
+#### **1. Get All Processed Files**
+```
+URL: {{base_url}}/batch/processed
+```
+
+#### **2. Get Specific File**
+```
+URL: {{base_url}}/batch/processed?fileId={{file_id}}
+```
+
+#### **3. Get Limited Results**
+```
+URL: {{base_url}}/batch/processed?limit=10
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains files array", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('files');
+    pm.expect(jsonData.files).to.be.an('array');
+});
+
+pm.test("Files have required properties", function () {
+    const jsonData = pm.response.json();
+    if (jsonData.files.length > 0) {
+        const file = jsonData.files[0];
+        pm.expect(file).to.have.property('fileId');
+        pm.expect(file).to.have.property('fileName');
+        pm.expect(file).to.have.property('cloudFrontUrl');
+        pm.expect(file).to.have.property('ocrResults');
+    }
+});
+
+pm.test("Save first file ID for subsequent tests", function () {
+    const jsonData = pm.response.json();
+    if (jsonData.files.length > 0) {
+        pm.globals.set("test_file_id", jsonData.files[0].fileId);
+    }
+});
+```
 
 ---
 
@@ -249,30 +423,191 @@ curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/process
 
 ---
 
-## Search All Documents
-**Endpoint:** `GET /search`
+## Academic Document Search (Google Scholar Style) ✅ **FULLY FUNCTIONAL**
+**Endpoint:** `GET /batch/search` ✅ **INTELLIGENT ACADEMIC SEARCH ENGINE**
 
-**Purpose:** Search across ALL processed documents from both batch types.
+**Purpose:** Advanced academic search across ALL processed documents with Google Scholar-like functionality, intelligent fuzzy matching, and auto-fallback capabilities.
+
+**🧠 Intelligent Search Features:**
+- **Smart Auto-Fuzzy**: Automatically enables fuzzy search when no exact matches found
+- **Contextual Snippets**: Shows relevant text portions with highlighted matches
+- **Academic Relevance Scoring**: Prioritizes title/author/publication matches
+- **Multi-language Support**: Searches across English, Filipino, and other languages
+- **Flexible Thresholds**: Optimized 70% default threshold for better user experience
 
 **Query Parameters:**
-- `q` - Search query (required)
-- `limit` - Results limit (default: 50)
-- `fuzzy` - Enable fuzzy search (true/false)
-- `fuzzyThreshold` - Fuzzy match threshold (0-100)
+- `q` - Search query in title, abstract, or full text (required)
+- `author` - Author name filter (works with fuzzy search)
+- `publication` - Publication/journal name filter  
+- `as_ylo` - Year range start (e.g., "2020")
+- `as_yhi` - Year range end (e.g., "2025")
+- `scisbd` - Sort by: "relevance" (default) or "date"
+- `num` - Number of results (default: 20, max: 100)
+- `fuzzy` - Enable fuzzy search explicitly (true/false, auto-enabled when needed)
+- `fuzzyThreshold` - Fuzzy match threshold (0-100, default: 70)
 
-**Example:**
-```bash
-curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
+### **🧪 Postman Setup**
 ```
+Method: GET
+URL: {{base_url}}/batch/search
+Headers:
+  Accept: application/json
+```
+
+### **📋 Query Parameters**
+```
+q: [Required] Search query
+author: [Optional] Author name filter
+publication: [Optional] Publication/journal filter
+as_ylo: [Optional] Year range start (e.g., "2020")
+as_yhi: [Optional] Year range end (e.g., "2025")
+scisbd: [Optional] Sort by "relevance" or "date"
+num: [Optional] Number of results (default: 20, max: 100)
+fuzzy: [Optional] Enable fuzzy search (true/false)
+fuzzyThreshold: [Optional] Fuzzy threshold (0-100, default: 70)
+```
+
+### **📝 Postman Examples Collection**
+
+#### **1. Basic Auto-Fuzzy Search**
+```
+URL: {{base_url}}/batch/search?q=electric+vehicles
+Expected: Finds "electric cars" with fuzzy score ~73%
+```
+
+#### **2. Academic Search with Filters**
+```
+URL: {{base_url}}/batch/search?q=transport&publication=Chronicle&as_ylo=1920&as_yhi=1930
+Expected: 3 results with academic relevance scoring
+```
+
+#### **3. Poetry/Literature Search**
+```
+URL: {{base_url}}/batch/search?q=life+poem&author=Van+Dyke
+Expected: Finds Henry Van Dyke poetry content
+```
+
+#### **4. Explicit Fuzzy Search**
+```
+URL: {{base_url}}/batch/search?q=transportation&fuzzy=true&fuzzyThreshold=75
+Expected: Fuzzy matches for transport-related content
+```
+
+#### **5. Phrase Pattern Matching**
+```
+URL: {{base_url}}/batch/search?q=happy+heart+pays+toll+Youth+Age
+Expected: Exact phrase patterns with contextual snippets
+```
+
+#### **6. Multi-language Content**
+```
+URL: {{base_url}}/batch/search?q=dianapichler
+Expected: Finds Filipino poetry attribution
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Search successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response has search structure", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('success', true);
+    pm.expect(jsonData).to.have.property('results');
+    pm.expect(jsonData).to.have.property('searchInfo');
+});
+
+pm.test("Search info contains intelligence data", function () {
+    const jsonData = pm.response.json();
+    const searchInfo = jsonData.searchInfo;
+    pm.expect(searchInfo).to.have.property('fuzzySearchUsed');
+    pm.expect(searchInfo).to.have.property('totalScanned');
+    pm.expect(searchInfo).to.have.property('autoFuzzyTriggered');
+});
+
+pm.test("Results have academic structure", function () {
+    const jsonData = pm.response.json();
+    if (jsonData.results.length > 0) {
+        const result = jsonData.results[0];
+        pm.expect(result).to.have.property('title');
+        pm.expect(result).to.have.property('authors');
+        pm.expect(result).to.have.property('fileUrl');
+        pm.expect(result).to.have.property('ocrResults');
+        
+        // Test fuzzy search results
+        if (jsonData.searchInfo.fuzzySearchUsed) {
+            pm.expect(result).to.have.property('fuzzyScore');
+            pm.expect(result).to.have.property('matchField');
+            pm.expect(result.fuzzyScore).to.be.above(0);
+        }
+    }
+});
+
+pm.test("Fuzzy score validation", function () {
+    const jsonData = pm.response.json();
+    if (jsonData.results.length > 0 && jsonData.searchInfo.fuzzySearchUsed) {
+        jsonData.results.forEach(result => {
+            if (result.fuzzyScore) {
+                pm.expect(result.fuzzyScore).to.be.within(0, 100);
+            }
+        });
+    }
+});
+```
+
+### **🔧 cURL Examples**
+```bash
+# Basic search with auto-fuzzy fallback
+curl '{{base_url}}/batch/search?q=electric+vehicles'
+
+# Academic filtering with year range
+curl '{{base_url}}/batch/search?q=climate&publication=Chronicle&as_ylo=1920&as_yhi=1930'
+
+# Explicit fuzzy search with custom threshold
+curl '{{base_url}}/batch/search?q=transportation&fuzzy=true&fuzzyThreshold=75'
+```
+
+**📊 Response Features:**
+- **Fuzzy Score**: Shows similarity percentage for fuzzy matches
+- **Match Field**: Indicates where match was found (text, title, author, etc.)
+- **Smart Snippets**: Contextual text excerpts around matches
+- **Academic Metadata**: Full publication details, authors, years
+- **CloudFront URLs**: Direct document access links
+- **Search Intelligence**: Shows if auto-fuzzy was triggered
+
 
 ---
 
 # File Management & Recycle Bin
 
-## Delete File (Soft Delete)
+## Delete File (Soft Delete) 🗑️
 **Endpoint:** `DELETE /batch/delete/{fileId}`
 
 **Purpose:** Moves file to recycle bin with 30-day retention period.
+
+### **🧪 Postman Setup**
+```
+Method: DELETE
+URL: {{base_url}}/batch/delete/{{test_file_id}}
+Headers:
+  Accept: application/json
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Delete successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains deletion info", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('message');
+    pm.expect(jsonData).to.have.property('deletedAt');
+    pm.expect(jsonData).to.have.property('willBeDeletedAt');
+    pm.expect(jsonData).to.have.property('recycleBinRetentionDays', 30);
+});
+```
 
 **Response:**
 ```json
@@ -288,15 +623,67 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## View Recycle Bin
+## View Recycle Bin 📋
 **Endpoint:** `GET /batch/recycle-bin`
 
 **Purpose:** List all deleted files with expiry information and complete metadata.
 
-**Query Parameters:**
-- `limit` - Number of items to return (default: 50, max: 100)
-- `fileId` - Get specific deleted file
-- `lastKey` - Pagination token
+### **🧪 Postman Setup**
+```
+Method: GET
+URL: {{base_url}}/batch/recycle-bin
+Headers:
+  Accept: application/json
+```
+
+### **📋 Query Parameters**
+```
+limit: [Optional] Number of items (default: 50, max: 100)
+fileId: [Optional] Get specific deleted file
+lastKey: [Optional] Pagination token
+```
+
+### **📝 Postman Examples**
+
+#### **1. View All Deleted Files**
+```
+URL: {{base_url}}/batch/recycle-bin
+```
+
+#### **2. View Specific Deleted File**
+```
+URL: {{base_url}}/batch/recycle-bin?fileId={{test_file_id}}
+```
+
+#### **3. Limited Results**
+```
+URL: {{base_url}}/batch/recycle-bin?limit=10
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Recycle bin retrieved", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response has recycle bin structure", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('items');
+    pm.expect(jsonData).to.have.property('count');
+    pm.expect(jsonData.items).to.be.an('array');
+});
+
+pm.test("Deleted items have expiry info", function () {
+    const jsonData = pm.response.json();
+    if (jsonData.items.length > 0) {
+        const item = jsonData.items[0];
+        pm.expect(item).to.have.property('deletedAt');
+        pm.expect(item).to.have.property('expiresAt');
+        pm.expect(item).to.have.property('daysRemaining');
+        pm.expect(item.daysRemaining).to.be.above(0);
+    }
+});
+```
 
 **Response:**
 ```json
@@ -337,10 +724,33 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Restore File
+## Restore File ♻️
 **Endpoint:** `POST /batch/restore/{fileId}`
 
 **Purpose:** Restore file from recycle bin back to active state.
+
+### **🧪 Postman Setup**
+```
+Method: POST
+URL: {{base_url}}/batch/restore/{{test_file_id}}
+Headers:
+  Accept: application/json
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Restore successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains restore info", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('message');
+    pm.expect(jsonData).to.have.property('restoredAt');
+    pm.expect(jsonData).to.have.property('wasDeletedAt');
+    pm.expect(jsonData).to.have.property('processingStatus');
+});
+```
 
 **Response:**
 ```json
@@ -356,10 +766,36 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 
 ---
 
-## Permanent Delete
+## Permanent Delete ⚠️
 **Endpoint:** `DELETE /batch/delete/{fileId}?permanent=true`
 
 **Purpose:** Permanently delete file (bypasses recycle bin - irreversible).
+
+### **🧪 Postman Setup**
+```
+Method: DELETE
+URL: {{base_url}}/batch/delete/{{test_file_id}}?permanent=true
+Headers:
+  Accept: application/json
+```
+
+### **⚠️ Warning Tests**
+```javascript
+pm.test("Permanent deletion successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response confirms permanent deletion", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('message');
+    pm.expect(jsonData.message).to.include('permanently deleted');
+    pm.expect(jsonData).to.have.property('fileId');
+});
+
+pm.test("⚠️ IRREVERSIBLE ACTION", function () {
+    console.log("WARNING: This file has been permanently deleted and cannot be recovered!");
+});
+```
 
 **Response:**
 ```json
@@ -402,7 +838,6 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 ---
 
 ## Long-Batch Operations
-- `GET /long-batch/search` - Search only long-batch documents
 
 **File Management:** All file operations (delete, restore, recycle bin, edit) use the unified `/batch/` endpoints for consistent access across all processing types.
 
@@ -418,7 +853,6 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 ---
 
 ## Short-Batch Operations
-- `GET /short-batch/search` - Search only short-batch documents
 
 **Note:** File management (delete, restore, recycle bin) should use the unified endpoints:
 - Use `/batch/delete/{fileId}` instead of `/short-batch/delete/{fileId}`
@@ -466,6 +900,8 @@ curl '/v1/search?q=electric+cars&fuzzy=true&fuzzyThreshold=80'
 | **Time** | Varies | 5-15 min | 10-30 sec | 10-30 sec |
 | **OCR Quality** | Both | Good | Excellent | Excellent |
 | **Structured Data** | Both | Basic | Advanced | 60+ fields |
+| **Search** | ✅ **Intelligent Fuzzy Search** | ✅ **Included** | ✅ **Included** | ❌ Removed |
+| **Auto-Fuzzy** | ✅ **Smart Fallback** | ✅ **Smart Fallback** | ✅ **Smart Fallback** | ❌ N/A |
 | **Use Case** | General | Complex docs | Fast processing | Invoice analysis |
 
 ---
@@ -556,8 +992,8 @@ setTimeout(async () => {
 
 ## 4. Search Across All Documents
 ```javascript
-// Search all processed files
-const searchAll = await fetch('/v1/search?q=transportation&fuzzy=true');
+// Search all processed files (unified batch endpoint)
+const searchAll = await fetch('/v1/batch/search?q=transportation&fuzzy=true');
 
 // Get all processed files
 const allFiles = await fetch('/v1/batch/processed');
@@ -611,5 +1047,146 @@ deletedFiles.items.forEach(item => {
 ## Operational Excellence
 ✅ **Comprehensive monitoring** with detailed processing metrics  
 ✅ **Soft delete** with 30-day recycle bin retention  
-✅ **Advanced search** with fuzzy matching and filtering  
+✅ **Intelligent search** with auto-fuzzy fallback and contextual snippets  
+✅ **Multi-language support** across English, Filipino, and other languages
+✅ **Academic relevance scoring** with Google Scholar-style ranking
 ✅ **Cost tracking** with per-document processing costs
+
+---
+
+---
+
+## 🔄 Complete Postman Workflow
+
+### **📋 Recommended Testing Sequence**
+
+1. **🔧 Setup Environment**
+   - Import environment variables
+   - Set base_url to your API Gateway endpoint
+
+2. **📤 Upload Document**
+   ```
+   POST {{base_url}}/upload
+   ↓ Saves file_id to environment
+   ```
+
+3. **⏳ Wait for Processing** (30s - 5min depending on file size)
+
+4. **📄 Verify Processing**
+   ```
+   GET {{base_url}}/batch/processed?fileId={{file_id}}
+   ↓ Confirms document is processed
+   ```
+
+5. **🔍 Test Search**
+   ```
+   GET {{base_url}}/batch/search?q=your+search+term
+   ↓ Finds your uploaded document
+   ```
+
+6. **✏️ Test File Management**
+   ```
+   DELETE {{base_url}}/batch/delete/{{file_id}}
+   ↓ Moves to recycle bin
+   
+   GET {{base_url}}/batch/recycle-bin
+   ↓ Confirms file in recycle bin
+   
+   POST {{base_url}}/batch/restore/{{file_id}}
+   ↓ Restores file to active state
+   ```
+
+### **🚀 Quick Import Collection**
+
+Copy this JSON to import a complete Postman collection:
+
+```json
+{
+  "info": {
+    "name": "OCR Document Processing API",
+    "description": "Complete API testing collection for intelligent OCR processing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://fqyxavdri0.execute-api.ap-southeast-2.amazonaws.com/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Upload Document",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {"key": "file", "type": "file"},
+            {"key": "publication", "value": "Test Publication"},
+            {"key": "year", "value": "2025"},
+            {"key": "title", "value": "Test Document"},
+            {"key": "author", "value": "Test Author"}
+          ]
+        },
+        "url": "{{base_url}}/upload"
+      }
+    },
+    {
+      "name": "2. Get Processed Files",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/batch/processed"
+      }
+    },
+    {
+      "name": "3. Search Documents",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/batch/search?q=test&fuzzy=true"
+      }
+    },
+    {
+      "name": "4. Delete File",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/batch/delete/{{file_id}}"
+      }
+    },
+    {
+      "name": "5. View Recycle Bin",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/batch/recycle-bin"
+      }
+    },
+    {
+      "name": "6. Restore File",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/batch/restore/{{file_id}}"
+      }
+    }
+  ]
+}
+```
+
+### **💡 Pro Tips for Testing**
+
+- **File ID Management**: Use Postman's `pm.globals.set()` to automatically capture file IDs
+- **Environment Switching**: Create separate environments for dev/staging/prod
+- **Batch Testing**: Use Postman Runner for automated testing sequences
+- **Real Files**: Test with actual PDF/image files for realistic results
+- **Fuzzy Search**: Test with intentional typos to verify fuzzy matching
+
+---
+
+## 📞 Contact & Support
+
+For questions, enterprise inquiries, or technical support regarding this API:
+
+**Author:** Martin Lawrence Caringal  
+**Email:** [lawrencecaringal5@gmail.com](mailto:lawrencecaringal5@gmail.com)  
+**Specialization:** Serverless Architecture, AI Integration, Enterprise Document Processing
+
+*Last Updated: August 16, 2025*
