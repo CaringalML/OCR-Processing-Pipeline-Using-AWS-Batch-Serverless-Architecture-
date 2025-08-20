@@ -4,7 +4,7 @@ A **production-ready serverless** OCR processing pipeline with **dual AI engines
 
 **Author:** Martin Lawrence Caringal  
 **Contact:** [lawrencecaringal5@gmail.com](mailto:lawrencecaringal5@gmail.com)  
-**Last Updated:** August 18, 2025
+**Last Updated:** August 20, 2025
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=flat&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
@@ -128,7 +128,26 @@ jobs:
       - name: Update Batch job definition
 ```
 
-### 3. **Infrastructure Deployment** (3-5 minutes)
+### 3. **Frontend Setup (Optional)** (2 minutes)
+```bash
+# Navigate to React frontend
+cd digitize-pro
+
+# Install dependencies
+npm install
+
+# Configure API endpoint
+echo 'REACT_APP_API_GATEWAY_URL=YOUR_API_URL' > .env
+
+# Start development server
+npm start
+# Access at http://localhost:3000
+
+# Build for production
+npm run build
+```
+
+### 4. **Infrastructure Deployment** (3-5 minutes)
 ```bash
 # Initialize and validate
 terraform init
@@ -148,7 +167,7 @@ terraform apply -auto-approve
 # - VPC endpoints
 ```
 
-### 4. **Docker Container Deployment** (3 minutes)
+### 5. **Docker Container Deployment** (3 minutes)
 ```bash
 # Method 1: Automatic via GitHub Actions (Recommended)
 git add . && git commit -m "Initial setup"
@@ -164,7 +183,7 @@ terraform output docker_push_command | bash
 aws batch describe-job-definitions --job-definition-name ocr-processor-batch
 ```
 
-### 5. **System Testing & Verification** (2 minutes)
+### 6. **System Testing & Verification** (2 minutes)
 ```bash
 # Get your API endpoint
 API_URL=$(terraform output -raw api_gateway_url)
@@ -188,7 +207,7 @@ curl "$API_URL/batch/search?q=your+search+term&fuzzy=true"
 # Long-batch: Upload file >300KB (goes to AWS Batch + Textract)
 ```
 
-### 6. **Production Configuration** (Optional)
+### 7. **Production Configuration** (Optional)
 ```bash
 # Enable production monitoring
 terraform apply -var="enable_monitoring=true"
@@ -249,6 +268,77 @@ terraform apply -replace="aws_batch_job_definition.ocr_processor"
 ```
 
 ---
+
+## 🎨 React Frontend Application
+
+### **Digitize-Pro - Document Management UI**
+A modern React-based frontend for managing your OCR document processing pipeline.
+
+#### **Features**
+- **📤 Document Upload**
+  - Drag-and-drop file upload interface
+  - Batch upload support with metadata
+  - Real-time upload progress tracking
+  - File type and size validation
+
+- **📊 Upload Queue Management**
+  - Unified view of all documents (pending, processing, completed)
+  - Color-coded status indicators
+  - Progress bars for processing stages
+  - AWS-style circular refresh button
+  - No duplicate rows after completion
+
+- **✏️ Document Editor**
+  - View original scanned document
+  - Edit OCR extracted text
+  - Toggle between formatted and refined text
+  - Undo/redo functionality
+  - Document finalization workflow
+  - Custom success modal with auto-navigation
+
+- **📚 Inventory Management**
+  - View all finalized documents
+  - Search and filter capabilities
+  - Document metadata display
+  - Quick actions (view, edit, delete)
+
+- **🔍 Document Search**
+  - Full-text search across all documents
+  - Fuzzy search support
+  - Filter by metadata fields
+  - Sort by relevance or date
+
+#### **Setup & Configuration**
+```bash
+# Navigate to frontend directory
+cd digitize-pro
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp .env.example .env
+# Edit .env and add your API Gateway URL:
+# REACT_APP_API_GATEWAY_URL=https://your-api-gateway.execute-api.region.amazonaws.com
+
+# Development server
+npm start
+
+# Production build
+npm run build
+
+# Deploy to S3 (optional)
+aws s3 sync build/ s3://your-frontend-bucket --delete
+aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"
+```
+
+#### **Technology Stack**
+- React 18 with Hooks
+- React Router for navigation
+- Tailwind CSS for styling
+- Lucide React for icons
+- Axios for API calls
+- Custom hooks for state management
 
 ## 🏗️ Architecture Overview
 
@@ -884,8 +974,19 @@ aws logs insights start-query --log-group-name /aws/lambda/ocr-processor-prod-do
 
 ## 📋 Recent Updates & System Improvements
 
-### **Latest V4 Updates (January 2025)**
+### **Latest V4 Updates (August 2025)**
 ```bash
+# React Frontend Application (NEW)
+✅ Complete React-based document management UI (digitize-pro)
+✅ Document upload interface with drag-and-drop support
+✅ Real-time processing status tracking with progress bars
+✅ Advanced document editing with OCR text refinement
+✅ Document finalization workflow with custom success modals
+✅ Inventory management for finalized documents
+✅ AWS-style circular refresh button for upload queue
+✅ Unified document list combining upload queue and processed documents
+✅ Fixed duplicate row issue in upload queue after completion
+
 # Publication Metadata Support
 ✅ Added support for publication, year, title, author, description, page, tags metadata
 ✅ Enhanced search functionality with metadata filtering
@@ -1071,5 +1172,5 @@ terraform output cost_optimization_tips   # Advanced cost-saving strategies
 
 *Built with ❤️ by Martin Lawrence Caringal using AWS, Claude AI, Terraform, and Python 3.12*
 
-*Last Updated: August 16, 2025 - Demonstrating modern serverless architecture, enterprise-grade security, and production-ready document intelligence*
+*Last Updated: August 20, 2025 - Demonstrating modern serverless architecture, enterprise-grade security, and production-ready document intelligence*
 
