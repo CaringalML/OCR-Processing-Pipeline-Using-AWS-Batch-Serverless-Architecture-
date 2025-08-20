@@ -711,15 +711,13 @@ Headers:
 ```json
 {
     "finalizedText": "LIFE by Henry Van Dyke\n\nLet me but live my life from year to year,\nWith forward face and unreluctant soul;\nNot hurrying to, nor turning from the goal;\nNot mourning for the things that disappear\nIn the dim past, nor holding back in fear\nFrom what the future veils; but with a whole\nAnd happy heart, that pays its toll\nTo Youth and Age, and travels on with cheer.\n\n[Corrected formatting and added proper line breaks]",
-    "editReason": "Fixed formatting and added proper line breaks for better readability",
-    "editedBy": "postman-tester"
+    "editReason": "Fixed formatting and added proper line breaks for better readability"
 }
 ```
 
 ### **Request Parameters**
 - **`finalizedText`** *(required)*: The new finalized text content
 - **`editReason`** *(required)*: Reason for making the edit
-- **`editedBy`** *(optional)*: Who made the edit (defaults to "user")
 - **`preserveHistory`** *(optional)*: Keep edit history (defaults to true)
 
 ### **✅ Postman Tests**
@@ -732,7 +730,6 @@ pm.test("Response contains edit details", function () {
     const jsonData = pm.response.json();
     pm.expect(jsonData).to.have.property('fileId');
     pm.expect(jsonData).to.have.property('editTimestamp');
-    pm.expect(jsonData).to.have.property('editedBy');
     pm.expect(jsonData).to.have.property('editCount');
     pm.expect(jsonData).to.have.property('message');
 });
@@ -749,7 +746,6 @@ pm.test("Edit count incremented", function () {
     "message": "Document edited successfully",
     "fileId": "368bef8b-f777-4577-983e-f1858a4d4a25",
     "editTimestamp": "2025-08-19T12:30:45.123456+00:00",
-    "editedBy": "postman-tester",
     "editCount": 1,
     "textLengthChange": 85,
     "preservedHistory": true,

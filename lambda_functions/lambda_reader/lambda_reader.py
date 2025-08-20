@@ -75,6 +75,34 @@ def format_file_size(size_bytes):
     except (ValueError, TypeError):
         return "Unknown"
 
+def get_edit_history(dynamodb, edit_history_table_name, file_id, is_single_request=True):
+    """Get edit history for a file from the separate edit history table"""
+    # For list operations, return empty to avoid performance issues
+    if not is_single_request:
+        return []
+        
+    try:
+        edit_history_table = dynamodb.Table(edit_history_table_name)
+        response = edit_history_table.query(
+            KeyConditionExpression=Key('file_id').eq(file_id),
+            ScanIndexForward=False  # Most recent first
+        )
+        
+        # Convert Decimal objects to regular types for JSON serialization
+        edit_history = []
+        for item in response.get('Items', []):
+            edit_entry = decimal_to_json(item)
+            # Remove internal fields for response
+            edit_entry.pop('file_id', None)
+            edit_entry.pop('ttl', None)
+            edit_entry.pop('edited_by', None)  # Remove edited_by field
+            edit_history.append(edit_entry)
+        
+        return edit_history
+    except Exception as e:
+        print(f"Error retrieving edit history for {file_id}: {str(e)}")
+        return []
+
 def get_detailed_processing_status(processing_result):
     """Get detailed processing status with progress for running batch jobs"""
     base_status = processing_result.get('processing_status', '')
@@ -118,10 +146,12 @@ def get_detailed_processing_status(processing_result):
                 elif job_status == 'PENDING':
                     return 'Pending - Waiting for resources'
                 elif job_status == 'RUNNABLE':
-                    return 'Starting - Provisioning container'
+                    print(f"CloudWatch: Batch job {batch_job_id} - Container provisioning phase")
+                    return 'Preparing...'
                 elif job_status == 'STARTING':
                     # ECS task is being provisioned
-                    return 'Starting - ECS task provisioning'
+                    print(f"CloudWatch: Batch job {batch_job_id} - ECS task provisioning started")
+                    return 'Starting...'
                 elif job_status == 'RUNNING':
                     # Job is actually running, show progress
                     return get_running_progress(job)
@@ -131,9 +161,11 @@ def get_detailed_processing_status(processing_result):
                     # Check if there's a reason for failure
                     status_reason = job.get('statusReason', '')
                     if 'Task failed' in status_reason:
-                        return 'failed - Task error'
+                        print(f"CloudWatch: Batch job {batch_job_id} failed - Task error: {status_reason}")
+                        return 'Processing failed'
                     elif 'ResourcesNotAvailable' in status_reason:
-                        return 'failed - Resources unavailable'
+                        print(f"CloudWatch: Batch job {batch_job_id} failed - Resources unavailable: {status_reason}")
+                        return 'Processing failed - Try again later'
                     else:
                         return 'failed'
                 else:
@@ -171,7 +203,8 @@ def get_detailed_processing_status(processing_result):
             if recent_job_status:
                 return recent_job_status
             else:
-                return 'Processing - Batch job pending'
+                print(f"CloudWatch: File {processing_result.get('file_id')} - Batch job pending submission or processing initialization")
+                return 'Processing - Preparing to start'
         else:
             # Handle any unexpected status
             return f'Status: {base_status}'
@@ -408,8 +441,8 @@ def check_recent_batch_job_status(processing_result):
                             status_mapping = {
                                 'SUBMITTED': 'Queued for processing',
                                 'PENDING': 'Pending - Waiting for resources',
-                                'RUNNABLE': 'Starting - Provisioning container',
-                                'STARTING': 'Starting - ECS task provisioning',
+                                'RUNNABLE': 'Preparing...',
+                                'STARTING': 'Starting...',
                                 'SUCCEEDED': 'Processing completed',
                                 'FAILED': 'Processing failed'
                             }
@@ -419,7 +452,7 @@ def check_recent_batch_job_status(processing_result):
                     print(f"Error checking batch job {batch_job_id}: {str(batch_error)}")
             
             elif job_submitted:
-                return 'Batch job submitted - Starting soon'
+                return 'Processing queued - Starting soon'
             
             # Check if file is in SQS queue waiting to be processed
             sqs_client = boto3.client('sqs')
@@ -437,7 +470,8 @@ def check_recent_batch_job_status(processing_result):
             if visible_messages > 0:
                 return f'Queued for processing ({visible_messages} files ahead)'
             elif invisible_messages > 0:
-                return 'Processing queue - Job starting soon'
+                print(f"CloudWatch: SQS queue has {invisible_messages} invisible messages - Job starting soon")
+                return 'Processing queue - Starting soon'
             else:
                 # No messages in queue, check if it's a recent upload
                 if upload_timestamp:
@@ -445,7 +479,7 @@ def check_recent_batch_job_status(processing_result):
                     time_since_upload = (datetime.now(upload_time.tzinfo) - upload_time).total_seconds()
                     
                     if time_since_upload < 300:  # Less than 5 minutes
-                        return 'Processing initiated - Starting batch job'
+                        return 'Processing initiated'
                     else:
                         return 'Processing delayed - Check system status'
             
@@ -672,9 +706,10 @@ def lambda_handler(event, context):
     # Get configuration - both tables needed now
     results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
+    edit_history_table_name = os.environ.get('EDIT_HISTORY_TABLE', 'ocr-processor-edit-history')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
-    if not all([results_table_name, cloudfront_domain]):
+    if not all([results_table_name, cloudfront_domain, edit_history_table_name]):
         return {
             'statusCode': 500,
             'headers': {
@@ -833,7 +868,7 @@ def lambda_handler(event, context):
                         'tokenUsage': processing_result.get('token_usage', {}),
                         'languageDetection': processing_result.get('language_detection', {}),
                         'entityAnalysis': processing_result.get('entity_analysis', {}),
-                        'editHistory': processing_result.get('edit_history', [])
+                        'editHistory': get_edit_history(dynamodb, edit_history_table_name, file_id)
                     }
                 else:
                     # For regular results, show standard OCR data
@@ -848,7 +883,7 @@ def lambda_handler(event, context):
                         'languageDetection': processing_result.get('language_detection', {}),
                         'entityAnalysis': processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {})),
                         'userEdited': processing_result.get('user_edited', False),
-                        'editHistory': processing_result.get('edit_history', [])
+                        'editHistory': []
                     }
             else:
                 # No OCR results available

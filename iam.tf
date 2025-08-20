@@ -437,7 +437,9 @@ resource "aws_iam_policy" "reader_policy" {
           aws_dynamodb_table.processing_results.arn,
           "${aws_dynamodb_table.processing_results.arn}/index/*",
           aws_dynamodb_table.ocr_finalized.arn,
-          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*",
+          aws_dynamodb_table.edit_history.arn,
+          "${aws_dynamodb_table.edit_history.arn}/index/*"
         ]
       },
       {
@@ -570,6 +572,20 @@ resource "aws_iam_policy" "finalized_editor_policy" {
         Resource = [
           aws_dynamodb_table.ocr_finalized.arn,
           "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
+        ]
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.edit_history.arn,
+          "${aws_dynamodb_table.edit_history.arn}/index/*"
         ]
       }
     ]

@@ -149,6 +149,39 @@ resource "aws_dynamodb_table" "ocr_finalized" {
   })
 }
 
+# DynamoDB Table for Edit History with TTL
+resource "aws_dynamodb_table" "edit_history" {
+  name         = "ocr-processor-edit-history"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = var.dynamodb_file_metadata_hash_key
+  range_key    = "edit_timestamp"
+
+  attribute {
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
+  }
+
+  attribute {
+    name = "edit_timestamp"
+    type = var.dynamodb_attribute_type_string
+  }
+
+  # TTL configuration for automatic cleanup (30 days)
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled = var.dynamodb_server_side_encryption_enabled
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "ocr-processor-edit-history",
+    Purpose = "Store edit history entries with automatic 30-day cleanup via TTL"
+  })
+}
+
 # ========================================
 # DEPRECATED INVOICE TABLES - REPLACED WITH SINGLE TABLE
 # ========================================

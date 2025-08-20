@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Download, RefreshCw, Eye, EyeOff, Undo, Redo, CheckCircle, FileText, Code, X } from 'lucide-react';
+import { ArrowLeft, Save, Download, RefreshCw, Eye, EyeOff, Undo, Redo, CheckCircle, FileText, Code, X, Search, ZoomIn, Copy, Clock } from 'lucide-react';
 import { useDocuments } from '../../hooks/useDocuments';
 import documentService from '../../services/documentService';
 import uploadService from '../../services/uploadService';
@@ -25,6 +25,28 @@ const DocumentEdit = () => {
   const [textareaRef, setTextareaRef] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Magnification controls
+  const [magnifyEnabled, setMagnifyEnabled] = useState(false);
+  const [magnifyLevel, setMagnifyLevel] = useState(2);
+  const [magnifyPosition, setMagnifyPosition] = useState({ x: 0, y: 0 });
+  const [showMagnifier, setShowMagnifier] = useState(false);
+
+  // Detect file type from filename or URL
+  const getFileType = () => {
+    const fileName = document?.fileName || document?.original_filename || document?.file_name || '';
+    const url = document?.cloudFrontUrl || '';
+    
+    // Check file extension
+    const extension = fileName.toLowerCase().split('.').pop();
+    if (extension === 'pdf') return 'pdf';
+    
+    // Check URL path
+    if (url.toLowerCase().includes('.pdf')) return 'pdf';
+    
+    // Default to image for other formats
+    return 'image';
+  };
 
   // Load document data
   useEffect(() => {
@@ -91,8 +113,106 @@ const DocumentEdit = () => {
     setHistoryIndex(0);
   };
 
+  // Magnification handlers
+  const toggleMagnify = () => {
+    setMagnifyEnabled(!magnifyEnabled);
+    setShowMagnifier(false);
+  };
 
+  const increaseMagnify = () => {
+    setMagnifyLevel(prev => Math.min(prev + 0.5, 10));
+  };
 
+  const decreaseMagnify = () => {
+    setMagnifyLevel(prev => Math.max(prev - 0.5, 1));
+  };
+
+  const handleMouseMove = (e) => {
+    if (!magnifyEnabled) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const img = e.currentTarget.querySelector('img');
+    if (!img) return;
+    
+    const imgRect = img.getBoundingClientRect();
+    const x = e.clientX - imgRect.left;
+    const y = e.clientY - imgRect.top;
+    
+    // Ensure cursor is within image bounds
+    if (x < 0 || y < 0 || x > imgRect.width || y > imgRect.height) {
+      setShowMagnifier(false);
+      return;
+    }
+    
+    // Calculate exact percentage position on the image for perfect magnification
+    const xPercent = Math.max(0, Math.min(100, (x / imgRect.width) * 100));
+    const yPercent = Math.max(0, Math.min(100, (y / imgRect.height) * 100));
+    
+    // Enhanced magnifier positioning with proper viewport boundary checking
+    const magnifierWidth = 220;
+    const magnifierHeight = 150;
+    const offset = 15;
+    
+    // Start with default positioning relative to container
+    let magnifierX = e.clientX - rect.left + offset;
+    let magnifierY = e.clientY - rect.top - magnifierHeight - offset;
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Calculate absolute position of magnifier in viewport
+    const absoluteMagnifierLeft = rect.left + magnifierX;
+    const absoluteMagnifierRight = absoluteMagnifierLeft + magnifierWidth;
+    const absoluteMagnifierTop = rect.top + magnifierY;
+    const absoluteMagnifierBottom = absoluteMagnifierTop + magnifierHeight;
+    
+    // Check right edge - if magnifier goes off viewport right, move to left of cursor
+    if (absoluteMagnifierRight > viewportWidth) {
+      magnifierX = e.clientX - rect.left - magnifierWidth - offset;
+    }
+    
+    // Check left edge - if magnifier goes off viewport left, move to right of cursor
+    if (rect.left + magnifierX < 0) {
+      magnifierX = e.clientX - rect.left + offset;
+      // If still off left edge, clamp to viewport
+      if (rect.left + magnifierX < 0) {
+        magnifierX = -rect.left + 10;
+      }
+    }
+    
+    // Check top edge - if magnifier goes above viewport, move below cursor
+    if (absoluteMagnifierTop < 0) {
+      magnifierY = e.clientY - rect.top + offset;
+    }
+    
+    // Recalculate after Y adjustment and check bottom edge
+    const newAbsoluteBottom = rect.top + magnifierY + magnifierHeight;
+    if (newAbsoluteBottom > viewportHeight) {
+      magnifierY = e.clientY - rect.top - magnifierHeight - offset;
+      // If still goes below, clamp to viewport
+      if (rect.top + magnifierY + magnifierHeight > viewportHeight) {
+        magnifierY = (viewportHeight - rect.top - magnifierHeight - 10);
+      }
+    }
+    
+    // Ensure final position is within container bounds
+    magnifierX = Math.max(0, Math.min(magnifierX, rect.width - magnifierWidth));
+    magnifierY = Math.max(0, Math.min(magnifierY, rect.height - magnifierHeight));
+    
+    setMagnifyPosition({ 
+      x: magnifierX, 
+      y: magnifierY,
+      xPercent, 
+      yPercent,
+      imgWidth: imgRect.width,
+      imgHeight: imgRect.height
+    });
+    setShowMagnifier(true);
+  };
+
+  const handleMouseLeave = () => {
+    setShowMagnifier(false);
+  };
 
 
   // Track changes
@@ -263,13 +383,13 @@ const DocumentEdit = () => {
     try {
       const blob = await documentService.downloadDocument(document.fileId, document.cloudFrontUrl);
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = window.document.createElement('a');
       a.href = url;
       a.download = document.fileName || document.original_filename || document.file_name || 'document';
-      document.body.appendChild(a);
+      window.document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      window.document.body.removeChild(a);
     } catch (error) {
       console.error('Download failed:', error);
       alert('Failed to download document');
@@ -384,6 +504,51 @@ const DocumentEdit = () => {
                 <Download className="w-4 h-4" />
               </button>
               
+              {/* Magnification controls for images only */}
+              {getFileType() !== 'pdf' && (
+                <>
+                  <button
+                    onClick={toggleMagnify}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-all ${
+                      magnifyEnabled 
+                        ? 'text-white bg-green-600 border-green-700 shadow-md' 
+                        : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                    title={magnifyEnabled ? 'Disable Magnifier' : 'Enable Cursor Magnifier'}
+                  >
+                    <Search className="w-4 h-4" />
+                    <span>
+                      {magnifyEnabled ? `${magnifyLevel}x` : 'Magnify'}
+                    </span>
+                  </button>
+                  
+                  {/* Zoom Controls */}
+                  {magnifyEnabled && (
+                    <div className="flex items-center border border-gray-300 rounded-md bg-white">
+                      <button
+                        onClick={decreaseMagnify}
+                        disabled={magnifyLevel <= 1}
+                        className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50 rounded-l-md"
+                        title="Decrease zoom"
+                      >
+                        <span className="text-sm font-bold">−</span>
+                      </button>
+                      <div className="px-2 py-1 text-xs font-semibold text-gray-700 border-x border-gray-200">
+                        {magnifyLevel}x
+                      </div>
+                      <button
+                        onClick={increaseMagnify}
+                        disabled={magnifyLevel >= 10}
+                        className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50 rounded-r-md"
+                        title="Increase zoom"
+                      >
+                        <span className="text-sm font-bold">+</span>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              
               {/* Reset */}
               {hasChanges && (
                 <button 
@@ -394,6 +559,17 @@ const DocumentEdit = () => {
                 </button>
               )}
               
+              {/* View History - only show if document is finalized */}
+              {document?.finalized && (
+                <button 
+                  onClick={() => navigate(`/history/${fileId}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                  title="View edit history with text comparisons"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>View History</span>
+                </button>
+              )}
               
               {/* Finalize - only show if not finalized */}
               {!document?.finalized && (
@@ -433,33 +609,103 @@ const DocumentEdit = () => {
           {/* Document Viewer */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Original Document</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {getFileType() === 'pdf' ? 'Original PDF Document' : 'Original Document'}
+              </h2>
               <p className="text-sm text-gray-500">
                 {document.ocrResults?.languageDetection?.detected_language || 'Language not detected'} • 
                 Processing: {document.ocrResults?.processingDuration || 'Unknown'} • 
                 Confidence: {document.textAnalysis?.qualityAssessment?.confidence_score || 'N/A'}%
               </p>
             </div>
-            <div className="flex-1 p-4 overflow-hidden">
+            <div className="flex-1 p-4 overflow-auto document-viewer">
               {document.cloudFrontUrl ? (
-                <div className="h-full flex items-center justify-center bg-gray-100 rounded-lg">
-                  <img 
-                    src={document.cloudFrontUrl}
-                    alt={document.fileName || document.original_filename || 'Document'}
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'block';
-                    }}
-                  />
-                  <div className="text-center text-gray-500 hidden">
-                    <p>Unable to load document preview</p>
-                    <p className="text-sm">The document may be processing or the preview is unavailable</p>
-                  </div>
+                <div className="h-full bg-gray-100 rounded-lg">
+                  {getFileType() === 'pdf' ? (
+                    // PDF Viewer
+                    <div className="h-full w-full rounded-lg overflow-hidden">
+                      <iframe
+                        src={`${document.cloudFrontUrl}#view=FitH&toolbar=0&navpanes=0`}
+                        className="w-full h-full border-0 rounded-lg"
+                        title={document.fileName || document.original_filename || 'PDF Document'}
+                        onLoad={() => {
+                          console.log('PDF loaded successfully in edit view');
+                        }}
+                        onError={() => {
+                          console.log('PDF failed to load in edit view');
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    // Image Viewer with magnification
+                    <div 
+                      className={`relative flex items-center justify-center rounded-lg h-full min-h-96 ${
+                        magnifyEnabled ? 'cursor-none' : ''
+                      }`}
+                      onMouseMove={handleMouseMove}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      <img 
+                        src={document.cloudFrontUrl}
+                        alt={document.fileName || document.original_filename || 'Document'}
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                        style={{ 
+                          cursor: magnifyEnabled ? 'none' : 'default',
+                          userSelect: 'none'
+                        }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      
+                      {/* E-commerce Style Magnifier - Fast and Smooth */}
+                      {magnifyEnabled && showMagnifier && magnifyPosition.xPercent !== undefined && (
+                        <div
+                          className="absolute pointer-events-none border-2 border-blue-400 shadow-xl rounded-lg overflow-hidden z-50 bg-white"
+                          style={{
+                            left: magnifyPosition.x,
+                            top: magnifyPosition.y,
+                            width: '220px',
+                            height: '150px',
+                          }}
+                        >
+                          <div
+                            className="w-full h-full relative"
+                            style={{
+                              backgroundImage: `url(${document.cloudFrontUrl})`,
+                              backgroundSize: `${magnifyLevel * 100}%`,
+                              backgroundPosition: `${magnifyPosition.xPercent}% ${magnifyPosition.yPercent}%`,
+                              backgroundRepeat: 'no-repeat',
+                              imageRendering: 'pixelated'
+                            }}
+                          >
+                            <div className="absolute top-1 right-1 bg-black bg-opacity-60 text-white text-xs px-1.5 py-0.5 rounded">
+                              {magnifyLevel}x
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="text-center text-gray-500 hidden">
+                        <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                        <p>Unable to load document preview</p>
+                        <p className="text-sm">The document image is not available</p>
+                        <button 
+                          onClick={() => window.open(document.cloudFrontUrl, '_blank')}
+                          className="mt-3 inline-flex items-center px-4 py-2 border border-green-300 rounded-md shadow-sm text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Open in New Tab
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="h-full flex items-center justify-center bg-gray-100 rounded-lg">
                   <div className="text-center text-gray-500">
+                    <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                     <p>Document preview not available</p>
                     <p className="text-sm">The document is still being processed</p>
                   </div>
@@ -536,7 +782,7 @@ const DocumentEdit = () => {
                   <p className="text-xs text-gray-500 mt-1 ml-1">
                     {selectedTextType === 'formatted' 
                       ? '📝 Showing original OCR text with preserved formatting' 
-                      : '✨ Showing AI-refined text with enhanced grammar and readability (powered by Claude AI)'}
+                      : '✨ Showing AI-refined text with enhanced grammar, punctuation and readability'}
                   </p>
                 </div>
               )}
@@ -545,7 +791,7 @@ const DocumentEdit = () => {
             
             <div className="flex-1 p-4">
               {showPreview ? (
-                <div className="h-full overflow-y-auto bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <div className="h-full overflow-y-auto bg-gray-50 p-4 rounded-lg border border-gray-200 modern-scrollbar">
                   <div className="prose max-w-none">
                     {editedText.split('\n').map((paragraph, index) => (
                       <p key={index} className="mb-3 text-gray-900">
@@ -560,7 +806,7 @@ const DocumentEdit = () => {
                   value={editedText}
                   onChange={(e) => handleTextChange(e.target.value)}
                   disabled={document?.finalized}
-                  className={`w-full h-full p-4 border rounded-lg font-mono text-sm resize-none ${
+                  className={`w-full h-full p-4 border rounded-lg font-mono text-sm resize-none modern-scrollbar ${
                     document?.finalized 
                       ? 'border-gray-200 bg-gray-50 text-gray-700 cursor-not-allowed' 
                       : 'border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent'

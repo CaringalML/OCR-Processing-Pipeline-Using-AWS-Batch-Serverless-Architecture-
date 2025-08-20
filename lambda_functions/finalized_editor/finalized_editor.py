@@ -1,8 +1,9 @@
 import json
 import boto3
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+import time
 
 def decimal_to_json(obj):
     """Convert Decimal objects to JSON-serializable types"""
@@ -18,6 +19,7 @@ def decimal_to_json(obj):
     else:
         return obj
 
+
 def lambda_handler(event, context):
     """
     Lambda function to edit finalized OCR results
@@ -29,7 +31,6 @@ def lambda_handler(event, context):
     {
         "finalizedText": "New finalized text content",  # Required: updated text
         "editReason": "Corrected OCR errors",           # Required: reason for edit
-        "editedBy": "user@example.com",                 # Optional: who made the edit
         "preserveHistory": true                         # Optional: keep edit history (default: true)
     }
     """
@@ -39,8 +40,9 @@ def lambda_handler(event, context):
     
     # Get configuration
     finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
+    edit_history_table_name = os.environ.get('EDIT_HISTORY_TABLE', 'ocr-processor-edit-history')
     
-    if not finalized_table_name:
+    if not finalized_table_name or not edit_history_table_name:
         return {
             'statusCode': 500,
             'headers': {
@@ -82,10 +84,9 @@ def lambda_handler(event, context):
         body = json.loads(body_raw)
         finalized_text = body.get('finalizedText')
         edit_reason = body.get('editReason')
-        edited_by = body.get('editedBy', 'user')
         preserve_history = body.get('preserveHistory', True)
         
-        print(f"Parsed body - hasFinalizedText: {bool(finalized_text)}, editReason: {edit_reason}, editedBy: {edited_by}")
+        print(f"Parsed body - hasFinalizedText: {bool(finalized_text)}, editReason: {edit_reason}")
         
         # Validate required fields
         if not finalized_text:
@@ -114,8 +115,9 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Initialize finalized table
+        # Initialize tables
         finalized_table = dynamodb.Table(finalized_table_name)
+        edit_history_table = dynamodb.Table(edit_history_table_name)
         
         # Get current finalized document
         # Note: We need to scan since we only have file_id but table uses composite key
@@ -145,34 +147,35 @@ def lambda_handler(event, context):
         # Create edit timestamp
         edit_timestamp = datetime.now(timezone.utc).isoformat()
         
-        # Prepare edit history entry
+        # Prepare edit history entry for separate table
         edit_entry = {
-            'timestamp': edit_timestamp,
-            'edited_by': edited_by,
+            'file_id': file_id,
+            'edit_timestamp': edit_timestamp,
+            'timestamp': edit_timestamp,  # For backward compatibility
             'edit_reason': edit_reason,
             'previous_text': current_finalized.get('finalized_text', ''),
             'new_text': finalized_text,
-            'text_length_change': len(finalized_text) - len(current_finalized.get('finalized_text', ''))
+            'text_length_change': len(finalized_text) - len(current_finalized.get('finalized_text', '')),
+            'ttl': int(time.time()) + (30 * 24 * 60 * 60)  # 30 days TTL
         }
         
-        # Get existing edit history or initialize
-        edit_history = current_finalized.get('edit_history', [])
+        # Store edit history in separate table if preserving history
         if preserve_history:
-            edit_history.append(edit_entry)
+            try:
+                edit_history_table.put_item(Item=edit_entry)
+                print(f"Stored edit history entry for {file_id} with TTL: {edit_entry['ttl']}")
+            except Exception as e:
+                print(f"Warning: Failed to store edit history: {str(e)}")
+                # Continue with the update even if edit history fails
         
-        # Update the finalized document
-        update_expression = 'SET finalized_text = :new_text, last_edited_timestamp = :edit_time, last_edited_by = :edited_by, edit_count = if_not_exists(edit_count, :zero) + :one'
+        # Update the finalized document (no longer storing edit_history in main table)
+        update_expression = 'SET finalized_text = :new_text, last_edited_timestamp = :edit_time, edit_count = if_not_exists(edit_count, :zero) + :one'
         expression_values = {
             ':new_text': finalized_text,
             ':edit_time': edit_timestamp,
-            ':edited_by': edited_by,
             ':zero': 0,
             ':one': 1
         }
-        
-        if preserve_history:
-            update_expression += ', edit_history = :edit_history'
-            expression_values[':edit_history'] = edit_history
         
         # Perform the update
         finalized_table.update_item(
@@ -186,17 +189,36 @@ def lambda_handler(event, context):
         
         print(f"Successfully updated finalized document {file_id}")
         
-        # Build response
+        # Retrieve edit history from separate table for response
+        edit_history = []
+        if preserve_history:
+            try:
+                history_response = edit_history_table.query(
+                    KeyConditionExpression='file_id = :file_id',
+                    ExpressionAttributeValues={':file_id': file_id},
+                    ScanIndexForward=False,  # Most recent first
+                    Limit=10  # Limit to recent entries for response
+                )
+                edit_history = [decimal_to_json(item) for item in history_response.get('Items', [])]
+            except Exception as e:
+                print(f"Warning: Failed to retrieve edit history for response: {str(e)}")
+        
+        # Build response (convert Decimal objects to avoid JSON serialization issues)
         response_data = {
             'fileId': file_id,
             'editTimestamp': edit_timestamp,
-            'editedBy': edited_by,
             'editReason': edit_reason,
-            'editCount': current_finalized.get('edit_count', 0) + 1,
+            'editCount': int(current_finalized.get('edit_count', 0)) + 1,  # Convert Decimal to int
             'textLengthChange': edit_entry['text_length_change'],
             'preservedHistory': preserve_history,
-            'message': f'Finalized document updated successfully. Edit #{current_finalized.get("edit_count", 0) + 1}',
-            'editedTextPreview': finalized_text[:500] if len(finalized_text) > 500 else finalized_text
+            'message': f'Finalized document updated successfully. Edit #{int(current_finalized.get("edit_count", 0)) + 1}',
+            'editedTextPreview': finalized_text[:500] if len(finalized_text) > 500 else finalized_text,
+            'editHistory': edit_history,  # Include edit history from separate table
+            'latestEdit': {
+                'timestamp': edit_timestamp,
+                'editReason': edit_reason,
+                'textLengthChange': edit_entry['text_length_change']
+            }
         }
         
         return {
@@ -205,7 +227,7 @@ def lambda_handler(event, context):
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps(response_data)
+            'body': json.dumps(decimal_to_json(response_data))
         }
         
     except json.JSONDecodeError:

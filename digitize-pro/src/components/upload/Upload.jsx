@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import uploadService from '../../services/uploadService';
 import { useDocuments } from '../../hooks/useDocuments';
 import documentService from '../../services/documentService';
+import LocalTime, { LocalTimeOnly, LocalDateTime, LocalTimeRelative } from '../common/LocalTime';
 
 const Upload = () => {
   const navigate = useNavigate();
@@ -13,8 +14,37 @@ const Upload = () => {
   const [uploadError, setUploadError] = useState(null);
   const [allProcessedDocuments, setAllProcessedDocuments] = useState([]);
   const [loadingProcessed, setLoadingProcessed] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [detailedStatusCache, setDetailedStatusCache] = useState({});
   const fileInputRef = useRef(null);
   const { documents, fetchDocuments } = useDocuments();
+
+  // Fetch detailed status for individual processing files
+  // Note: Only long-batch files get detailed "In progress X%" statuses
+  // Short-batch files just show generic "processing" status
+  const fetchDetailedStatus = async (fileId) => {
+    try {
+      console.log(`Fetching detailed status for ${fileId}...`);
+      const detailedData = await documentService.getDocument(fileId);
+      console.log(`Detailed status response for ${fileId}:`, detailedData);
+      
+      if (detailedData && detailedData.processingStatus) {
+        console.log(`Setting detailed status cache for ${fileId}:`, detailedData.processingStatus);
+        setDetailedStatusCache(prev => ({
+          ...prev,
+          [fileId]: {
+            status: detailedData.processingStatus,
+            timestamp: Date.now()
+          }
+        }));
+        return detailedData.processingStatus;
+      }
+    } catch (error) {
+      console.error(`Failed to fetch detailed status for ${fileId}:`, error);
+    }
+    return null;
+  };
+
   const [metadata, setMetadata] = useState({
     title: "",
     author: "",
@@ -36,8 +66,14 @@ const Upload = () => {
       try {
         setLoadingProcessed(true);
         console.log('Fetching all processed documents...');
-        const data = await documentService.getAllProcessedDocuments();
+        // Fetch documents with all statuses to include in-progress files
+        const data = await documentService.getAllProcessedDocuments({ status: 'all' });
         console.log('Received data:', data);
+        console.log('Processing status breakdown:', data && Array.isArray(data) ? 
+          data.map(doc => ({fileId: doc.fileId, fileName: doc.fileName || doc.file_name, status: doc.processingStatus || doc.processing_status})) :
+          data && data.files ? data.files.map(doc => ({fileId: doc.fileId, fileName: doc.fileName || doc.file_name, status: doc.processingStatus || doc.processing_status})) : 
+          'No valid data structure'
+        );
         
         // Handle different response structures
         if (data) {
@@ -70,46 +106,165 @@ const Upload = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch detailed status for processing files (only long-batch files get detailed progress)
+  useEffect(() => {
+    const fetchDetailedStatusForProcessingFiles = async () => {
+      const processingFiles = allProcessedDocuments.filter(doc => 
+        ((doc.processingStatus === 'processing' || doc.processing_status === 'processing') ||
+         (doc.processingStatus === 'uploaded' || doc.processing_status === 'uploaded')) &&
+        (doc.processingType === 'long-batch' || doc.processing_type === 'long-batch')
+      );
+      
+      console.log('Processing files found for detailed status fetch:', processingFiles.map(doc => ({
+        fileId: doc.fileId,
+        fileName: doc.fileName || doc.file_name,
+        status: doc.processingStatus || doc.processing_status,
+        type: doc.processingType || doc.processing_type
+      })));
+
+      // Fetch detailed status for files that don't have recent cached status
+      const now = Date.now();
+      const cacheTimeout = 10000; // 10 seconds cache timeout
+
+      for (const doc of processingFiles) {
+        const fileId = doc.fileId;
+        const cached = detailedStatusCache[fileId];
+        
+        // Fetch if not cached or cache is older than timeout
+        if (!cached || (now - cached.timestamp) > cacheTimeout) {
+          await fetchDetailedStatus(fileId);
+        }
+      }
+    };
+
+    if (allProcessedDocuments.length > 0) {
+      fetchDetailedStatusForProcessingFiles();
+    }
+  }, [allProcessedDocuments, detailedStatusCache]);
+
+  // Set up more frequent polling for long-batch files with detailed status
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const filesWithDetailedStatus = Object.keys(detailedStatusCache).filter(fileId => {
+        const cached = detailedStatusCache[fileId];
+        // Only poll if it's showing "In progress" (which indicates long-batch processing)
+        return cached && cached.status.includes('In progress');
+      });
+
+      if (filesWithDetailedStatus.length > 0) {
+        console.log('Polling detailed status for', filesWithDetailedStatus.length, 'processing files');
+        for (const fileId of filesWithDetailedStatus) {
+          await fetchDetailedStatus(fileId);
+        }
+      }
+    }, 5000); // Poll every 5 seconds for processing files
+
+    return () => clearInterval(interval);
+  }, [detailedStatusCache]);
+
   // Combine upload queue and processed documents, avoiding duplicates
   const getAllDocuments = () => {
     // Get all fileIds from processed documents API
     const processedFileIds = allProcessedDocuments.map(doc => doc.fileId);
     
-    // Filter upload queue to exclude completed items that are already in processed documents
+    // Filter upload queue to exclude items that are already in processed documents
     // Keep only pending, uploading, and failed items from upload queue
-    const activeUploadQueue = uploadQueue.filter(f => 
-      f.status !== 'completed' || !processedFileIds.includes(f.fileId)
-    );
+    // Remove uploaded/completed items that already exist in backend API
+    const activeUploadQueue = uploadQueue.filter(f => {
+      // Always keep pending, uploading, and failed items (not yet in backend)
+      if (['pending', 'uploading', 'failed'].includes(f.status)) {
+        return true;
+      }
+      
+      // For uploaded/completed items, only keep if not already in backend
+      if (['uploaded', 'completed'].includes(f.status)) {
+        return !processedFileIds.includes(f.fileId);
+      }
+      
+      // Keep any other status for safety
+      return true;
+    });
     
     // Map processed documents to display format
-    const processedDocs = allProcessedDocuments.map(doc => ({
-      id: doc.fileId,
-      fileId: doc.fileId,
-      name: doc.fileName || doc.file_name || doc.original_filename || 'Unknown file',
-      size: doc.fileSize || doc.file_size || 'Unknown size',
-      status: doc.processingStatus || doc.processing_status || "pending",
-      processingType: doc.processingType || 'unknown',
-      pages: doc.metadata?.page || doc.ocrResults?.pages || doc.pages || 'N/A',
-      extractedText: doc.ocrResults?.refinedText || doc.ocrResults?.extractedText || doc.extractedText || 'No text extracted yet',
-      formattedText: doc.ocrResults?.formattedText || doc.formattedText || '',
-      refinedText: doc.ocrResults?.refinedText || doc.refinedText || '',
-      cloudFrontUrl: doc.cloudFrontUrl,
-      uploadDate: doc.uploadTimestamp || doc.upload_timestamp,
-      processedAt: doc.ocrResults?.processedAt || null,
-      processingDuration: doc.ocrResults?.processingDuration || null,
-      languageDetection: doc.ocrResults?.languageDetection || null,
-      ocrResults: doc.ocrResults,
-      metadata: doc.metadata,
-      finalized: doc.finalized || false,
-      finalizedText: doc.finalizedText || null,
-      qualityScore: doc.textAnalysis?.qualityAssessment?.confidence_score || null,
-      isFromProcessed: true
-    }));
+    const processedDocs = allProcessedDocuments.map(doc => {
+      const fileId = doc.fileId;
+      const baseStatus = doc.processingStatus || doc.processing_status || "pending";
+      
+      // Use detailed status from cache if available for processing files
+      const cachedStatus = detailedStatusCache[fileId];
+      const finalStatus = ((baseStatus === 'processing' || baseStatus === 'uploaded') && cachedStatus) 
+        ? cachedStatus.status 
+        : baseStatus;
+
+      return {
+        id: doc.fileId,
+        fileId: doc.fileId,
+        name: doc.fileName || doc.file_name || doc.original_filename || 'Unknown file',
+        size: doc.fileSize || doc.file_size || 'Unknown size',
+        status: finalStatus,
+        processingType: doc.processingType || 'unknown',
+        pages: doc.metadata?.page || doc.ocrResults?.pages || doc.pages || 'N/A',
+        extractedText: doc.ocrResults?.refinedText || doc.ocrResults?.extractedText || doc.extractedText || 'No text extracted yet',
+        formattedText: doc.ocrResults?.formattedText || doc.formattedText || '',
+        refinedText: doc.ocrResults?.refinedText || doc.refinedText || '',
+        cloudFrontUrl: doc.cloudFrontUrl,
+        uploadDate: doc.uploadTimestamp || doc.upload_timestamp,
+        processedAt: doc.ocrResults?.processedAt || null,
+        processingDuration: doc.ocrResults?.processingDuration || null,
+        languageDetection: doc.ocrResults?.languageDetection || null,
+        ocrResults: doc.ocrResults,
+        metadata: doc.metadata,
+        finalized: doc.finalized || false,
+        finalizedText: doc.finalizedText || null,
+        qualityScore: doc.textAnalysis?.qualityAssessment?.confidence_score || null,
+        isFromProcessed: true
+      };
+    });
     
-    return [...activeUploadQueue, ...processedDocs];
+    const combinedDocs = [...activeUploadQueue, ...processedDocs];
+    
+    // Sort by upload date/timestamp in descending order (latest first)
+    return combinedDocs.sort((a, b) => {
+      const aDate = new Date(a.uploadDate || a.uploadedAt || a.timestamp || 0);
+      const bDate = new Date(b.uploadDate || b.uploadedAt || b.timestamp || 0);
+      return bDate.getTime() - aDate.getTime();
+    });
   };
   
   const allDocuments = getAllDocuments();
+  
+  // Calculate status counts for header display
+  const getStatusCounts = () => {
+    const counts = {
+      attached: 0,      // pending files (selected but not uploaded)
+      queued: 0,        // uploaded/processing files
+      completed: 0,     // processed/completed files
+      failed: 0         // failed files
+    };
+    
+    allDocuments.forEach(item => {
+      if (item.status === 'pending') {
+        counts.attached++;
+      } else if (['uploaded', 'processing', 'uploading'].includes(item.status) || 
+                 (typeof item.status === 'string' && (
+                   item.status.includes('In progress') || 
+                   item.status.includes('Queued') ||
+                   item.status.includes('Starting') ||
+                   item.status.includes('Preparing') ||
+                   item.status.includes('Pending - Waiting')
+                 ))) {
+        counts.queued++;
+      } else if (['completed', 'processed', 'finalized'].includes(item.status)) {
+        counts.completed++;
+      } else if (item.status === 'failed') {
+        counts.failed++;
+      }
+    });
+    
+    return counts;
+  };
+  
+  const statusCounts = getStatusCounts();
 
   // Handle file selection
   const handleFileSelect = (event) => {
@@ -143,16 +298,17 @@ const Upload = () => {
     if (validFiles.length > 0) {
       setUploadError(null);
       // Add files to upload queue
-      const newFiles = validFiles.map(file => ({
-        id: Date.now() + Math.random(),
+      const newFiles = validFiles.map((file, index) => ({
+        id: Date.now() + Math.random() + index, // Ensure unique IDs with slight time offset
         file,
         name: file.name,
         size: uploadService.formatFileSize(file.size),
         status: 'pending',
         progress: 0,
-        metadata: { ...metadata }
+        metadata: { ...metadata },
+        timestamp: Date.now() + index // Add timestamp for sorting, with slight offset for multiple files
       }));
-      setUploadQueue(prev => [...prev, ...newFiles]);
+      setUploadQueue(prev => [...newFiles, ...prev]); // New files at the beginning
       // Automatically show metadata form when files are added
       setShowMetadataForm(true);
     }
@@ -170,22 +326,44 @@ const Upload = () => {
           f.id === item.id ? { ...f, status: 'uploading' } : f
         ));
 
-        // Upload the file with metadata
-        const result = await uploadService.uploadDocument(item.file, item.metadata);
+        // Upload the file with current metadata state (not cached metadata from queue)
+        console.log('Current metadata state:', metadata);
+        const result = await uploadService.uploadDocument(item.file, metadata);
         
-        // Update status to completed
+        // Update status to uploaded (matches backend processing_status)
         setUploadQueue(prev => prev.map(f => 
           f.id === item.id ? { 
             ...f, 
-            status: 'completed',
+            status: 'uploaded',
             fileId: result.files?.[0]?.file_id,
             routing: result.files?.[0]?.routing,
-            progress: 100 
+            progress: 30,  // 30% for uploaded/queued state
+            uploadedAt: Date.now()  // Track when uploaded for faster polling
           } : f
         ));
 
         // Refresh documents list to show newly uploaded files
         await fetchDocuments();
+        
+        // For short-batch files, start frequent polling for faster updates
+        if (result.files?.[0]?.routing?.decision === 'short-batch') {
+          // Poll every 3 seconds for the first 2 minutes after upload
+          const fileId = result.files?.[0]?.file_id;
+          let pollCount = 0;
+          const maxPolls = 40; // 40 * 3 seconds = 2 minutes
+          
+          const fastPoll = setInterval(async () => {
+            pollCount++;
+            await fetchDocuments();
+            
+            // Stop fast polling after 2 minutes or if file is completed
+            const currentFile = allProcessedDocuments.find(doc => doc.fileId === fileId);
+            if (pollCount >= maxPolls || 
+                (currentFile && ['completed', 'processed', 'failed'].includes(currentFile.processingStatus))) {
+              clearInterval(fastPoll);
+            }
+          }, 3000);
+        }
       } catch (error) {
         console.error('Upload failed:', error);
         // Update status to failed
@@ -215,52 +393,79 @@ const Upload = () => {
 
   // Get progress percentage based on processing status
   const getProgressPercentage = (status) => {
+    // Handle "In progress X%" statuses from long-batch processing (supports decimal percentages)
+    if (typeof status === 'string' && status.includes('In progress') && status.includes('%')) {
+      const match = status.match(/In progress (\d+(?:\.\d+)?)%/);
+      if (match) {
+        return Math.round(parseFloat(match[1]));
+      }
+    }
+    
+    // Handle other detailed statuses from backend
+    if (typeof status === 'string') {
+      // Map detailed backend statuses to progress percentages
+      if (status.includes('Queued for processing')) return 25;
+      if (status.includes('Pending - Waiting for resources')) return 20;
+      if (status.includes('Preparing...')) return 30;
+      if (status.includes('Starting...')) return 35;
+      if (status.includes('Processing initiated')) return 40;
+      if (status.includes('Batch job submitted')) return 35;
+    }
+    
+    // Based on actual backend statuses:
+    // - uploaded: File uploaded, waiting to be processed
+    // - processing: Currently being processed (generic status during processing)
+    // - completed: Short-batch processing finished
+    // - processed: Long-batch processing finished
+    // - failed: Processing failed
+    // - finalized: Document has been finalized by user
     const statusProgress = {
-      'pending': 0,
-      'uploading': 10,
-      'uploaded': 20,
-      'queued': 30,
-      'processing': 50,
-      'downloading': 40,
-      'processing_ocr': 60,
-      'assessing_quality': 70,
-      'refining_text': 80,
-      'saving_results': 90,
-      'processed': 100,
-      'completed': 100,
-      'failed': 0,
-      'finalized': 100
+      'pending': 0,        // Local state before upload
+      'uploading': 15,     // Local state during upload
+      'uploaded': 30,      // File uploaded to S3, waiting in queue
+      'processing': 60,    // Actively being processed (fallback for generic processing)
+      'processed': 100,    // Long-batch completed
+      'completed': 100,    // Short-batch completed
+      'failed': 0,         // Processing failed
+      'finalized': 100     // User finalized the document
     };
     return statusProgress[status] || 0;
   };
 
   // Get status display text
   const getStatusDisplay = (status) => {
+    // Handle detailed "In progress" statuses from long-batch processing
+    if (typeof status === 'string' && status.includes('In progress')) {
+      // Return the full detailed status (e.g., "In progress 67% - Refining text")
+      return status;
+    }
+    
     const statusDisplay = {
-      'pending': 'Pending',
+      'pending': 'Pending Upload',
       'uploading': 'Uploading...',
-      'uploaded': 'Uploaded',
-      'queued': 'In Queue',
-      'processing': 'Processing',
-      'downloading': 'Downloading',
-      'processing_ocr': 'OCR Processing',
-      'assessing_quality': 'Quality Check',
-      'refining_text': 'Refining Text',
-      'saving_results': 'Saving',
-      'processed': 'Processed',
-      'completed': 'Completed',
+      'uploaded': 'In Queue',
+      'processing': 'Processing...',
+      'processed': 'Processed',     // Long-batch result
+      'completed': 'Completed',      // Short-batch result
       'failed': 'Failed',
       'finalized': 'Finalized'
     };
     return statusDisplay[status] || status;
   };
 
-  // Refresh processed documents
+  // Refresh processed documents with immediate feedback
   const refreshDocuments = async () => {
     try {
       setLoadingProcessed(true);
       console.log('Manually refreshing processed documents...');
-      const data = await documentService.getAllProcessedDocuments();
+      
+      // Clear detailed status cache to force fresh fetches
+      setDetailedStatusCache({});
+      
+      // Also trigger the useDocuments hook refresh for real-time updates
+      await fetchDocuments();
+      
+      const data = await documentService.getAllProcessedDocuments({ status: 'all' });
       console.log('Received data:', data);
       
       // Handle different response structures
@@ -280,6 +485,26 @@ const Upload = () => {
       } else {
         setAllProcessedDocuments([]);
       }
+      
+      // Also refresh detailed status for long-batch processing files (including uploaded and processing)
+      const processingFiles = data?.files?.filter(doc => 
+        ((doc.processingStatus === 'processing' || doc.processing_status === 'processing') ||
+         (doc.processingStatus === 'uploaded' || doc.processing_status === 'uploaded')) &&
+        (doc.processingType === 'long-batch' || doc.processing_type === 'long-batch')
+      ) || [];
+      
+      if (processingFiles.length > 0) {
+        console.log('Refreshing detailed status for processing files...');
+        for (const doc of processingFiles) {
+          if (doc.fileId) {
+            await fetchDetailedStatus(doc.fileId);
+          }
+        }
+      }
+
+      // Show brief success feedback
+      console.log('✓ Documents refreshed successfully');
+      setLastRefreshed(Date.now());
     } catch (error) {
       console.error('Error refreshing documents:', error);
       setUploadError(`Failed to refresh documents: ${error.message}`);
@@ -528,28 +753,64 @@ const Upload = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-200 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <h2 className="text-lg font-semibold text-gray-900">Upload Queue ({allDocuments.length} files)</h2>
-            <button 
-              onClick={refreshDocuments}
-              disabled={loadingProcessed}
-              className={`
-                relative p-2 rounded-full border border-gray-300 bg-white
-                hover:bg-gray-50 hover:border-gray-400 
-                focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500
-                transition-all duration-200
-                ${loadingProcessed ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}
-              `}
-              title="Refresh documents"
-              aria-label="Refresh"
-            >
-              <RefreshCw 
+            <h2 className="text-lg font-semibold text-gray-900">Document Processing Hub</h2>
+            <div className="flex items-center space-x-3 text-sm">
+              {statusCounts.attached > 0 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  📎 {statusCounts.attached} Attached
+                </span>
+              )}
+              {statusCounts.queued > 0 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                  ⏳ {statusCounts.queued} Queued/Processing
+                </span>
+              )}
+              {statusCounts.completed > 0 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  ✅ {statusCounts.completed} Completed
+                </span>
+              )}
+              {statusCounts.failed > 0 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  ❌ {statusCounts.failed} Failed
+                </span>
+              )}
+              {allDocuments.length === 0 && (
+                <span className="text-xs text-gray-500">No files</span>
+              )}
+            </div>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={refreshDocuments}
+                disabled={loadingProcessed}
                 className={`
-                  w-4 h-4 text-gray-600 
-                  ${loadingProcessed ? 'animate-spin' : 'hover:text-gray-800'}
-                `} 
-                strokeWidth={2}
-              />
-            </button>
+                  relative p-2 rounded-full border transition-all duration-200
+                  ${loadingProcessed 
+                    ? 'border-blue-400 bg-blue-50 cursor-not-allowed' 
+                    : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 cursor-pointer'
+                  }
+                  focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500
+                `}
+                title={lastRefreshed ? `Last refreshed: ${new Date(lastRefreshed).toLocaleString()}` : "Refresh documents"}
+                aria-label="Refresh"
+              >
+                <RefreshCw 
+                  className={`
+                    w-4 h-4 transition-colors duration-200
+                    ${loadingProcessed 
+                      ? 'animate-spin text-blue-600' 
+                      : 'text-gray-600 hover:text-gray-800'
+                    }
+                  `} 
+                  strokeWidth={2}
+                />
+              </button>
+              {lastRefreshed && !loadingProcessed && (
+                <span className="text-xs text-gray-500">
+                  Updated <LocalTimeOnly timestamp={lastRefreshed} />
+                </span>
+              )}
+            </div>
           </div>
           <div className="space-x-2">
             {uploadQueue.some(f => f.status === 'completed') && (
@@ -563,34 +824,48 @@ const Upload = () => {
           </div>
         </div>
         <div className="p-6">
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-96 overflow-y-auto modern-scrollbar">
             {/* Unified Document List */}
             {allDocuments.map((item) => {
               const progress = getProgressPercentage(item.status);
-              const isUploaded = item.status === 'uploaded';
-              const isProcessing = ['uploading', 'queued', 'processing', 'downloading', 
-                                   'processing_ocr', 'assessing_quality', 'refining_text', 'saving_results'].includes(item.status);
+              const isQueued = item.status === 'uploaded';
+              const isProcessing = ['uploading', 'processing'].includes(item.status) || 
+                                   (typeof item.status === 'string' && (
+                                     item.status.includes('In progress') || 
+                                     item.status.includes('Starting') ||
+                                     item.status.includes('Preparing') ||
+                                     item.status.includes('Queued for processing') ||
+                                     item.status.includes('Pending - Waiting')
+                                   ));
               const isCompleted = ['completed', 'processed', 'finalized'].includes(item.status);
               const isFailed = item.status === 'failed';
+              const isShortBatch = item.processingType === 'short-batch' || item.routing?.decision === 'short-batch';
+              const isLongBatch = item.processingType === 'long-batch' || item.routing?.decision === 'long-batch';
+              const hasDetailedProgress = typeof item.status === 'string' && item.status.includes('In progress');
               
               return (
                 <div 
                   key={item.id}
                   className={`relative overflow-hidden rounded-lg border transition-all ${
                     item.status === 'pending' ? 'bg-gray-50 border-gray-200' :
-                    isUploaded ? 'bg-indigo-50 border-indigo-200' :
+                    isQueued ? 'bg-amber-50 border-amber-200' :
                     isProcessing ? 'bg-blue-50 border-blue-200' :
-                    isCompleted ? (item.finalized ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200') :
+                    isCompleted ? (item.finalized ? 'bg-green-50 border-green-200' : 'bg-emerald-50 border-emerald-200') :
                     isFailed ? 'bg-red-50 border-red-200' :
                     'bg-gray-50 border-gray-200'
                   } ${item.isFromProcessed ? 'cursor-pointer hover:shadow-md' : ''}`}
                   onClick={() => item.isFromProcessed && navigate(`/edit/${item.fileId}`)}
                 >
                   {/* Progress Bar */}
-                  {(isProcessing || isUploaded) && (
+                  {(isProcessing || isQueued) && (
                     <div className="absolute top-0 left-0 w-full h-1 bg-gray-200">
                       <div 
-                        className="h-full bg-blue-500 transition-all duration-500"
+                        className={`h-full transition-all duration-500 ${
+                          hasDetailedProgress ? 'bg-gradient-to-r from-blue-500 to-purple-500' : // Long-batch detailed progress
+                          isLongBatch ? 'bg-blue-500' : // Long-batch simple progress  
+                          isShortBatch ? 'bg-green-500' : // Short-batch progress
+                          'bg-blue-500' // Default
+                        }`}
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -602,9 +877,12 @@ const Upload = () => {
                         <div className="flex flex-col items-center">
                           <FileText className={`w-8 h-8 ${
                             item.status === 'pending' ? 'text-gray-600' :
-                            isUploaded ? 'text-indigo-600' :
-                            isProcessing ? 'text-blue-600' :
-                            isCompleted ? (item.finalized ? 'text-green-600' : 'text-yellow-600') :
+                            isQueued ? 'text-amber-600' :
+                            hasDetailedProgress ? 'text-purple-600' : // Long-batch detailed
+                            isProcessing && isShortBatch ? 'text-green-600' : // Short-batch processing
+                            isProcessing && isLongBatch ? 'text-blue-600' : // Long-batch simple processing
+                            isProcessing ? 'text-blue-600' : // Default processing
+                            isCompleted ? (item.finalized ? 'text-green-600' : 'text-emerald-600') :
                             isFailed ? 'text-red-600' :
                             'text-gray-600'
                           }`} />
@@ -624,17 +902,19 @@ const Upload = () => {
                             <p className="font-medium text-gray-900">{item.name}</p>
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                               item.status === 'pending' ? 'bg-gray-100 text-gray-800' :
-                              isUploaded ? 'bg-indigo-100 text-indigo-800' :
+                              isQueued ? 'bg-amber-100 text-amber-800' :
                               isProcessing ? 'bg-blue-100 text-blue-800' :
                               isCompleted ? 'bg-green-100 text-green-800' :
                               isFailed ? 'bg-red-100 text-red-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {getStatusDisplay(item.status)}
+                              {hasDetailedProgress ? 'Processing' : getStatusDisplay(item.status)}
                             </span>
-                            {item.processingType && item.processingType !== 'unknown' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                {item.processingType}
+                            {(isShortBatch || isLongBatch) && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                isShortBatch ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {isShortBatch ? '⚡ Fast' : '🔄 Comprehensive'}
                               </span>
                             )}
                             {item.finalized && (
@@ -657,14 +937,47 @@ const Upload = () => {
                           {item.processingDuration && (
                             <p className="text-xs text-gray-500 mt-1">
                               ⏱️ Processed in {item.processingDuration}
-                              {item.processedAt && ` at ${new Date(item.processedAt).toLocaleTimeString()}`}
+                              {item.processedAt && (
+                                <> at <LocalDateTime timestamp={item.processedAt} /></>
+                              )}
                             </p>
                           )}
                           
                           {/* Progress text for processing items */}
-                          {(isProcessing || isUploaded) && (
-                            <p className={`text-xs mt-1 font-medium ${isUploaded ? 'text-indigo-600' : 'text-blue-600'}`}>
-                              {progress}% - {getStatusDisplay(item.status)}
+                          {(isProcessing || isQueued) && (
+                            <p className={`text-xs mt-1 font-medium ${
+                              isQueued ? 'text-amber-600' : 
+                              hasDetailedProgress ? 'text-purple-600' : // Long-batch detailed
+                              isLongBatch ? 'text-blue-600' : // Long-batch simple
+                              isShortBatch ? 'text-green-600' : // Short-batch
+                              'text-blue-600' // Default
+                            }`}>
+                              {hasDetailedProgress ? (
+                                // Show the full detailed status for long-batch processing (already includes percentage and description)
+                                <>
+                                  <span className="text-purple-600">🔄</span> {item.status}
+                                </>
+                              ) : (
+                                // Show simple progress for other statuses
+                                <>
+                                  {isShortBatch && isProcessing && (
+                                    <span className="text-green-600">⚡</span>
+                                  )}
+                                  {isLongBatch && isProcessing && !hasDetailedProgress && (
+                                    <span className="text-blue-600">🔄</span>
+                                  )}
+                                  {progress}% - {getStatusDisplay(item.status)}
+                                  {isShortBatch && item.status === 'uploaded' && (
+                                    <span className="ml-1 text-gray-500">(~30 seconds)</span>
+                                  )}
+                                  {isLongBatch && item.status === 'uploaded' && (
+                                    <span className="ml-1 text-gray-500">(~5-15 minutes)</span>
+                                  )}
+                                  {isShortBatch && item.status === 'processing' && (
+                                    <span className="ml-1 text-gray-500">(finishing soon)</span>
+                                  )}
+                                </>
+                              )}
                             </p>
                           )}
                           

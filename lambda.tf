@@ -203,11 +203,12 @@ resource "aws_lambda_function" "reader" {
 
   environment {
     variables = {
-      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
-      FINALIZED_TABLE   = aws_dynamodb_table.ocr_finalized.name
-      CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
-      LOG_LEVEL         = var.lambda_log_level
-      ENVIRONMENT       = var.environment
+      RESULTS_TABLE      = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE    = aws_dynamodb_table.ocr_finalized.name
+      EDIT_HISTORY_TABLE = aws_dynamodb_table.edit_history.name
+      CLOUDFRONT_DOMAIN  = aws_cloudfront_distribution.s3_distribution.domain_name
+      LOG_LEVEL          = var.lambda_log_level
+      ENVIRONMENT        = var.environment
     }
   }
 
@@ -300,9 +301,10 @@ resource "aws_lambda_function" "finalized_editor" {
 
   environment {
     variables = {
-      FINALIZED_TABLE = aws_dynamodb_table.ocr_finalized.name
-      LOG_LEVEL       = var.lambda_log_level
-      ENVIRONMENT     = var.environment
+      FINALIZED_TABLE    = aws_dynamodb_table.ocr_finalized.name
+      EDIT_HISTORY_TABLE = aws_dynamodb_table.edit_history.name
+      LOG_LEVEL          = var.lambda_log_level
+      ENVIRONMENT        = var.environment
     }
   }
 

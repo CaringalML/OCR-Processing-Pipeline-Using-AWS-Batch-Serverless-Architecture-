@@ -10,6 +10,7 @@ import SearchPage from "./components/search/Search";
 import RecycleBin from "./components/recycle/RecycleBin";
 import DocumentEdit from "./components/edit/DocumentEdit";
 import DocumentView from "./components/view/DocumentView";
+import EditHistory from "./components/history/EditHistory";
 import Sidebar from "./components/common/Sidebar/Sidebar";
 import Header from "./components/common/Header/Header";
 
@@ -17,16 +18,18 @@ const AppContent = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   
-  // Check if current route is the edit or view page (should be full-screen)
+  // Check if current route is the edit, view, or history page (should be full-screen)
   const isEditPage = location.pathname.startsWith('/edit/');
   const isViewPage = location.pathname.startsWith('/view/');
+  const isHistoryPage = location.pathname.startsWith('/history/');
 
-  if (isEditPage || isViewPage) {
+  if (isEditPage || isViewPage || isHistoryPage) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Routes>
           <Route path="/edit/:fileId" element={<DocumentEdit />} />
           <Route path="/view/:fileId" element={<DocumentView />} />
+          <Route path="/history/:fileId" element={<EditHistory />} />
         </Routes>
       </div>
     );

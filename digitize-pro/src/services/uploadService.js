@@ -17,7 +17,7 @@ class UploadService {
     const formData = new FormData();
     formData.append('file', file);
     
-    // Add metadata fields if provided
+    // Add ALL metadata fields if provided
     if (metadata.title) formData.append('title', metadata.title);
     if (metadata.author) formData.append('author', metadata.author);
     if (metadata.publication) formData.append('publication', metadata.publication);
@@ -44,10 +44,33 @@ class UploadService {
     if (metadata.page) formData.append('page', metadata.page);
     if (metadata.tags) formData.append('tags', Array.isArray(metadata.tags) ? metadata.tags.join(',') : metadata.tags);
     if (metadata.priority) formData.append('priority', metadata.priority);
+    
+    // Add missing metadata fields
+    if (metadata.subject) formData.append('subject', metadata.subject);
+    if (metadata.language) formData.append('language', metadata.language);
+    if (metadata.type) formData.append('document_type', metadata.type); // Map 'type' to 'document_type' (backend expects underscore)
+    if (metadata.rights) formData.append('rights', metadata.rights);
+    if (metadata.collection) formData.append('collection', metadata.collection);
+    
+    // Add any other metadata fields dynamically
+    Object.keys(metadata).forEach(key => {
+      const standardFields = ['title', 'author', 'publication', 'date', 'description', 'page', 'tags', 'priority', 'subject', 'language', 'type', 'rights', 'collection'];
+      if (!standardFields.includes(key) && metadata[key]) {
+        formData.append(key, metadata[key]);
+      }
+    });
 
     try {
       console.log('Uploading to:', `${API_BASE_URL}/batch/upload`);
       console.log('Form data fields:', Array.from(formData.keys()));
+      console.log('Metadata being sent:', metadata);
+      
+      // Log all form data for debugging
+      for (let [key, value] of formData.entries()) {
+        if (key !== 'file') {
+          console.log(`FormData ${key}:`, value);
+        }
+      }
       
       const response = await fetch(`${API_BASE_URL}/batch/upload`, {
         method: 'POST',

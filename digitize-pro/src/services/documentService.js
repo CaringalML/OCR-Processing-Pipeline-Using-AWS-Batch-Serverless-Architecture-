@@ -206,7 +206,6 @@ class DocumentService {
       const requestBody = {
         finalizedText: data.finalizedText, // Required: the new text content
         editReason: data.editReason, // Required: reason for the edit
-        editedBy: data.editedBy || 'user',
         preserveHistory: data.preserveHistory !== false // Default to true
       };
 

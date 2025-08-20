@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '../../hooks/useDocuments';
 import uploadService from '../../services/uploadService';
 import documentService from '../../services/documentService';
+import LocalTime, { LocalDateShort, LocalDateTime } from '../common/LocalTime';
 
 const Inventory = () => {
   const navigate = useNavigate();
@@ -142,13 +143,13 @@ const Inventory = () => {
       const cloudFrontUrl = doc.cloudFrontUrl;
       const blob = await documentService.downloadDocument(fileId, cloudFrontUrl);
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = window.document.createElement('a');
       a.href = url;
       a.download = getFileName(doc);
-      document.body.appendChild(a);
+      window.document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      window.document.body.removeChild(a);
     } catch (error) {
       console.error('Download failed:', error);
       alert('Failed to download document');
@@ -183,20 +184,7 @@ const Inventory = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      return 'Invalid date';
-    }
-  };
+  // Remove formatDate function - using LocalTime component instead
 
   const formatFileSize = (size) => {
     if (!size) return '0 Bytes';
@@ -346,7 +334,7 @@ const Inventory = () => {
           </div>
         </div>
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-200 max-h-[70vh] overflow-y-auto modern-scrollbar">
           {(loading || loadingFinalized) ? (
             <div className="p-8 text-center">
               <div className="spinner mx-auto"></div>
@@ -354,15 +342,20 @@ const Inventory = () => {
             </div>
           ) : filteredDocuments.length > 0 ? (
             filteredDocuments.map((doc) => (
-              <div key={doc.fileId} className="p-6 hover:bg-gray-50">
+              <div key={doc.fileId} className="p-6 hover:bg-blue-50 cursor-pointer transition-colors border-l-4 border-transparent hover:border-blue-400">
                 <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-4">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedDocuments.includes(doc.fileId)}
-                      onChange={() => handleDocumentSelect(doc.fileId)}
-                      className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 mt-1" 
-                    />
+                  <div 
+                    className="flex items-start space-x-4 flex-1"
+                    onClick={() => navigate(`/view/${doc.fileId}`)}
+                  >
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedDocuments.includes(doc.fileId)}
+                        onChange={() => handleDocumentSelect(doc.fileId)}
+                        className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 mt-1" 
+                      />
+                    </div>
                     <FileText className="w-10 h-10 text-gray-400 mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-3 mb-2">
@@ -410,10 +403,10 @@ const Inventory = () => {
                         )}
                         
                         <div className="text-xs text-gray-500">
-                          Uploaded: {formatDate(getUploadTimestamp(doc))}
+                          Uploaded: <LocalDateTime timestamp={getUploadTimestamp(doc)} />
                           {doc.ocrResults?.pages && ` • ${doc.ocrResults.pages} pages`}
                           {doc.finalizedResults?.finalizedTimestamp && (
-                            ` • Finalized: ${formatDate(doc.finalizedResults.finalizedTimestamp)}`
+                            <> • Finalized: <LocalDateTime timestamp={doc.finalizedResults.finalizedTimestamp} /></>
                           )}
                           {doc.finalizedResults?.wasEditedBeforeFinalization && (
                             <span className="text-blue-600"> • User Edited</span>
@@ -423,7 +416,7 @@ const Inventory = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-2 ml-4">
+                  <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
                     <button 
                       onClick={() => navigate(`/view/${doc.fileId}`)}
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"

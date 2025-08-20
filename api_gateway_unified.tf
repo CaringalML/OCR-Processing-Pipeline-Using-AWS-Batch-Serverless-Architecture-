@@ -464,6 +464,57 @@ resource "aws_lambda_permission" "finalized_edit_put_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/finalized/edit/{fileId}"
 }
 
+# Finalized Edit OPTIONS Method (for CORS)
+resource "aws_api_gateway_method" "finalized_edit_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Finalized Edit OPTIONS Integration (for CORS)
+resource "aws_api_gateway_integration" "finalized_edit_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method = aws_api_gateway_method.finalized_edit_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Finalized Edit OPTIONS Method Response
+resource "aws_api_gateway_method_response" "finalized_edit_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method = aws_api_gateway_method.finalized_edit_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Finalized Edit OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "finalized_edit_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method = aws_api_gateway_method.finalized_edit_options.http_method
+  status_code = aws_api_gateway_method_response.finalized_edit_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'PUT,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.finalized_edit_options]
+}
+
 # Long Batch - Restore with fileId
 resource "aws_api_gateway_resource" "long_batch_restore_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -882,6 +933,7 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.batch_restore_post,
     aws_api_gateway_integration.batch_search_get,
     aws_api_gateway_integration.finalized_edit_put,
+    aws_api_gateway_integration.finalized_edit_options,
     # Long Batch Dependencies
     aws_api_gateway_integration.long_batch_upload_post,
     aws_api_gateway_integration.long_batch_delete_delete,
@@ -916,6 +968,7 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.batch_processed_finalize_options.id,
       aws_api_gateway_integration.batch_search_get.id,
       aws_api_gateway_integration.finalized_edit_put.id,
+      aws_api_gateway_integration.finalized_edit_options.id,
       aws_api_gateway_resource.long_batch.id,
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.long_batch_upload.id,

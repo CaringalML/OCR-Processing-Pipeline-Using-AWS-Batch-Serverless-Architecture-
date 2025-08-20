@@ -3,6 +3,7 @@ import { Upload as UploadIcon, Search, Package, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from './StatsCard/StatsCard';
 import { useDocuments } from '../../hooks/useDocuments';
+import { LocalTimeRelative } from '../common/LocalTime';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -49,7 +50,7 @@ const Dashboard = () => {
         .map(doc => ({
           action: getActionText(doc.processing_status),
           file: doc.file_name || doc.original_filename || 'Unknown file',
-          time: getTimeAgo(doc.upload_timestamp),
+          timestamp: doc.upload_timestamp, // Store raw timestamp for LocalTimeRelative
           status: mapStatus(doc.processing_status)
         }));
       
@@ -78,19 +79,7 @@ const Dashboard = () => {
     }
   };
 
-  const getTimeAgo = (timestamp) => {
-    if (!timestamp) return 'Unknown';
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffMs = now - time;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 60) return `${diffMins} minutes ago`;
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    return `${diffDays} days ago`;
-  };
+  // Removed getTimeAgo function - using LocalTimeRelative component instead
 
   return (
     <div className="space-y-6">
@@ -140,7 +129,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-500 truncate">{activity.file}</p>
                   </div>
                   <div className="text-xs text-gray-400">
-                    {activity.time}
+                    <LocalTimeRelative timestamp={activity.timestamp} />
                   </div>
                 </div>
                 ))}

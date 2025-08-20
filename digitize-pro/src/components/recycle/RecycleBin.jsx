@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, RefreshCw } from 'lucide-react';
 import { useDocuments } from '../../hooks/useDocuments';
 import uploadService from '../../services/uploadService';
+import { LocalTimeRelative } from '../common/LocalTime';
 
 const RecycleBin = () => {
   const { loadRecycleBin, restoreDocument, permanentlyDeleteDocument } = useDocuments(false);
@@ -9,11 +10,6 @@ const RecycleBin = () => {
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState([]);
   const [error, setError] = useState(null);
-
-  // Load recycle bin contents
-  useEffect(() => {
-    loadRecycleBinData();
-  }, [loadRecycleBinData]);
 
   const loadRecycleBinData = useCallback(async () => {
     try {
@@ -28,6 +24,11 @@ const RecycleBin = () => {
       setLoading(false);
     }
   }, [loadRecycleBin]);
+
+  // Load recycle bin contents
+  useEffect(() => {
+    loadRecycleBinData();
+  }, [loadRecycleBinData]);
 
   const handleSelectItem = (fileId) => {
     setSelectedItems(prev => 
@@ -81,18 +82,7 @@ const RecycleBin = () => {
     }
   };
 
-  const getTimeAgo = (timestamp) => {
-    if (!timestamp) return 'Unknown';
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffMs = now - time;
-    const diffDays = Math.floor(diffMs / 86400000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    
-    if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    return 'Less than an hour ago';
-  };
+  // Removed getTimeAgo function - using LocalTimeRelative component instead
 
   return (
     <div className="space-y-6">
@@ -174,7 +164,7 @@ const RecycleBin = () => {
                         {item.file_name || item.original_filename || 'Unknown file'}
                       </p>
                       <p className="text-sm text-gray-500">
-                        Deleted {getTimeAgo(item.deleted_timestamp || item.upload_timestamp)} • {uploadService.formatFileSize(item.file_size || 0)}
+                        Deleted <LocalTimeRelative timestamp={item.deleted_timestamp || item.upload_timestamp} /> • {uploadService.formatFileSize(item.file_size || 0)}
                       </p>
                     </div>
                   </div>

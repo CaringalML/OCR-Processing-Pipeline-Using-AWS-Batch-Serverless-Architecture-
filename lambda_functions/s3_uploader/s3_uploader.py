@@ -375,7 +375,7 @@ def lambda_handler(event, context):
                 'api_path': path,
                 'force_routing': force_routing,
                 'route_override': query_params.get('route', ''),
-                # Add publication metadata fields
+                # Add publication metadata fields (for backwards compatibility)
                 'publication': form_data.get('publication', ''),
                 'publication_year': form_data.get('date', form_data.get('year', '')),  # Accept both 'date' and 'year' for backward compatibility
                 'publication_title': form_data.get('title', ''),
@@ -384,7 +384,22 @@ def lambda_handler(event, context):
                 'publication_page': form_data.get('page', ''),
                 'publication_tags': form_data.get('tags', '').split(',') if form_data.get('tags') else [],
                 'publication_collection': form_data.get('collection', ''),
-                'publication_document_type': form_data.get('document_type', '')
+                'publication_document_type': form_data.get('document_type', ''),
+                # Add properly structured metadata object for frontend compatibility
+                'metadata': {
+                    'title': form_data.get('title', ''),
+                    'author': form_data.get('author', ''),
+                    'publication': form_data.get('publication', ''),
+                    'date': form_data.get('date', ''),
+                    'page': form_data.get('page', ''),
+                    'description': form_data.get('description', ''),
+                    'tags': form_data.get('tags', '').split(',') if form_data.get('tags') else [],
+                    'collection': form_data.get('collection', ''),
+                    'documentType': form_data.get('document_type', ''),
+                    'subject': form_data.get('subject', ''),
+                    'language': form_data.get('language', ''),
+                    'rights': form_data.get('rights', ''),
+                }
             }
             
             # Add optional form data for other purposes
