@@ -89,10 +89,18 @@ data "archive_file" "search_zip" {
   depends_on = [null_resource.document_search_dependencies]
 }
 
-data "archive_file" "editor_zip" {
+
+data "archive_file" "finalizer_zip" {
   type        = var.archive_file_type
-  output_path = "${path.module}/lambda_functions/ocr_editor/ocr_editor.zip"
-  source_file = "${path.module}/lambda_functions/ocr_editor/ocr_editor.py"
+  output_path = "${path.module}/lambda_functions/ocr_finalizer/ocr_finalizer.zip"
+  source_file = "${path.module}/lambda_functions/ocr_finalizer/ocr_finalizer.py"
+}
+
+# Finalized Editor Zip Archive
+data "archive_file" "finalized_editor_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/finalized_editor/finalized_editor.zip"
+  source_file = "${path.module}/lambda_functions/finalized_editor/finalized_editor.py"
 }
 
 # Null resource to detect changes in short batch processor
@@ -196,6 +204,7 @@ resource "aws_lambda_function" "reader" {
   environment {
     variables = {
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE   = aws_dynamodb_table.ocr_finalized.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
       LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
@@ -227,7 +236,7 @@ resource "aws_lambda_function" "search" {
 
   environment {
     variables = {
-      RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE   = aws_dynamodb_table.ocr_finalized.name
       CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.s3_distribution.domain_name
       LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment
@@ -247,34 +256,63 @@ resource "aws_lambda_function" "search" {
   })
 }
 
-# Editor Lambda Function (OCR results editor)
-resource "aws_lambda_function" "editor" {
-  filename         = data.archive_file.editor_zip.output_path
-  function_name    = "${var.project_name}-${var.environment}-editor"
-  role             = aws_iam_role.editor_role.arn
-  handler          = "ocr_editor.lambda_handler"
+
+# Finalizer Lambda Function (OCR results finalizer)
+resource "aws_lambda_function" "finalizer" {
+  filename         = data.archive_file.finalizer_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-finalizer"
+  role             = aws_iam_role.finalizer_role.arn
+  handler          = "ocr_finalizer.lambda_handler"
   runtime          = var.lambda_runtime
   timeout          = var.lambda_timeout_standard
   memory_size      = var.lambda_memory_small
-  source_code_hash = data.archive_file.editor_zip.output_base64sha256
+  source_code_hash = data.archive_file.finalizer_zip.output_base64sha256
 
   environment {
     variables = {
-      RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
-      LOG_LEVEL      = var.lambda_log_level
-      ENVIRONMENT    = var.environment
+      RESULTS_TABLE   = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE = aws_dynamodb_table.ocr_finalized.name
+      LOG_LEVEL       = var.lambda_log_level
+      ENVIRONMENT     = var.environment
     }
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.editor_policy,
-    aws_cloudwatch_log_group.ocr_editor_logs
+    aws_iam_role_policy_attachment.finalizer_policy,
+    aws_cloudwatch_log_group.ocr_finalizer_logs
   ]
 
-  # Removed ignore_changes to allow code updates
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-finalizer"
+  })
+}
+
+# Finalized Editor Lambda Function (edit finalized documents)
+resource "aws_lambda_function" "finalized_editor" {
+  filename         = data.archive_file.finalized_editor_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-finalized-editor"
+  role             = aws_iam_role.finalized_editor_role.arn
+  handler          = "finalized_editor.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_standard
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.finalized_editor_zip.output_base64sha256
+
+  environment {
+    variables = {
+      FINALIZED_TABLE = aws_dynamodb_table.ocr_finalized.name
+      LOG_LEVEL       = var.lambda_log_level
+      ENVIRONMENT     = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.finalized_editor_policy,
+    aws_cloudwatch_log_group.finalized_editor_logs
+  ]
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-editor"
+    Name = "${var.project_name}-${var.environment}-finalized-editor"
   })
 }
 
@@ -463,14 +501,26 @@ resource "aws_cloudwatch_log_group" "document_search_logs" {
   })
 }
 
-# CloudWatch Log Groups - OCR Editor (edits refined and formatted text)
-resource "aws_cloudwatch_log_group" "ocr_editor_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-editor"
-  retention_in_days = var.cloudwatch_log_retention_days # 1 week retention
+
+# CloudWatch Log Groups - OCR Finalizer (finalizes OCR results)
+resource "aws_cloudwatch_log_group" "ocr_finalizer_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-ocr-finalizer"
+  retention_in_days = var.cloudwatch_log_retention_days
   skip_destroy      = var.cloudwatch_log_skip_destroy
   tags = merge(var.common_tags, {
-    Purpose  = "OCR result editing logging"
-    Function = "ocr_editor"
+    Purpose  = "OCR result finalization logging"
+    Function = "ocr_finalizer"
+  })
+}
+
+# CloudWatch Log Groups - Finalized Editor (edits finalized documents)
+resource "aws_cloudwatch_log_group" "finalized_editor_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-finalized-editor"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "Finalized document editing logging"
+    Function = "finalized_editor"
   })
 }
 

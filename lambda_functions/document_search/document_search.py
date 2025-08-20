@@ -114,7 +114,7 @@ def lambda_handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     
     # Get configuration from environment variables
-    results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
+    results_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
     # Validate environment variables
@@ -145,6 +145,8 @@ def lambda_handler(event, context):
         year_start = query_params.get('as_ylo', '').strip()  # Year low (from)
         year_end = query_params.get('as_yhi', '').strip()    # Year high (to)
         sort_by = query_params.get('scisbd', 'relevance')    # Scholar sort by date/relevance
+        collection = query_params.get('collection', '').strip()
+        document_type = query_params.get('document_type', '').strip()
         
         # Intelligent fuzzy search - automatically enabled when needed
         fuzzy_explicit = query_params.get('fuzzy', '').lower()
@@ -198,7 +200,7 @@ def lambda_handler(event, context):
         # Primary content search (if search term provided)
         if search_term:
             content_filters = [
-                Attr('refined_text').contains(search_term),
+                Attr('finalized_text').contains(search_term),
                 Attr('publication_title').contains(search_term),
                 Attr('publication_description').contains(search_term),
                 Attr('file_name').contains(search_term)
@@ -222,6 +224,13 @@ def lambda_handler(event, context):
         if year_end and year_end.isdigit():
             filter_expressions.append(Attr('publication_year').lte(year_end))
         
+        # Collection and Document Type filters
+        if collection:
+            filter_expressions.append(Attr('publication_collection').contains(collection))
+        
+        if document_type:
+            filter_expressions.append(Attr('publication_document_type').contains(document_type))
+        
         # Build final filter with AND logic for academic precision
         if filter_expressions:
             combined_filter = filter_expressions[0]
@@ -234,7 +243,7 @@ def lambda_handler(event, context):
         # Execute search with academic projections
         scan_params = {
             'Limit': limit * 2 if fuzzy else limit,
-            'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, refined_text, page_count',
+            'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
             'ExpressionAttributeNames': {'#key': 'key'}
         }
         
@@ -251,6 +260,10 @@ def lambda_handler(event, context):
                 non_text_filters.append(Attr('publication_year').gte(year_start))
             if year_end and year_end.isdigit():
                 non_text_filters.append(Attr('publication_year').lte(year_end))
+            if collection:
+                non_text_filters.append(Attr('publication_collection').contains(collection))
+            if document_type:
+                non_text_filters.append(Attr('publication_document_type').contains(document_type))
             
             if non_text_filters:
                 combined_non_text_filter = non_text_filters[0]
@@ -274,7 +287,7 @@ def lambda_handler(event, context):
             # Re-run scan without text filters for fuzzy processing
             scan_params_fallback = {
                 'Limit': limit * 2,
-                'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, refined_text, page_count',
+                'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
                 'ExpressionAttributeNames': {'#key': 'key'}
             }
             response = results_table.scan(**scan_params_fallback)
@@ -297,10 +310,12 @@ def lambda_handler(event, context):
                 'title': item.get('publication_title', item.get('file_name', 'Untitled')),
                 'authors': [item.get('publication_author', '')] if item.get('publication_author') else [],
                 'publication': item.get('publication', ''),
-                'year': item.get('publication_year', ''),
+                'date': item.get('publication_year', ''),
                 'description': item.get('publication_description', ''),
                 'page': item.get('publication_page', ''),
                 'tags': item.get('publication_tags', []),
+                'collection': item.get('publication_collection', ''),
+                'documentType': item.get('publication_document_type', ''),
                 'fileUrl': file_url,
                 'fileType': item.get('content_type', 'unknown'),
                 'fileSize': format_file_size(item.get('file_size', 0)),
@@ -308,12 +323,14 @@ def lambda_handler(event, context):
                 'processingStatus': item.get('processing_status', 'unknown')
             }
             
-            # Process OCR results - use only refined_text
-            refined_text = item.get('refined_text', '')
-            if refined_text:
+            # Process OCR results - use finalized_text
+            finalized_text = item.get('finalized_text', '')
+            if finalized_text:
                 result_item['ocrResults'] = {
-                    'refinedText': refined_text,
-                    'pageCount': item.get('page_count', 0)
+                    'finalizedText': finalized_text,
+                    'textSource': item.get('text_source', ''),
+                    'finalizedAt': item.get('finalized_timestamp', ''),
+                    'pageCount': item.get('total_pages', 0)
                 }
                 
                 # Generate snippet based on search term
@@ -321,8 +338,8 @@ def lambda_handler(event, context):
                     # Fuzzy search in refined text and metadata
                     fuzzy_matches = []
                     
-                    # Check refined text
-                    snippet, score = fuzzy_search_in_text(search_term, refined_text, fuzzy_threshold)
+                    # Check finalized text
+                    snippet, score = fuzzy_search_in_text(search_term, finalized_text, fuzzy_threshold)
                     if snippet:
                         fuzzy_matches.append(('text', snippet, score))
                     
@@ -348,33 +365,33 @@ def lambda_handler(event, context):
                         match_score = best_match[2]
                         fuzzy_matched = True
                 else:
-                    # Enhanced exact search - create optimal snippet from refined text
+                    # Enhanced exact search - create optimal snippet from finalized text
                     search_term_lower = search_term.lower()
-                    refined_text_lower = refined_text.lower()
-                    index = refined_text_lower.find(search_term_lower)
+                    finalized_text_lower = finalized_text.lower()
+                    index = finalized_text_lower.find(search_term_lower)
                     
                     if index != -1:
                         # Create contextual snippet with more intelligent boundaries
                         snippet_start = max(0, index - 80)
-                        snippet_end = min(len(refined_text), index + len(search_term) + 120)
+                        snippet_end = min(len(finalized_text), index + len(search_term) + 120)
                         
                         # Try to break at word boundaries for better readability
                         if snippet_start > 0:
-                            word_start = refined_text.rfind(' ', snippet_start - 20, snippet_start + 20)
+                            word_start = finalized_text.rfind(' ', snippet_start - 20, snippet_start + 20)
                             if word_start != -1:
                                 snippet_start = word_start + 1
                         
-                        if snippet_end < len(refined_text):
-                            word_end = refined_text.find(' ', snippet_end - 20, snippet_end + 20)
+                        if snippet_end < len(finalized_text):
+                            word_end = finalized_text.find(' ', snippet_end - 20, snippet_end + 20)
                             if word_end != -1:
                                 snippet_end = word_end
                         
-                        snippet = refined_text[snippet_start:snippet_end]
+                        snippet = finalized_text[snippet_start:snippet_end]
                         
                         # Add ellipsis for truncated content
                         if snippet_start > 0:
                             snippet = '...' + snippet
-                        if snippet_end < len(refined_text):
+                        if snippet_end < len(finalized_text):
                             snippet = snippet + '...'
                         
                         result_item['snippet'] = snippet.strip()
@@ -438,11 +455,11 @@ def lambda_handler(event, context):
                     score += 100
                 
                 # Academic publication boost (has proper academic metadata)
-                if result.get('authors') and result.get('publication') and result.get('year'):
+                if result.get('authors') and result.get('publication') and result.get('date'):
                     score += 50
                 
                 # Publication year recency (academic preference for recent work)
-                year = result.get('year', '')
+                year = result.get('date', '')
                 if year and year.isdigit():
                     year_num = int(year)
                     if year_num >= 2020:
@@ -462,7 +479,7 @@ def lambda_handler(event, context):
             
             # Sort by academic relevance or date
             if sort_by == 'date':
-                search_results.sort(key=lambda x: x.get('year', '0'), reverse=True)
+                search_results.sort(key=lambda x: x.get('date', '0'), reverse=True)
             else:
                 search_results.sort(key=academic_relevance_score, reverse=True)
             

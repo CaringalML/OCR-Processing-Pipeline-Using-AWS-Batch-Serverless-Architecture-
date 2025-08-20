@@ -106,10 +106,12 @@ def lambda_handler(event, context):
                     'title': original_data.get('publication_title', ''),
                     'author': original_data.get('publication_author', ''),
                     'publication': original_data.get('publication', ''),
-                    'year': original_data.get('publication_year', ''),
+                    'date': original_data.get('publication_year', ''),
                     'description': original_data.get('publication_description', ''),
                     'page': original_data.get('publication_page', ''),
-                    'tags': original_data.get('publication_tags', [])
+                    'tags': original_data.get('publication_tags', []),
+                    'collection': original_data.get('publication_collection', ''),
+                    'documentType': original_data.get('publication_document_type', '')
                 }
             }
             

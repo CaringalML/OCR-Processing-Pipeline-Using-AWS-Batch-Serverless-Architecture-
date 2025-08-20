@@ -45,13 +45,6 @@ resource "aws_api_gateway_resource" "long_batch_processed" {
 }
 
 
-# Long Batch - Edit
-resource "aws_api_gateway_resource" "long_batch_edit" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
-  path_part   = var.api_path_edit
-}
-
 # Long Batch - Delete
 resource "aws_api_gateway_resource" "long_batch_delete" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -111,20 +104,21 @@ resource "aws_api_gateway_resource" "batch_processed" {
   path_part   = var.api_path_processed
 }
 
-# Batch Processed Edit Resource (edit processed files)
-resource "aws_api_gateway_resource" "batch_processed_edit" {
+
+# Batch Processed Finalize Resource (finalize processed files)
+resource "aws_api_gateway_resource" "batch_processed_finalize" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.batch_processed.id
-  path_part   = "edit"
+  path_part   = "finalize"
 }
 
-
-# Edit Resource (edit OCR results)
-resource "aws_api_gateway_resource" "edit" {
+# Batch Processed Finalize with fileId
+resource "aws_api_gateway_resource" "batch_processed_finalize_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = var.api_path_edit
+  parent_id   = aws_api_gateway_resource.batch_processed_finalize.id
+  path_part   = "{fileId}"
 }
+
 
 # Batch Delete Resource (file management under /batch/)
 resource "aws_api_gateway_resource" "batch_delete" {
@@ -166,6 +160,27 @@ resource "aws_api_gateway_resource" "batch_search" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.batch.id
   path_part   = var.api_path_search
+}
+
+# Finalized Documents Edit Resource (edit finalized documents under /finalized/)
+resource "aws_api_gateway_resource" "finalized" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "finalized"
+}
+
+# Finalized Edit Resource
+resource "aws_api_gateway_resource" "finalized_edit" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.finalized.id
+  path_part   = "edit"
+}
+
+# Finalized Edit with fileId
+resource "aws_api_gateway_resource" "finalized_edit_file_id" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.finalized_edit.id
+  path_part   = "{fileId}"
 }
 
 # Smart route methods and integrations removed - routing now integrated into /upload endpoint
@@ -221,24 +236,6 @@ resource "aws_api_gateway_integration" "batch_processed_get" {
   uri                     = aws_lambda_function.reader.invoke_arn
 }
 
-# Batch Processed Edit PUT Method (edit processed files)
-resource "aws_api_gateway_method" "batch_processed_edit_put" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.batch_processed_edit.id
-  http_method   = "PUT"
-  authorization = "NONE"
-}
-
-# Batch Processed Edit PUT Integration (to editor Lambda)
-resource "aws_api_gateway_integration" "batch_processed_edit_put" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.batch_processed_edit.id
-  http_method = aws_api_gateway_method.batch_processed_edit_put.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.editor.invoke_arn
-}
 
 # Lambda Permission for Batch Processed GET
 resource "aws_lambda_permission" "batch_processed_get_api_gateway" {
@@ -249,43 +246,84 @@ resource "aws_lambda_permission" "batch_processed_get_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/processed"
 }
 
-# Lambda Permission for Batch Processed Edit PUT
-resource "aws_lambda_permission" "batch_processed_edit_put_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGatewayBatchEditPut"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.editor.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/batch/processed/edit"
-}
 
-
-# Edit POST Method (edit OCR results)
-resource "aws_api_gateway_method" "edit_post" {
+# Batch Processed Finalize POST Method (finalize processed files)
+resource "aws_api_gateway_method" "batch_processed_finalize_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.edit.id
+  resource_id   = aws_api_gateway_resource.batch_processed_finalize_file_id.id
   http_method   = "POST"
   authorization = "NONE"
 }
 
-# Edit POST Integration (to editor Lambda)
-resource "aws_api_gateway_integration" "edit_post" {
+# Batch Processed Finalize POST Integration (to finalizer Lambda)
+resource "aws_api_gateway_integration" "batch_processed_finalize_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.edit.id
-  http_method = aws_api_gateway_method.edit_post.http_method
+  resource_id = aws_api_gateway_resource.batch_processed_finalize_file_id.id
+  http_method = aws_api_gateway_method.batch_processed_finalize_post.http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
-  uri                     = aws_lambda_function.editor.invoke_arn
+  uri                     = aws_lambda_function.finalizer.invoke_arn
 }
 
-# Lambda Permission for Edit
-resource "aws_lambda_permission" "edit_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+# Lambda Permission for Batch Processed Finalize POST
+resource "aws_lambda_permission" "batch_processed_finalize_post_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayBatchFinalizePost"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.editor.function_name
+  function_name = aws_lambda_function.finalizer.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/processed/finalize/{fileId}"
 }
+
+# Batch Processed Finalize OPTIONS Method (for CORS)
+resource "aws_api_gateway_method" "batch_processed_finalize_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_processed_finalize_file_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Processed Finalize OPTIONS Integration (for CORS)
+resource "aws_api_gateway_integration" "batch_processed_finalize_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed_finalize_file_id.id
+  http_method = aws_api_gateway_method.batch_processed_finalize_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Processed Finalize OPTIONS Method Response
+resource "aws_api_gateway_method_response" "batch_processed_finalize_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed_finalize_file_id.id
+  http_method = aws_api_gateway_method.batch_processed_finalize_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Processed Finalize OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "batch_processed_finalize_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed_finalize_file_id.id
+  http_method = aws_api_gateway_method.batch_processed_finalize_options.http_method
+  status_code = aws_api_gateway_method_response.batch_processed_finalize_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+}
+
 
 # Batch Delete Method (delete file)
 resource "aws_api_gateway_method" "batch_delete_post" {
@@ -398,6 +436,34 @@ resource "aws_lambda_permission" "batch_search_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/search"
 }
 
+# Finalized Edit PUT Method (edit finalized documents)
+resource "aws_api_gateway_method" "finalized_edit_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+# Finalized Edit PUT Integration (to finalized_editor Lambda)
+resource "aws_api_gateway_integration" "finalized_edit_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.finalized_edit_file_id.id
+  http_method = aws_api_gateway_method.finalized_edit_put.http_method
+
+  integration_http_method = var.api_integration_http_method
+  type                    = var.api_integration_type
+  uri                     = aws_lambda_function.finalized_editor.invoke_arn
+}
+
+# Lambda Permission for Finalized Edit PUT
+resource "aws_lambda_permission" "finalized_edit_put_api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGatewayFinalizedEditPut"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.finalized_editor.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/finalized/edit/{fileId}"
+}
+
 # Long Batch - Restore with fileId
 resource "aws_api_gateway_resource" "long_batch_restore_file_id" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -430,13 +496,6 @@ resource "aws_api_gateway_resource" "short_batch_processed" {
   path_part   = var.api_path_processed
 }
 
-
-# Short Batch - Edit
-resource "aws_api_gateway_resource" "short_batch_edit" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.short_batch.id
-  path_part   = var.api_path_edit
-}
 
 # Short Batch - Delete
 resource "aws_api_gateway_resource" "short_batch_delete" {
@@ -522,25 +581,6 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
 }
 
 
-# Long Batch Edit PUT Method
-resource "aws_api_gateway_method" "long_batch_edit_put" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_edit.id
-  http_method   = "PUT"
-  authorization = "NONE"
-}
-
-# Long Batch Edit PUT Integration
-resource "aws_api_gateway_integration" "long_batch_edit_put" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_edit.id
-  http_method = aws_api_gateway_method.long_batch_edit_put.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.editor.invoke_arn
-}
-
 # Long Batch Delete Method
 resource "aws_api_gateway_method" "long_batch_delete_delete" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -621,25 +661,6 @@ resource "aws_api_gateway_integration" "short_batch_upload_post" {
   uri                     = aws_lambda_function.uploader.invoke_arn
 }
 
-
-# Short Batch Edit PUT Method
-resource "aws_api_gateway_method" "short_batch_edit_put" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.short_batch_edit.id
-  http_method   = "PUT"
-  authorization = "NONE"
-}
-
-# Short Batch Edit PUT Integration
-resource "aws_api_gateway_integration" "short_batch_edit_put" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.short_batch_edit.id
-  http_method = aws_api_gateway_method.short_batch_edit_put.http_method
-
-  integration_http_method = var.api_integration_http_method
-  type                    = var.api_integration_type
-  uri                     = aws_lambda_function.editor.invoke_arn
-}
 
 # Short Batch Delete Method
 resource "aws_api_gateway_method" "short_batch_delete_delete" {
@@ -853,21 +874,21 @@ resource "aws_api_gateway_deployment" "main" {
     # Unified Batch Dependencies
     aws_api_gateway_integration.batch_upload_post,
     aws_api_gateway_integration.batch_processed_get,
-    aws_api_gateway_integration.batch_processed_edit_put,
+    aws_api_gateway_integration.batch_processed_finalize_post,
+    aws_api_gateway_integration.batch_processed_finalize_options,
     # New Unified Batch File Management
     aws_api_gateway_integration.batch_delete_post,
     aws_api_gateway_integration.batch_recycle_bin_get,
     aws_api_gateway_integration.batch_restore_post,
     aws_api_gateway_integration.batch_search_get,
+    aws_api_gateway_integration.finalized_edit_put,
     # Long Batch Dependencies
     aws_api_gateway_integration.long_batch_upload_post,
-    aws_api_gateway_integration.long_batch_edit_put,
     aws_api_gateway_integration.long_batch_delete_delete,
     aws_api_gateway_integration.long_batch_recycle_bin_get,
     aws_api_gateway_integration.long_batch_restore_post,
     # Short Batch Dependencies
     aws_api_gateway_integration.short_batch_upload_post,
-    aws_api_gateway_integration.short_batch_edit_put,
     aws_api_gateway_integration.short_batch_delete_delete,
     aws_api_gateway_integration.short_batch_recycle_bin_get,
     aws_api_gateway_integration.short_batch_restore_post,
@@ -883,12 +904,18 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.batch.id,
       aws_api_gateway_resource.batch_upload.id,
       aws_api_gateway_resource.batch_processed.id,
-      aws_api_gateway_resource.batch_processed_edit.id,
+      aws_api_gateway_resource.batch_processed_finalize.id,
+      aws_api_gateway_resource.batch_processed_finalize_file_id.id,
       aws_api_gateway_resource.batch_search.id,
+      aws_api_gateway_resource.finalized.id,
+      aws_api_gateway_resource.finalized_edit.id,
+      aws_api_gateway_resource.finalized_edit_file_id.id,
       aws_api_gateway_integration.batch_upload_post.id,
       aws_api_gateway_integration.batch_processed_get.id,
-      aws_api_gateway_integration.batch_processed_edit_put.id,
+      aws_api_gateway_integration.batch_processed_finalize_post.id,
+      aws_api_gateway_integration.batch_processed_finalize_options.id,
       aws_api_gateway_integration.batch_search_get.id,
+      aws_api_gateway_integration.finalized_edit_put.id,
       aws_api_gateway_resource.long_batch.id,
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.long_batch_upload.id,
@@ -949,22 +976,6 @@ resource "aws_lambda_permission" "invoice_reader_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/short-batch/invoices/processed"
 }
 
-
-resource "aws_lambda_permission" "editor_long_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.editor.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/long-batch/edit"
-}
-
-resource "aws_lambda_permission" "editor_short_batch" {
-  statement_id  = "AllowExecutionFromAPIGatewayShortBatch"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.editor.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/PUT/short-batch/edit"
-}
 
 resource "aws_lambda_permission" "deleter_long_batch" {
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"

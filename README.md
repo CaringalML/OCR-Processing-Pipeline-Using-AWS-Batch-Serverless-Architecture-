@@ -4,7 +4,7 @@ A **production-ready serverless** OCR processing pipeline with **dual AI engines
 
 **Author:** Martin Lawrence Caringal  
 **Contact:** [lawrencecaringal5@gmail.com](mailto:lawrencecaringal5@gmail.com)  
-**Last Updated:** August 16, 2025
+**Last Updated:** August 18, 2025
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=flat&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
@@ -378,9 +378,11 @@ curl -X POST "$API_URL/batch/upload" \
   -F "title=Climate Change Solutions" \
   -F "author=Dr. Sarah Chen" \
   -F "publication=Nature Climate Journal" \
-  -F "year=2024" \
+  -F "date=2024" \
   -F "tags=climate,renewable,carbon" \
-  -F "description=Comprehensive analysis of renewable energy adoption"
+  -F "description=Comprehensive analysis of renewable energy adoption" \
+  -F "collection=Environmental Research" \
+  -F "document_type=Research Paper"
 
 # Check upload status
 curl "$API_URL/processed?fileId=YOUR_FILE_ID"
@@ -410,7 +412,10 @@ curl "$API_URL/search?q=artificial+intelligence"
 curl "$API_URL/search?q=artifical+inteligence&fuzzy=true&fuzzyThreshold=75"
 
 # Advanced search with filters
-curl "$API_URL/search?q=renewable+energy&publication=Nature&year=2024&limit=10"
+curl "$API_URL/search?q=renewable+energy&publication=Nature&as_ylo=2024&limit=10"
+
+# Search by collection and document type
+curl "$API_URL/search?q=climate&collection=Environmental+Research&document_type=Research+Paper"
 
 # Topic-based discovery
 curl "$API_URL/search?q=climate+change+solutions+carbon+capture&fuzzy=true"
@@ -423,8 +428,11 @@ curl "$API_URL/search?q=climate+change+solutions+carbon+capture&fuzzy=true"
 | `fuzzy` | boolean | Enable fuzzy matching | `true` |
 | `fuzzyThreshold` | number | Similarity % (0-100) | `80` |
 | `publication` | string | Filter by publication | `Nature` |
-| `year` | number | Filter by year | `2024` |
+| `as_ylo` | number | Filter by year (from) | `2020` |
+| `as_yhi` | number | Filter by year (to) | `2024` |
 | `author` | string | Filter by author | `Dr.+Chen` |
+| `collection` | string | Filter by collection | `Environmental+Research` |
+| `document_type` | string | Filter by document type | `Research+Paper` |
 | `limit` | number | Results per page (max 100) | `20` |
 | `offset` | number | Pagination offset | `40` |
 
@@ -915,6 +923,8 @@ aws logs insights start-query --log-group-name /aws/lambda/ocr-processor-prod-do
 ✅ AWS Textract for high-accuracy document analysis (>300KB files)
 ✅ Advanced text refinement with grammar correction
 ✅ Entity recognition and metadata extraction
+✅ OCR result finalization with user choice & editing capability
+✅ Complete audit trail for finalized documents
 ✅ Fuzzy search with 95%+ accuracy for typos
 ✅ Context-aware snippet extraction
 ✅ Multi-format support (PDF, images, documents)

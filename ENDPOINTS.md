@@ -4,7 +4,7 @@ This document provides comprehensive documentation for all available API endpoin
 
 **Author:** Martin Lawrence Caringal  
 **Contact:** [lawrencecaringal5@gmail.com](mailto:lawrencecaringal5@gmail.com)  
-**Last Updated:** August 16, 2025
+**Last Updated:** August 18, 2025
 
 ---
 
@@ -53,14 +53,17 @@ This document provides comprehensive documentation for all available API endpoin
 │   ├── GET Academic Search with Filters
 │   ├── GET Fuzzy Search
 │   └── GET Multi-language Search
-├── 📁 4. File Management
-│   ├── GET Edit Document Interface
-│   ├── PUT Update Document
+├── 📁 4. OCR Result Finalization
+│   ├── POST Finalize OCR Results
+│   ├── GET All Finalized Results  
+│   ├── GET Specific Finalized Result
+│   └── PUT Edit Finalized Document
+├── 📁 5. File Management
 │   ├── DELETE Soft Delete (Recycle Bin)
 │   ├── GET View Recycle Bin
 │   ├── POST Restore from Recycle Bin
 │   └── DELETE Permanent Delete
-└── 📁 5. Invoice Processing
+└── 📁 6. Invoice Processing
     ├── POST Upload Invoice
     └── GET Processed Invoice Data
 ```
@@ -80,6 +83,8 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 - 📁 **Advanced File Management**: Complete lifecycle with recycle bin and restoration
 - 🔍 **Unified Search**: Search across all documents regardless of processing method
 - 📊 **Rich Metadata**: Publication details, OCR quality metrics, and processing insights
+- 🎯 **OCR Result Finalization**: Choose between formattedText/refinedText with optional editing
+- 📋 **Complete Audit Trail**: Track finalization decisions and changes
 
 ## ✅ CONFIRMED WORKING ENDPOINTS
 
@@ -97,7 +102,7 @@ https://{api-gateway-id}.execute-api.{region}.amazonaws.com/v1/
 
 ### Database Design
 - **Single DynamoDB Table:** All OCR results stored in `processing_results` table
-- **Unified Data Access:** Edit functionality works across all processing types
+- **Unified Data Access:** All functionality works across all processing types
 - **Consistent Schema:** Same data structure regardless of processing pipeline
 
 ## Three-Tier Endpoint Structure
@@ -174,12 +179,14 @@ Headers:
 ```
 file: [Select File] (PDF, JPG, PNG, etc.)
 publication: The Morning Chronicle
-year: 2025
+date: 2025
 title: Your Document Title
 author: Dr. Jane Smith
 description: Document description
 page: 1
 tags: research,AI,technology
+collection: Academic Papers
+document_type: Research Paper
 priority: normal
 ```
 
@@ -308,74 +315,6 @@ pm.test("Save first file ID for subsequent tests", function () {
 ```
 
 ---
-
-## Edit Processed Files ✅ UNIFIED ENDPOINT
-**Endpoint:** `GET /v1/batch/processed/edit?fileId={fileId}`
-
-**Purpose:** Edit OCR results for ANY processed file using a single unified endpoint. All files are stored in one DynamoDB table regardless of processing method.
-
-**Key Features:**
-- ✅ **Single table architecture**: All OCR results stored in one table (processing_results)
-- ✅ **Works with both pipelines**: Edit files from short-batch OR long-batch processing
-- ✅ **Partial updates**: Update only the fields you want to change
-- ✅ **Edit history**: Automatically tracks all changes with timestamps
-- ✅ **Metadata support**: Update publication info, titles, authors, etc.
-
-**Request Body:**
-```json
-{
-  "refinedText": "Updated text content...",
-  "formattedText": "Updated formatted text...",
-  "metadata": {
-    "title": "New Title",
-    "author": "New Author",
-    "description": "Updated description"
-  }
-}
-```
-
-**Example:**
-```bash
-# Get the edit interface for a file
-curl "https://5t6zm66a59.execute-api.ap-southeast-2.amazonaws.com/v1/batch/processed/edit?fileId=your-file-id"
-
-# The endpoint returns an HTML interface for editing the OCR results
-# You can then submit changes through the web interface
-```
-
-**Response:**
-```json
-{
-  "fileId": "your-file-id",
-  "refinedText": "Transport for Tomorrow - EDITED VERSION...",
-  "formattedText": "Original formatted text...",
-  "userEdited": true,
-  "lastEdited": "2025-08-12T02:21:17.580819+00:00",
-  "editHistory": [
-    {
-      "edited_at": "2025-08-12T02:21:17.580789+00:00",
-      "edited_fields": ["refined_text"],
-      "previous_refined_text": "Original text content..."
-    }
-  ],
-  "message": "OCR results updated successfully"
-}
-```
-
-**Query Parameters:**
-- `fileId` - Get specific file (works for files from both pipelines)
-- `limit` - Number of results (default: 50, applied after combining both pipelines)
-- `status` - Filter by status (default: 'processed')
-
-**Examples:**
-```bash
-# Get all processed files from both pipelines
-curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed'
-
-# Get specific file (works for both short-batch and long-batch files)
-curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed?fileId=your-file-id'
-
-# Get limited results (e.g., last 20 files from both pipelines)
 curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/processed?limit=20'
 ```
 
@@ -441,6 +380,8 @@ curl 'https://your-api-gateway.execute-api.region.amazonaws.com/v1/batch/process
 - `publication` - Publication/journal name filter  
 - `as_ylo` - Year range start (e.g., "2020")
 - `as_yhi` - Year range end (e.g., "2025")
+- `collection` - Filter by document collection (e.g., "Academic Papers")
+- `document_type` - Filter by document type (e.g., "Research Paper")
 - `scisbd` - Sort by: "relevance" (default) or "date"
 - `num` - Number of results (default: 20, max: 100)
 - `fuzzy` - Enable fuzzy search explicitly (true/false, auto-enabled when needed)
@@ -461,6 +402,8 @@ author: [Optional] Author name filter
 publication: [Optional] Publication/journal filter
 as_ylo: [Optional] Year range start (e.g., "2020")
 as_yhi: [Optional] Year range end (e.g., "2025")
+collection: [Optional] Document collection filter
+document_type: [Optional] Document type filter
 scisbd: [Optional] Sort by "relevance" or "date"
 num: [Optional] Number of results (default: 20, max: 100)
 fuzzy: [Optional] Enable fuzzy search (true/false)
@@ -576,6 +519,269 @@ curl '{{base_url}}/batch/search?q=transportation&fuzzy=true&fuzzyThreshold=75'
 - **CloudFront URLs**: Direct document access links
 - **Search Intelligence**: Shows if auto-fuzzy was triggered
 
+
+---
+
+# 🎯 OCR Result Finalization
+
+The finalization system allows users to choose their preferred OCR version (formattedText or refinedText) and optionally edit it before locking it as the final result. All finalized results are stored in a separate table with complete audit trails.
+
+## Finalize OCR Results 🎯
+**Endpoint:** `POST /batch/processed/finalize/{fileId}`
+
+**Purpose:** Choose between formattedText/refinedText with optional editing and save as finalized result.
+
+### **🧪 Postman Setup**
+```
+Method: POST
+URL: {{base_url}}/batch/processed/finalize/{{file_id}}
+Headers:
+  Content-Type: application/json
+  Accept: application/json
+```
+
+### **Request Body Options**
+
+#### 1. **Simple Finalization (Choose without editing)**
+```json
+{
+    "textSource": "formatted"
+}
+```
+
+#### 2. **Finalization with Editing**
+```json
+{
+    "textSource": "refined",
+    "editedText": "This is my edited version of the refined text with corrections and improvements.",
+    "notes": "Fixed OCR errors and improved formatting"
+}
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Finalization successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains finalization details", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('fileId');
+    pm.expect(jsonData).to.have.property('finalizedTimestamp');
+    pm.expect(jsonData).to.have.property('textSource');
+    pm.expect(jsonData).to.have.property('wasEdited');
+    pm.expect(jsonData).to.have.property('message');
+});
+
+pm.test("Text source matches request", function () {
+    const jsonData = pm.response.json();
+    const requestData = JSON.parse(pm.request.body.raw);
+    pm.expect(jsonData.textSource).to.eql(requestData.textSource);
+});
+```
+
+**Response (Simple Finalization):**
+```json
+{
+    "fileId": "abc123-def456",
+    "finalizedTimestamp": "2025-08-18T10:30:00Z",
+    "textSource": "formatted",
+    "wasEdited": false,
+    "finalizedBy": "system",
+    "message": "OCR results finalized successfully using formatted text",
+    "finalizedTextPreview": "First 500 characters of finalized text..."
+}
+```
+
+**Response (With Editing):**
+```json
+{
+    "fileId": "abc123-def456",
+    "finalizedTimestamp": "2025-08-18T10:30:00Z", 
+    "textSource": "refined",
+    "wasEdited": true,
+    "finalizedBy": "system",
+    "message": "OCR results finalized successfully using edited refined text",
+    "finalizedTextPreview": "Your edited text first 500 characters..."
+}
+```
+
+---
+
+## Get All Finalized Results 📋
+**Endpoint:** `GET /batch/processed?finalized=true`
+
+**Purpose:** Retrieve all finalized OCR results with audit trail information.
+
+### **🧪 Postman Setup**
+```
+Method: GET
+URL: {{base_url}}/batch/processed?finalized=true
+Headers:
+  Accept: application/json
+```
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Finalized results retrieved", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains finalized files", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('files');
+    pm.expect(jsonData).to.have.property('count');
+    
+    if (jsonData.files.length > 0) {
+        pm.expect(jsonData.files[0]).to.have.property('finalizedResults');
+        pm.expect(jsonData.files[0].processingStatus).to.eql('finalized');
+    }
+});
+```
+
+**Response:**
+```json
+{
+    "files": [
+        {
+            "fileId": "abc123",
+            "fileName": "document.pdf",
+            "uploadTimestamp": "2025-08-18T08:00:00Z",
+            "finalizedTimestamp": "2025-08-18T10:30:00Z",
+            "processingStatus": "finalized",
+            "metadata": { "...": "..." },
+            "finalizedResults": {
+                "finalizedText": "The final locked version of the text",
+                "textSource": "formatted",
+                "wasEditedBeforeFinalization": true,
+                "finalizedBy": "system", 
+                "notes": "User corrections applied",
+                "originalFormattedText": "Original formatted version",
+                "originalRefinedText": "Original refined version"
+            }
+        }
+    ],
+    "count": 1,
+    "hasMore": false
+}
+```
+
+---
+
+## Get Specific Finalized Result 📄
+**Endpoint:** `GET /batch/processed?fileId={fileId}&finalized=true`
+
+**Purpose:** Get finalized version of a specific document with complete audit trail.
+
+### **🧪 Postman Setup**
+```
+Method: GET
+URL: {{base_url}}/batch/processed?fileId={{file_id}}&finalized=true
+Headers:
+  Accept: application/json
+```
+
+### **Key Features of Finalization**
+- ✅ **User Choice**: Select between formattedText or refinedText as the base
+- ✅ **Optional Editing**: Edit the selected text before finalizing
+- ✅ **Original Preservation**: Both original versions are always preserved
+- ✅ **Audit Trail**: Complete tracking of what was chosen, when, and by whom
+- ✅ **Post-Finalization Editing**: Edit finalized documents with complete audit trail
+- ✅ **Edit Detection**: System tracks whether the final text was edited vs used as-is
+
+---
+
+# 📝 Finalized Document Editing
+
+## Edit Finalized Document ✏️
+**Endpoint:** `PUT /finalized/edit/{fileId}`
+
+**Purpose:** Edit already finalized documents while maintaining complete audit trail and version history.
+
+### **🧪 Postman Setup**
+```
+Method: PUT
+URL: {{base_url}}/finalized/edit/{{file_id}}
+Headers:
+  Content-Type: application/json
+  Accept: application/json
+```
+
+### **Request Body**
+```json
+{
+    "finalizedText": "LIFE by Henry Van Dyke\n\nLet me but live my life from year to year,\nWith forward face and unreluctant soul;\nNot hurrying to, nor turning from the goal;\nNot mourning for the things that disappear\nIn the dim past, nor holding back in fear\nFrom what the future veils; but with a whole\nAnd happy heart, that pays its toll\nTo Youth and Age, and travels on with cheer.\n\n[Corrected formatting and added proper line breaks]",
+    "editReason": "Fixed formatting and added proper line breaks for better readability",
+    "editedBy": "postman-tester"
+}
+```
+
+### **Request Parameters**
+- **`finalizedText`** *(required)*: The new finalized text content
+- **`editReason`** *(required)*: Reason for making the edit
+- **`editedBy`** *(optional)*: Who made the edit (defaults to "user")
+- **`preserveHistory`** *(optional)*: Keep edit history (defaults to true)
+
+### **✅ Postman Tests**
+```javascript
+pm.test("Edit successful", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Response contains edit details", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property('fileId');
+    pm.expect(jsonData).to.have.property('editTimestamp');
+    pm.expect(jsonData).to.have.property('editedBy');
+    pm.expect(jsonData).to.have.property('editCount');
+    pm.expect(jsonData).to.have.property('message');
+});
+
+pm.test("Edit count incremented", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData.editCount).to.be.above(0);
+});
+```
+
+**Response:**
+```json
+{
+    "message": "Document edited successfully",
+    "fileId": "368bef8b-f777-4577-983e-f1858a4d4a25",
+    "editTimestamp": "2025-08-19T12:30:45.123456+00:00",
+    "editedBy": "postman-tester",
+    "editCount": 1,
+    "textLengthChange": 85,
+    "preservedHistory": true,
+    "editedTextPreview": "LIFE by Henry Van Dyke\n\nLet me but live my life from year to year..."
+}
+```
+
+### **Error Responses**
+
+**400 - Missing Required Fields:**
+```json
+{
+    "error": "Bad Request",
+    "message": "finalizedText is required"
+}
+```
+
+**404 - Document Not Found:**
+```json
+{
+    "error": "Not Found", 
+    "message": "No finalized document found for file ID: invalid-id"
+}
+```
+
+### **Key Features of Finalized Document Editing**
+- ✅ **Complete Audit Trail**: Every edit is logged with timestamp, user, and reason
+- ✅ **Version History**: Previous versions are preserved in edit history
+- ✅ **Required Justification**: Edit reason is mandatory for accountability
+- ✅ **Real-time Updates**: Changes are immediately reflected in the system
+- ✅ **Edit Tracking**: System maintains count of total edits made
+- ✅ **Text Change Analysis**: Tracks length changes and content modifications
 
 ---
 
@@ -808,26 +1014,6 @@ pm.test("⚠️ IRREVERSIBLE ACTION", function () {
 
 ---
 
-## Edit OCR Results
-**Endpoint:** `PUT /batch/processed/edit?fileId={fileId}`
-
-**Purpose:** Edit and update OCR results and metadata.
-
-**Request Body:**
-```json
-{
-    "formattedText": "Updated OCR content...",
-    "refinedText": "Grammar-corrected content...",
-    "metadata": {
-        "title": "Updated Title",
-        "author": "Updated Author",
-        "publication": "Updated Publication"
-    }
-}
-```
-
----
-
 # Long-Batch Endpoints (AWS Batch Processing)
 
 ## Upload for Long-Batch
@@ -839,7 +1025,7 @@ pm.test("⚠️ IRREVERSIBLE ACTION", function () {
 
 ## Long-Batch Operations
 
-**File Management:** All file operations (delete, restore, recycle bin, edit) use the unified `/batch/` endpoints for consistent access across all processing types.
+**File Management:** All file operations (delete, restore, recycle bin) use the unified `/batch/` endpoints for consistent access across all processing types.
 
 ---
 
@@ -858,7 +1044,7 @@ pm.test("⚠️ IRREVERSIBLE ACTION", function () {
 - Use `/batch/delete/{fileId}` instead of `/short-batch/delete/{fileId}`
 - Use `/batch/recycle-bin` instead of `/short-batch/recycle-bin`
 - Use `/batch/restore/{fileId}` instead of `/short-batch/restore/{fileId}`
-- Edit functionality uses the unified endpoint `/batch/processed/edit` as all data is stored in a single table
+- All functionality uses the unified endpoints as all data is stored in a single table
 
 ---
 

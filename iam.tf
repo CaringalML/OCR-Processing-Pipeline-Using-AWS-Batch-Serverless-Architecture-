@@ -259,9 +259,30 @@ resource "aws_iam_role" "search_role" {
   tags = var.common_tags
 }
 
-# Editor Lambda Role
-resource "aws_iam_role" "editor_role" {
-  name = "${var.project_name}-${var.environment}-editor-role"
+
+# Finalizer Lambda Role
+resource "aws_iam_role" "finalizer_role" {
+  name = "${var.project_name}-${var.environment}-finalizer-role"
+
+  assume_role_policy = jsonencode({
+    Version = var.iam_policy_version
+    Statement = [
+      {
+        Action = var.iam_assume_role_action
+        Effect = var.iam_effect_allow
+        Principal = {
+          Service = var.lambda_service_principal
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+# Finalized Editor Lambda Role
+resource "aws_iam_role" "finalized_editor_role" {
+  name = "${var.project_name}-${var.environment}-finalized-editor-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -415,7 +436,8 @@ resource "aws_iam_policy" "reader_policy" {
         Resource = [
           aws_dynamodb_table.processing_results.arn,
           "${aws_dynamodb_table.processing_results.arn}/index/*",
-          aws_dynamodb_table.processing_results.arn
+          aws_dynamodb_table.ocr_finalized.arn,
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
         ]
       },
       {
@@ -472,18 +494,18 @@ resource "aws_iam_policy" "search_policy" {
           "dynamodb:GetItem"
         ]
         Resource = [
-          aws_dynamodb_table.processing_results.arn,
-          "${aws_dynamodb_table.processing_results.arn}/index/*",
-          aws_dynamodb_table.processing_results.arn
+          aws_dynamodb_table.ocr_finalized.arn,
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
         ]
       }
     ]
   })
 }
 
-# Editor Lambda Policy
-resource "aws_iam_policy" "editor_policy" {
-  name = "${var.project_name}-${var.environment}-editor-policy"
+
+# Finalizer Lambda Policy
+resource "aws_iam_policy" "finalizer_policy" {
+  name = "${var.project_name}-${var.environment}-finalizer-policy"
 
   policy = jsonencode({
     Version = var.iam_policy_version
@@ -500,14 +522,54 @@ resource "aws_iam_policy" "editor_policy" {
       {
         Effect = var.iam_effect_allow
         Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = aws_dynamodb_table.processing_results.arn
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:Query"
+        ]
+        Resource = [
+          aws_dynamodb_table.ocr_finalized.arn,
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Finalized Editor Lambda Policy
+resource "aws_iam_policy" "finalized_editor_policy" {
+  name = "${var.project_name}-${var.environment}-finalized-editor-policy"
+
+  policy = jsonencode({
+    Version = var.iam_policy_version
+    Statement = [
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "dynamodb:Scan",
           "dynamodb:Query",
           "dynamodb:GetItem",
           "dynamodb:UpdateItem"
         ]
         Resource = [
-          aws_dynamodb_table.processing_results.arn,
-          "${aws_dynamodb_table.processing_results.arn}/index/*",
-          aws_dynamodb_table.processing_results.arn
+          aws_dynamodb_table.ocr_finalized.arn,
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
         ]
       }
     ]
@@ -693,9 +755,15 @@ resource "aws_iam_role_policy_attachment" "search_policy" {
   policy_arn = aws_iam_policy.search_policy.arn
 }
 
-resource "aws_iam_role_policy_attachment" "editor_policy" {
-  role       = aws_iam_role.editor_role.name
-  policy_arn = aws_iam_policy.editor_policy.arn
+
+resource "aws_iam_role_policy_attachment" "finalizer_policy" {
+  role       = aws_iam_role.finalizer_role.name
+  policy_arn = aws_iam_policy.finalizer_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "finalized_editor_policy" {
+  role       = aws_iam_role.finalized_editor_role.name
+  policy_arn = aws_iam_policy.finalized_editor_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "short_batch_submitter_policy" {

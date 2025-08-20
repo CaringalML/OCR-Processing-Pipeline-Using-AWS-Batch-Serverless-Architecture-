@@ -377,12 +377,14 @@ def lambda_handler(event, context):
                 'route_override': query_params.get('route', ''),
                 # Add publication metadata fields
                 'publication': form_data.get('publication', ''),
-                'publication_year': form_data.get('year', ''),
+                'publication_year': form_data.get('date', form_data.get('year', '')),  # Accept both 'date' and 'year' for backward compatibility
                 'publication_title': form_data.get('title', ''),
                 'publication_author': form_data.get('author', ''),
                 'publication_description': form_data.get('description', ''),
                 'publication_page': form_data.get('page', ''),
-                'publication_tags': form_data.get('tags', '').split(',') if form_data.get('tags') else []
+                'publication_tags': form_data.get('tags', '').split(',') if form_data.get('tags') else [],
+                'publication_collection': form_data.get('collection', ''),
+                'publication_document_type': form_data.get('document_type', '')
             }
             
             # Add optional form data for other purposes

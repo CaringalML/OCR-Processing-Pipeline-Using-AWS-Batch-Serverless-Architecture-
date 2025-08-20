@@ -1284,8 +1284,8 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
             # Add publication metadata if provided
             if message.get('publication'):
                 results_item['publication'] = message.get('publication')
-            if message.get('year'):
-                results_item['publication_year'] = message.get('year')
+            if message.get('date') or message.get('year'):
+                results_item['publication_year'] = message.get('date', message.get('year'))  # Accept both field names
             if message.get('title'):
                 results_item['publication_title'] = message.get('title')
             if message.get('author'):
@@ -1296,6 +1296,10 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
                 results_item['publication_page'] = message.get('page')
             if message.get('tags'):
                 results_item['publication_tags'] = message.get('tags')
+            if message.get('publication_collection'):
+                results_item['publication_collection'] = message.get('publication_collection')
+            if message.get('publication_document_type'):
+                results_item['publication_document_type'] = message.get('publication_document_type')
             
             # Use update_item to preserve existing fields from upload
             # Build update expression dynamically
@@ -1418,11 +1422,14 @@ def lambda_handler(event, context):
                 'file_size': metadata.get('file_size'),
                 'publication': metadata.get('publication'),
                 'year': metadata.get('year'),
+                'date': metadata.get('date'),  # Support both year and date
                 'title': metadata.get('title'),
                 'author': metadata.get('author'),
                 'description': metadata.get('description'),
                 'page': metadata.get('page'),
-                'tags': metadata.get('tags')
+                'tags': metadata.get('tags'),
+                'publication_collection': metadata.get('publication_collection'),
+                'publication_document_type': metadata.get('publication_document_type')
             }
             
             # Validate required fields

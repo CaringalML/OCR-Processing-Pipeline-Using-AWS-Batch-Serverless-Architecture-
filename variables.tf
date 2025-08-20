@@ -626,11 +626,6 @@ variable "api_path_search" {
   default     = "search"
 }
 
-variable "api_path_edit" {
-  description = "Path segment for editing processed document content (OCR correction capabilities)"
-  type        = string
-  default     = "edit"
-}
 
 variable "api_path_delete" {
   description = "Path segment for file deletion actions (moves files to recycle bin)"

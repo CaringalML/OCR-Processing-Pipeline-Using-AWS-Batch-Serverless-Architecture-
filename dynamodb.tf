@@ -109,6 +109,46 @@ resource "aws_dynamodb_table" "invoice_processing_results" {
   })
 }
 
+# DynamoDB Table for Finalized OCR Results
+resource "aws_dynamodb_table" "ocr_finalized" {
+  name         = "ocr-processor-batch-finalized-results"
+  billing_mode = var.dynamodb_billing_mode
+  hash_key     = var.dynamodb_file_metadata_hash_key
+  range_key    = "finalized_timestamp"
+
+  attribute {
+    name = var.dynamodb_file_metadata_hash_key
+    type = var.dynamodb_attribute_type_string
+  }
+
+  attribute {
+    name = "finalized_timestamp"
+    type = var.dynamodb_attribute_type_string
+  }
+
+  attribute {
+    name = "text_source"
+    type = var.dynamodb_attribute_type_string
+  }
+
+  # Global Secondary Index for querying by text source type
+  global_secondary_index {
+    name            = "TextSourceIndex"
+    hash_key        = "text_source"
+    range_key       = "finalized_timestamp"
+    projection_type = "ALL"
+  }
+
+  server_side_encryption {
+    enabled = var.dynamodb_server_side_encryption_enabled
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "ocr-processor-batch-finalized-results",
+    Purpose = "Store finalized OCR results with user-selected text version"
+  })
+}
+
 # ========================================
 # DEPRECATED INVOICE TABLES - REPLACED WITH SINGLE TABLE
 # ========================================

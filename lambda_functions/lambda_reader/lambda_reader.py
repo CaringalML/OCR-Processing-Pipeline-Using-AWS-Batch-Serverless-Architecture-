@@ -663,13 +663,15 @@ def lambda_handler(event, context):
     """
     Lambda function to read processed files from DynamoDB and generate CloudFront URLs
     Triggered by API Gateway GET requests to /processed endpoint
+    Supports both regular results and finalized results via ?finalized=true parameter
     """
     
     # Initialize AWS clients
     dynamodb = boto3.resource('dynamodb')
     
-    # Get configuration - only results table needed now
+    # Get configuration - both tables needed now
     results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
+    finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
     cloudfront_domain = os.environ.get('CLOUDFRONT_DOMAIN')
     
     if not all([results_table_name, cloudfront_domain]):
@@ -691,6 +693,7 @@ def lambda_handler(event, context):
         status_filter = query_params.get('status', 'processed')
         limit = int(query_params.get('limit', '50'))
         file_id = query_params.get('fileId')
+        show_finalized = query_params.get('finalized', '').lower() == 'true'
         
         # Determine which endpoint was called to filter by batch type
         resource_path = event.get('requestContext', {}).get('resourcePath', '')
@@ -701,75 +704,152 @@ def lambda_handler(event, context):
             batch_type_filter = 'long-batch'
         # If '/processed' (root endpoint), show all batch types (batch_type_filter = None)
         
-        results_table = dynamodb.Table(results_table_name)
+        # Choose table based on finalized parameter
+        if show_finalized:
+            table = dynamodb.Table(finalized_table_name)
+        else:
+            table = dynamodb.Table(results_table_name)
         
         # If specific file_id is requested
         if file_id:
-            # Get file data from results table
-            results_response = results_table.get_item(
-                Key={'file_id': file_id}
-            )
-            
-            if not results_response.get('Item'):
-                return {
-                    'statusCode': 404,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({
-                        'error': 'Not Found',
-                        'message': f'File {file_id} not found'
-                    })
-                }
-            
-            processing_result = decimal_to_json(results_response['Item'])
+            if show_finalized:
+                # For finalized results, we need to scan for the latest finalized version
+                finalized_response = table.query(
+                    KeyConditionExpression=Key('file_id').eq(file_id),
+                    ScanIndexForward=False,  # Get latest first
+                    Limit=1
+                )
+                
+                if not finalized_response.get('Items'):
+                    return {
+                        'statusCode': 404,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'error': 'Not Found',
+                            'message': f'Finalized version of file {file_id} not found'
+                        })
+                    }
+                
+                processing_result = decimal_to_json(finalized_response['Items'][0])
+            else:
+                # Get file data from regular results table
+                results_response = table.get_item(
+                    Key={'file_id': file_id}
+                )
+                
+                if not results_response.get('Item'):
+                    return {
+                        'statusCode': 404,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'error': 'Not Found',
+                            'message': f'File {file_id} not found'
+                        })
+                    }
+                
+                processing_result = decimal_to_json(results_response['Item'])
             
             # Generate CloudFront URL from results table data
             s3_key = processing_result.get('key', '')
             cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else ''
             
-            # Get detailed processing status (with progress for running jobs)
-            detailed_status = get_detailed_processing_status(processing_result)
-            
-            # Build response data from results table
-            response_data = {
-                'fileId': file_id,
-                'fileName': processing_result.get('file_name', ''),
-                'uploadTimestamp': processing_result.get('upload_timestamp', ''),
-                'processingStatus': detailed_status,
-                'processingType': processing_result.get('processing_type', ''),
-                'fileSize': format_file_size(processing_result.get('file_size', 0)),
-                'contentType': processing_result.get('content_type', ''),
-                'cloudFrontUrl': cloudfront_url,
-                'bucket': processing_result.get('bucket', ''),
-                'key': processing_result.get('key', ''),
-                'metadata': {
-                    'publication': processing_result.get('publication', ''),
-                    'publication_year': processing_result.get('publication_year', ''),
-                    'publication_title': processing_result.get('publication_title', ''),
-                    'publication_author': processing_result.get('publication_author', ''),
-                    'publication_description': processing_result.get('publication_description', ''),
-                    'publication_page': processing_result.get('publication_page', ''),
-                    'publication_tags': processing_result.get('publication_tags', [])
+            # Build response data based on whether this is finalized or regular results
+            if show_finalized:
+                # For finalized results, use finalized status and data
+                response_data = {
+                    'fileId': file_id,
+                    'fileName': processing_result.get('file_name', ''),
+                    'uploadTimestamp': processing_result.get('upload_timestamp', ''),
+                    'processingStatus': 'finalized',
+                    'processingType': processing_result.get('processing_type', ''),
+                    'fileSize': format_file_size(processing_result.get('file_size', 0)),
+                    'contentType': processing_result.get('content_type', ''),
+                    'cloudFrontUrl': cloudfront_url,
+                    'bucket': processing_result.get('bucket', ''),
+                    'key': processing_result.get('key', ''),
+                    'finalizedTimestamp': processing_result.get('finalized_timestamp', ''),
+                    'metadata': {
+                        'publication': processing_result.get('publication', ''),
+                        'date': processing_result.get('publication_year', ''),
+                        'title': processing_result.get('publication_title', ''),
+                        'author': processing_result.get('publication_author', ''),
+                        'description': processing_result.get('publication_description', ''),
+                        'page': processing_result.get('publication_page', ''),
+                        'tags': processing_result.get('publication_tags', []),
+                        'collection': processing_result.get('publication_collection', ''),
+                        'documentType': processing_result.get('publication_document_type', '')
+                    }
                 }
-            }
+            else:
+                # Get detailed processing status (with progress for running jobs)
+                detailed_status = get_detailed_processing_status(processing_result)
+                
+                # For regular results, show standard data
+                response_data = {
+                    'fileId': file_id,
+                    'fileName': processing_result.get('file_name', ''),
+                    'uploadTimestamp': processing_result.get('upload_timestamp', ''),
+                    'processingStatus': detailed_status,
+                    'processingType': processing_result.get('processing_type', ''),
+                    'fileSize': format_file_size(processing_result.get('file_size', 0)),
+                    'contentType': processing_result.get('content_type', ''),
+                    'cloudFrontUrl': cloudfront_url,
+                    'bucket': processing_result.get('bucket', ''),
+                    'key': processing_result.get('key', ''),
+                    'metadata': {
+                        'publication': processing_result.get('publication', ''),
+                        'date': processing_result.get('publication_year', ''),
+                        'title': processing_result.get('publication_title', ''),
+                        'author': processing_result.get('publication_author', ''),
+                        'description': processing_result.get('publication_description', ''),
+                        'page': processing_result.get('publication_page', ''),
+                        'tags': processing_result.get('publication_tags', []),
+                        'collection': processing_result.get('publication_collection', ''),
+                        'documentType': processing_result.get('publication_document_type', '')
+                    }
+                }
             
             # Add OCR results from unified table structure
             if processing_result:
-                response_data['ocrResults'] = {
-                    'extractedText': processing_result.get('extracted_text', ''),
-                    'formattedText': processing_result.get('formatted_text', ''),
-                    'refinedText': processing_result.get('refined_text', ''),
-                    'processingCost': processing_result.get('processing_cost', 0),
-                    'processedAt': processing_result.get('processed_at', ''),
-                    'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
-                    'tokenUsage': processing_result.get('token_usage', {}),
-                    'languageDetection': processing_result.get('language_detection', {}),
-                    'entityAnalysis': processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {})),
-                    'userEdited': processing_result.get('user_edited', False),
-                    'editHistory': processing_result.get('edit_history', [])
-                }
+                if show_finalized:
+                    # For finalized results, show finalized data
+                    response_data['finalizedResults'] = {
+                        'finalizedText': processing_result.get('finalized_text', ''),
+                        'textSource': processing_result.get('text_source', ''),
+                        'wasEditedBeforeFinalization': processing_result.get('was_edited_before_finalization', False),
+                        'finalizedTimestamp': processing_result.get('finalized_timestamp', ''),
+                        'finalizedBy': processing_result.get('finalized_by', ''),
+                        'notes': processing_result.get('notes', ''),
+                        'originalFormattedText': processing_result.get('original_formatted_text', ''),
+                        'originalRefinedText': processing_result.get('original_refined_text', ''),
+                        'processingCost': processing_result.get('processing_cost', processing_result.get('total_cost', 0)),
+                        'processedAt': processing_result.get('processed_at', processing_result.get('processing_timestamp', '')),
+                        'tokenUsage': processing_result.get('token_usage', {}),
+                        'languageDetection': processing_result.get('language_detection', {}),
+                        'entityAnalysis': processing_result.get('entity_analysis', {}),
+                        'editHistory': processing_result.get('edit_history', [])
+                    }
+                else:
+                    # For regular results, show standard OCR data
+                    response_data['ocrResults'] = {
+                        'extractedText': processing_result.get('extracted_text', ''),
+                        'formattedText': processing_result.get('formatted_text', ''),
+                        'refinedText': processing_result.get('refined_text', ''),
+                        'processingCost': processing_result.get('processing_cost', 0),
+                        'processedAt': processing_result.get('processed_at', ''),
+                        'processingDuration': format_duration(calculate_real_time_duration(processing_result)),
+                        'tokenUsage': processing_result.get('token_usage', {}),
+                        'languageDetection': processing_result.get('language_detection', {}),
+                        'entityAnalysis': processing_result.get('entityAnalysis', processing_result.get('entity_analysis', {})),
+                        'userEdited': processing_result.get('user_edited', False),
+                        'editHistory': processing_result.get('edit_history', [])
+                    }
             else:
                 # No OCR results available
                 response_data['ocrResults'] = None
@@ -885,38 +965,43 @@ def lambda_handler(event, context):
                     response_data['invoiceAnalysis'] = invoice_analysis
             
         else:
-            # Query files from results table
-            if status_filter == 'all':
-                # Scan all files from results table
-                response = results_table.scan(
-                    Limit=limit
-                )
-            elif status_filter == 'processed':
-                # Handle batch type filtering based on endpoint
-                if batch_type_filter == 'short-batch':
-                    # Only get short-batch files (status = 'completed')
-                    response = results_table.scan(
-                        FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('short-batch'),
-                        Limit=limit
-                    )
-                elif batch_type_filter == 'long-batch':
-                    # Only get long-batch files (status = 'completed')
-                    response = results_table.scan(
-                        FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('long-batch'),
-                        Limit=limit
-                    )
-                else:
-                    # For processed files, get both short-batch and long-batch completed files
-                    response = results_table.scan(
-                        FilterExpression=Attr('processing_status').eq('completed'),
-                        Limit=limit
-                    )
+            # Query files from appropriate table
+            if show_finalized:
+                # For finalized results, scan the finalized table
+                response = table.scan(Limit=limit)
             else:
-                # Query by specific status
-                response = results_table.scan(
-                    FilterExpression=Attr('processing_status').eq(status_filter),
-                    Limit=limit
-                )
+                # Query files from results table
+                if status_filter == 'all':
+                    # Scan all files from results table
+                    response = table.scan(
+                        Limit=limit
+                    )
+                elif status_filter == 'processed':
+                    # Handle batch type filtering based on endpoint
+                    if batch_type_filter == 'short-batch':
+                        # Only get short-batch files (status = 'completed')
+                        response = table.scan(
+                            FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('short-batch'),
+                            Limit=limit
+                        )
+                    elif batch_type_filter == 'long-batch':
+                        # Only get long-batch files (status = 'completed')
+                        response = table.scan(
+                            FilterExpression=Attr('processing_status').eq('completed') & Attr('processing_type').eq('long-batch'),
+                            Limit=limit
+                        )
+                    else:
+                        # For processed files, get both short-batch and long-batch completed files
+                        response = table.scan(
+                            FilterExpression=Attr('processing_status').eq('completed'),
+                            Limit=limit
+                        )
+                else:
+                    # Query by specific status
+                    response = table.scan(
+                        FilterExpression=Attr('processing_status').eq(status_filter),
+                        Limit=limit
+                    )
             
             items = decimal_to_json(response.get('Items', []))
             
@@ -929,91 +1014,120 @@ def lambda_handler(event, context):
                 
                 # Generate CloudFront URL
                 s3_key = item.get('key', '')  # 'key' is the field name in results table
-                cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else None
+                cloudfront_url = f"https://{cloudfront_domain}/{s3_key}" if s3_key else ''
                 
                 # Build item data (match individual file response structure)
                 item_data = {
                     'fileId': item['file_id'],
                     'fileName': item.get('file_name', ''),
                     'uploadTimestamp': item.get('upload_timestamp', ''),
-                    'processingStatus': item.get('processing_status', ''),
-                    'processingType': item.get('processing_type', ''),  # Add missing field
-                    'fileSize': format_file_size(item.get('file_size', 0)),
-                    'contentType': item.get('content_type', ''),
                     'cloudFrontUrl': cloudfront_url,
-                    'bucket': item.get('bucket', ''),  # Add missing field
-                    'key': item.get('key', ''),  # Add missing field
+                    'bucket': item.get('bucket', ''),
+                    'key': item.get('key', ''),
                     'metadata': {
                         'publication': item.get('publication', ''),
-                        'publication_year': item.get('publication_year', ''),
-                        'publication_title': item.get('publication_title', ''),
-                        'publication_author': item.get('publication_author', ''),
-                        'publication_description': item.get('publication_description', ''),
-                        'publication_page': item.get('publication_page', ''),
-                        'publication_tags': item.get('publication_tags', [])
+                        'date': item.get('publication_year', ''),
+                        'title': item.get('publication_title', ''),
+                        'author': item.get('publication_author', ''),
+                        'description': item.get('publication_description', ''),
+                        'page': item.get('publication_page', ''),
+                        'tags': item.get('publication_tags', []),
+                        'collection': item.get('publication_collection', ''),
+                        'documentType': item.get('publication_document_type', '')
                     }
                 }
                 
-                # Add processing results if available
-                if item.get('processing_status') in ['processed', 'completed']:
-                    # Determine processing type and add appropriate results
-                    processing_type = item.get('processing_type', 'long-batch')
+                if show_finalized:
+                    # For finalized results, add finalized-specific fields
+                    item_data.update({
+                        'finalizedTimestamp': item.get('finalized_timestamp', ''),
+                        'processingStatus': 'finalized',
+                        'processingType': item.get('processing_type', ''),
+                        'fileSize': format_file_size(item.get('file_size', 0)),
+                        'contentType': item.get('content_type', '')
+                    })
                     
-                    if processing_type == 'short-batch':
-                        # Short-batch results from shared table
-                        item_data['ocrResults'] = {
-                            'extractedText': item.get('extracted_text', ''),
-                            'formattedText': item.get('formatted_text', ''),
-                            'refinedText': item.get('refined_text', ''),
-                            'processingCost': item.get('processing_cost', 0),
-                            'processedAt': item.get('processed_at', ''),
-                            'processingDuration': format_duration(calculate_real_time_duration(item)),
-                            'tokenUsage': item.get('token_usage', {}),
-                            'languageDetection': item.get('language_detection', {}),
-                            'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),  # Add missing field
-                            'userEdited': item.get('user_edited', False),  # Add missing field
-                            'editHistory': item.get('edit_history', [])  # Add missing field
-                        }
+                    # Add finalized results
+                    item_data['finalizedResults'] = {
+                        'finalizedText': item.get('finalized_text', ''),
+                        'textSource': item.get('text_source', ''),
+                        'wasEditedBeforeFinalization': item.get('was_edited_before_finalization', False),
+                        'finalizedBy': item.get('finalized_by', ''),
+                        'notes': item.get('notes', ''),
+                        'originalFormattedText': item.get('original_formatted_text', ''),
+                        'originalRefinedText': item.get('original_refined_text', ''),
+                        'processingCost': item.get('processing_cost', item.get('total_cost', 0)),
+                        'processedAt': item.get('processed_at', item.get('processing_timestamp', ''))
+                    }
+                else:
+                    # For regular results, add standard fields
+                    item_data.update({
+                        'processingStatus': item.get('processing_status', ''),
+                        'processingType': item.get('processing_type', ''),
+                        'fileSize': format_file_size(item.get('file_size', 0)),
+                        'contentType': item.get('content_type', '')
+                    })
+                    
+                    # Add processing results if available
+                    if item.get('processing_status') in ['processed', 'completed']:
+                        # Determine processing type and add appropriate results
+                        processing_type = item.get('processing_type', 'long-batch')
                         
-                        # Add text analysis for short-batch
-                        text_analysis = item.get('textAnalysis', {})
-                        if text_analysis:
-                            item_data['textAnalysis'] = text_analysis
-                    else:
-                        # Long-batch results from shared table
-                        item_data['ocrResults'] = {
-                            'extractedText': item.get('extracted_text', ''),
-                            'formattedText': item.get('formatted_text', ''),
-                            'refinedText': item.get('refined_text', ''),
-                            'processingCost': item.get('processing_cost', 0),  # Add missing field
-                            'processedAt': item.get('processed_at', ''),  # Add missing field
-                            'processingDuration': format_duration(calculate_real_time_duration(item)),
-                            'tokenUsage': item.get('token_usage', {}),  # Add missing field
-                            'languageDetection': item.get('language_detection', {}),  # Add missing field
-                            'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),  # Add missing field
-                            'userEdited': item.get('user_edited', False),  # Add missing field
-                            'editHistory': item.get('edit_history', [])  # Add missing field
-                        }
+                        if processing_type == 'short-batch':
+                            # Short-batch results from shared table
+                            item_data['ocrResults'] = {
+                                'extractedText': item.get('extracted_text', ''),
+                                'formattedText': item.get('formatted_text', ''),
+                                'refinedText': item.get('refined_text', ''),
+                                'processingCost': item.get('processing_cost', 0),
+                                'processedAt': item.get('processed_at', ''),
+                                'processingDuration': format_duration(calculate_real_time_duration(item)),
+                                'tokenUsage': item.get('token_usage', {}),
+                                'languageDetection': item.get('language_detection', {}),
+                                'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),
+                                'userEdited': item.get('user_edited', False),
+                                'editHistory': item.get('edit_history', [])
+                            }
                         
-                        # Add additional analysis data for long-batch
-                        # First try the unified textAnalysis field, then fall back to legacy textract_analysis
-                        text_analysis = item.get('textAnalysis', {})
-                        if text_analysis:
-                            item_data['textAnalysis'] = text_analysis
+                            # Add text analysis for short-batch
+                            text_analysis = item.get('textAnalysis', {})
+                            if text_analysis:
+                                item_data['textAnalysis'] = text_analysis
                         else:
-                            enhanced_textract_analysis = item.get('textract_analysis', {})                
-                            if enhanced_textract_analysis:
-                                item_data['textAnalysis'] = enhanced_textract_analysis
+                            # Long-batch results from shared table
+                            item_data['ocrResults'] = {
+                                'extractedText': item.get('extracted_text', ''),
+                                'formattedText': item.get('formatted_text', ''),
+                                'refinedText': item.get('refined_text', ''),
+                                'processingCost': item.get('processing_cost', 0),
+                                'processedAt': item.get('processed_at', ''),
+                                'processingDuration': format_duration(calculate_real_time_duration(item)),
+                                'tokenUsage': item.get('token_usage', {}),
+                                'languageDetection': item.get('language_detection', {}),
+                                'entityAnalysis': item.get('entityAnalysis', item.get('entity_analysis', {})),
+                                'userEdited': item.get('user_edited', False),
+                                'editHistory': item.get('edit_history', [])
+                            }
                         
-                        # Add enhanced Comprehend entity analysis for long-batch
-                        comprehend_analysis = item.get('comprehend_analysis', {})
-                        if comprehend_analysis:
-                            item_data['comprehendAnalysis'] = comprehend_analysis
+                            # Add additional analysis data for long-batch
+                            # First try the unified textAnalysis field, then fall back to legacy textract_analysis
+                            text_analysis = item.get('textAnalysis', {})
+                            if text_analysis:
+                                item_data['textAnalysis'] = text_analysis
+                            else:
+                                enhanced_textract_analysis = item.get('textract_analysis', {})                
+                                if enhanced_textract_analysis:
+                                    item_data['textAnalysis'] = enhanced_textract_analysis
                             
-                        # Add dedicated Invoice Analysis section
-                        invoice_analysis = item.get('invoice_analysis', {})
-                        if invoice_analysis:
-                            item_data['invoiceAnalysis'] = invoice_analysis
+                            # Add enhanced Comprehend entity analysis for long-batch
+                            comprehend_analysis = item.get('comprehend_analysis', {})
+                            if comprehend_analysis:
+                                item_data['comprehendAnalysis'] = comprehend_analysis
+                                
+                            # Add dedicated Invoice Analysis section
+                            invoice_analysis = item.get('invoice_analysis', {})
+                            if invoice_analysis:
+                                item_data['invoiceAnalysis'] = invoice_analysis
                 
                 processed_items.append(item_data)
             

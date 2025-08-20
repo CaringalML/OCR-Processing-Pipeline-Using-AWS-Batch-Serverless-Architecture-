@@ -4,6 +4,9 @@
 output "api_endpoints" {
   description = "Complete API endpoints - copy and paste ready"
   value = {
+    # 🌐 BASE URL
+    base_url = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}"
+    
     # 📄 DOCUMENT PROCESSING (Primary Workflow)
     
     # Smart upload with automatic routing (≤300KB → Claude AI, >300KB → AWS Batch)
@@ -15,8 +18,20 @@ output "api_endpoints" {
     # List all processed documents with optional filtering
     list_all_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed"
     
-    # Edit OCR results and document metadata
-    edit_ocr_results = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed/edit?fileId={file_id}"
+    
+    # 🎯 OCR FINALIZATION (Choose & Lock Final Version)
+    
+    # Finalize OCR results - choose between formattedText/refinedText with optional editing
+    finalize_ocr_results = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed/finalize/{file_id}"
+    
+    # Get all finalized OCR results
+    list_finalized_results = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?finalized=true"
+    
+    # Get specific finalized result by file ID
+    get_finalized_result = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?fileId={file_id}&finalized=true"
+    
+    # Edit finalized document with complete audit trail
+    edit_finalized_document = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/finalized/edit/{file_id}"
     
     # 🔍 SEARCH & DISCOVERY
     
@@ -70,9 +85,10 @@ output "infrastructure" {
     
     # 🗃️ Database Tables
     database = {
-      main_ocr_table     = aws_dynamodb_table.processing_results.name
-      invoice_table      = aws_dynamodb_table.invoice_processing_results.name
-      recycle_bin_table  = aws_dynamodb_table.recycle_bin.name
+      main_ocr_table       = aws_dynamodb_table.processing_results.name
+      finalized_ocr_table  = aws_dynamodb_table.ocr_finalized.name
+      invoice_table        = aws_dynamodb_table.invoice_processing_results.name
+      recycle_bin_table    = aws_dynamodb_table.recycle_bin.name
     }
     
     # 🔄 Message Queues (for monitoring)
@@ -120,7 +136,10 @@ output "system_overview" {
       "🌐 CloudFront CDN delivery",
       "🔍 Advanced fuzzy search",
       "♻️ Recycle bin (30-day retention)",
-      "🔧 File restoration capability"
+      "🔧 File restoration capability",
+      "🎯 OCR result finalization with edit capability",
+      "📝 Post-finalization document editing with audit trail",
+      "📋 Complete version history and edit tracking"
     ]
     
     # 📋 Metadata Fields
