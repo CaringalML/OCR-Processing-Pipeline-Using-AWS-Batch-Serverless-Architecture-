@@ -3,6 +3,7 @@ import boto3
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
+import time
 
 def decimal_to_json(obj):
     """Convert Decimal objects to JSON-serializable types"""
@@ -25,12 +26,14 @@ def lambda_handler(event, context):
     
     Triggered by API Gateway POST requests to /finalize/{fileId} endpoint
     
+    If editedText is provided, creates an edit history entry tracking the change from
+    the base text (textSource) to the edited version, using notes as edit_reason.
+    
     Request body should contain:
     {
         "textSource": "formatted" | "refined",  # Required: which text version to finalize
-        "editedText": "Optional edited version", # Optional: if provided, this overrides the selected text
-        "finalizedBy": "user@example.com",      # Optional: who finalized the document
-        "notes": "Additional notes"              # Optional: any notes about finalization
+        "editedText": "Optional edited version", # Optional: if provided, creates edit history
+        "notes": "Reason for edit"              # Optional: used as edit_reason if editedText provided
     }
     """
     
@@ -40,8 +43,9 @@ def lambda_handler(event, context):
     # Get configuration
     results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
     finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
+    edit_history_table_name = os.environ.get('EDIT_HISTORY_TABLE', 'ocr-processor-edit-history')
     
-    if not results_table_name or not finalized_table_name:
+    if not results_table_name or not finalized_table_name or not edit_history_table_name:
         return {
             'statusCode': 500,
             'headers': {
@@ -84,10 +88,9 @@ def lambda_handler(event, context):
         body = json.loads(body_raw)
         text_source = body.get('textSource')
         edited_text = body.get('editedText')  # Optional edited version
-        finalized_by = body.get('finalizedBy', 'system')
         notes = body.get('notes', '')
         
-        print(f"Parsed body - textSource: {text_source}, hasEditedText: {bool(edited_text)}, finalizedBy: {finalized_by}")
+        print(f"Parsed body - textSource: {text_source}, hasEditedText: {bool(edited_text)}")
         
         # Validate text source selection
         if text_source not in ['formatted', 'refined']:
@@ -106,6 +109,7 @@ def lambda_handler(event, context):
         # Initialize tables
         results_table = dynamodb.Table(results_table_name)
         finalized_table = dynamodb.Table(finalized_table_name)
+        edit_history_table = dynamodb.Table(edit_history_table_name)
         
         # Get current OCR results
         results_response = results_table.get_item(
@@ -184,6 +188,28 @@ def lambda_handler(event, context):
         # Track if user made edits before finalizing
         was_edited = bool(edited_text)
         
+        # Create edit history entry if user made edits during finalization
+        if was_edited:
+            edit_timestamp = datetime.now(timezone.utc).isoformat()
+            edit_entry = {
+                'file_id': file_id,
+                'edit_timestamp': edit_timestamp,
+                'timestamp': edit_timestamp,  # For backward compatibility
+                'edit_reason': notes if notes else f'User edited text during finalization (chose {text_source} as base)',
+                'previous_text': base_text,
+                'new_text': finalized_text,
+                'text_length_change': len(finalized_text) - len(base_text),
+                'ttl': int(time.time()) + (30 * 24 * 60 * 60)  # 30 days TTL
+            }
+            
+            # Store edit history entry
+            try:
+                edit_history_table.put_item(Item=edit_entry)
+                print(f"Stored finalization edit history entry for {file_id} with TTL: {edit_entry['ttl']}")
+            except Exception as e:
+                print(f"Warning: Failed to store finalization edit history: {str(e)}")
+                # Continue with finalization even if edit history fails
+        
         # Prepare finalized record
         finalized_timestamp = datetime.now(timezone.utc).isoformat()
         finalized_record = {
@@ -192,10 +218,6 @@ def lambda_handler(event, context):
             'finalized_text': finalized_text,
             'text_source': text_source,
             'was_edited_before_finalization': was_edited,
-            'original_formatted_text': current_results.get('formatted_text', ''),
-            'original_refined_text': current_results.get('refined_text', ''),
-            'finalized_by': finalized_by,
-            'notes': notes,
             
             # File and S3 metadata
             'file_name': current_results.get('file_name', ''),
@@ -269,7 +291,6 @@ def lambda_handler(event, context):
             'finalizedTimestamp': finalized_timestamp,
             'textSource': text_source,
             'wasEdited': was_edited,
-            'finalizedBy': finalized_by,
             'message': message,
             'finalizedTextPreview': finalized_text[:500] if len(finalized_text) > 500 else finalized_text
         }

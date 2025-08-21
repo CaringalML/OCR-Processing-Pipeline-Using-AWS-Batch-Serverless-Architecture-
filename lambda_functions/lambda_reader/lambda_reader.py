@@ -859,15 +859,12 @@ def lambda_handler(event, context):
                         'textSource': processing_result.get('text_source', ''),
                         'wasEditedBeforeFinalization': processing_result.get('was_edited_before_finalization', False),
                         'finalizedTimestamp': processing_result.get('finalized_timestamp', ''),
-                        'finalizedBy': processing_result.get('finalized_by', ''),
-                        'notes': processing_result.get('notes', ''),
-                        'originalFormattedText': processing_result.get('original_formatted_text', ''),
-                        'originalRefinedText': processing_result.get('original_refined_text', ''),
                         'processingCost': processing_result.get('processing_cost', processing_result.get('total_cost', 0)),
                         'processedAt': processing_result.get('processed_at', processing_result.get('processing_timestamp', '')),
                         'tokenUsage': processing_result.get('token_usage', {}),
                         'languageDetection': processing_result.get('language_detection', {}),
                         'entityAnalysis': processing_result.get('entity_analysis', {}),
+                        'textAnalysis': processing_result.get('textAnalysis', {}),
                         'editHistory': get_edit_history(dynamodb, edit_history_table_name, file_id)
                     }
                 else:
@@ -1087,12 +1084,12 @@ def lambda_handler(event, context):
                         'finalizedText': item.get('finalized_text', ''),
                         'textSource': item.get('text_source', ''),
                         'wasEditedBeforeFinalization': item.get('was_edited_before_finalization', False),
-                        'finalizedBy': item.get('finalized_by', ''),
-                        'notes': item.get('notes', ''),
-                        'originalFormattedText': item.get('original_formatted_text', ''),
-                        'originalRefinedText': item.get('original_refined_text', ''),
                         'processingCost': item.get('processing_cost', item.get('total_cost', 0)),
-                        'processedAt': item.get('processed_at', item.get('processing_timestamp', ''))
+                        'processedAt': item.get('processed_at', item.get('processing_timestamp', '')),
+                        'entityAnalysis': item.get('entity_analysis', {}),
+                        'tokenUsage': item.get('token_usage', {}),
+                        'languageDetection': item.get('language_detection', {}),
+                        'textAnalysis': item.get('textAnalysis', {})
                     }
                 else:
                     # For regular results, add standard fields

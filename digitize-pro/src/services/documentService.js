@@ -157,7 +157,6 @@ class DocumentService {
     try {
       const requestBody = {
         textSource: data.textSource || 'refined', // 'formatted' or 'refined'
-        finalizedBy: data.finalizedBy || 'user',
         notes: data.notes || ''
       };
 

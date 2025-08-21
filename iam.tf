@@ -540,6 +540,16 @@ resource "aws_iam_policy" "finalizer_policy" {
           aws_dynamodb_table.ocr_finalized.arn,
           "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
         ]
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "dynamodb:PutItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.edit_history.arn,
+          "${aws_dynamodb_table.edit_history.arn}/index/*"
+        ]
       }
     ]
   })

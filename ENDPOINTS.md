@@ -587,7 +587,6 @@ pm.test("Text source matches request", function () {
     "finalizedTimestamp": "2025-08-18T10:30:00Z",
     "textSource": "formatted",
     "wasEdited": false,
-    "finalizedBy": "system",
     "message": "OCR results finalized successfully using formatted text",
     "finalizedTextPreview": "First 500 characters of finalized text..."
 }
@@ -600,7 +599,6 @@ pm.test("Text source matches request", function () {
     "finalizedTimestamp": "2025-08-18T10:30:00Z", 
     "textSource": "refined",
     "wasEdited": true,
-    "finalizedBy": "system",
     "message": "OCR results finalized successfully using edited refined text",
     "finalizedTextPreview": "Your edited text first 500 characters..."
 }
@@ -653,11 +651,7 @@ pm.test("Response contains finalized files", function () {
             "finalizedResults": {
                 "finalizedText": "The final locked version of the text",
                 "textSource": "formatted",
-                "wasEditedBeforeFinalization": true,
-                "finalizedBy": "system", 
-                "notes": "User corrections applied",
-                "originalFormattedText": "Original formatted version",
-                "originalRefinedText": "Original refined version"
+                "wasEditedBeforeFinalization": true
             }
         }
     ],

@@ -271,10 +271,11 @@ resource "aws_lambda_function" "finalizer" {
 
   environment {
     variables = {
-      RESULTS_TABLE   = aws_dynamodb_table.processing_results.name
-      FINALIZED_TABLE = aws_dynamodb_table.ocr_finalized.name
-      LOG_LEVEL       = var.lambda_log_level
-      ENVIRONMENT     = var.environment
+      RESULTS_TABLE      = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE    = aws_dynamodb_table.ocr_finalized.name
+      EDIT_HISTORY_TABLE = aws_dynamodb_table.edit_history.name
+      LOG_LEVEL          = var.lambda_log_level
+      ENVIRONMENT        = var.environment
     }
   }
 

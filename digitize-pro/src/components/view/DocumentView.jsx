@@ -523,7 +523,8 @@ const DocumentView = () => {
               <p className="text-sm text-gray-500">
                 {document.ocrResults?.languageDetection?.detected_language || 'Language not detected'} • 
                 Processing: {document.ocrResults?.processingDuration || 'Unknown'} • 
-                Quality: {document.textAnalysis?.qualityAssessment?.confidence_score || 'N/A'}%
+                Quality: {(document.finalizedResults?.textAnalysis?.qualityAssessment?.confidence_score || 
+                          document.textAnalysis?.qualityAssessment?.confidence_score || 'N/A')}%
               </p>
             </div>
             <div className="flex-1 p-4">
@@ -771,10 +772,13 @@ const DocumentView = () => {
                             <p className="text-gray-900 mt-0.5">{document.processingType}</p>
                           </div>
                         )}
-                        {document.ocrResults?.languageDetection && (
+                        {(document.finalizedResults?.languageDetection || document.ocrResults?.languageDetection) && (
                           <div>
                             <span className="font-medium text-gray-600">Detected Language:</span>
-                            <p className="text-gray-900 mt-0.5">{document.ocrResults.languageDetection.detected_language}</p>
+                            <p className="text-gray-900 mt-0.5">
+                              {(document.finalizedResults?.languageDetection?.detected_language || 
+                                document.ocrResults?.languageDetection?.detected_language)}
+                            </p>
                           </div>
                         )}
                         {document.ocrResults?.pages && (
@@ -789,10 +793,14 @@ const DocumentView = () => {
                             <p className="text-gray-900 mt-0.5">{document.ocrResults.processingDuration}</p>
                           </div>
                         )}
-                        {document.textAnalysis?.qualityAssessment?.confidence_score && (
+                        {(document.finalizedResults?.textAnalysis?.qualityAssessment?.confidence_score || 
+                          document.textAnalysis?.qualityAssessment?.confidence_score) && (
                           <div>
                             <span className="font-medium text-gray-600">OCR Quality:</span>
-                            <p className="text-gray-900 mt-0.5">{document.textAnalysis.qualityAssessment.confidence_score}%</p>
+                            <p className="text-gray-900 mt-0.5">
+                              {(document.finalizedResults?.textAnalysis?.qualityAssessment?.confidence_score || 
+                                document.textAnalysis?.qualityAssessment?.confidence_score)}%
+                            </p>
                           </div>
                         )}
                         
@@ -819,21 +827,36 @@ const DocumentView = () => {
                         )}
                         
                         {/* Entities - Full Width */}
-                        {document.ocrResults?.entityAnalysis?.entities && document.ocrResults.entityAnalysis.entities.length > 0 && (
+                        {(document.ocrResults?.entityAnalysis?.entities || document.finalizedResults?.entityAnalysis?.entities) && (
                           <div className="sm:col-span-2">
                             <span className="font-medium text-gray-600">Detected Entities:</span>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {document.ocrResults.entityAnalysis.entities.slice(0, 6).map((entity, index) => (
-                                <span key={index} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                  {entity}
-                                </span>
-                              ))}
-                              {document.ocrResults.entityAnalysis.entities.length > 6 && (
-                                <span className="text-xs text-gray-500 px-1.5 py-0.5">
-                                  +{document.ocrResults.entityAnalysis.entities.length - 6} more
-                                </span>
-                              )}
+                              {(() => {
+                                // Use finalized results entities if available, otherwise use OCR results
+                                const entities = document.finalizedResults?.entityAnalysis?.entities || 
+                                                document.ocrResults?.entityAnalysis?.entities || [];
+                                
+                                return (
+                                  <>
+                                    {entities.slice(0, 10).map((entity, index) => (
+                                      <span key={index} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                        {entity}
+                                      </span>
+                                    ))}
+                                    {entities.length > 10 && (
+                                      <span className="text-xs text-gray-500 px-1.5 py-0.5">
+                                        +{entities.length - 10} more
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
+                            {document.finalizedResults?.entityAnalysis?.entities && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                From finalized document analysis
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -887,7 +910,7 @@ const DocumentView = () => {
                         {document.finalizedResults.editHistory.length} edit{document.finalizedResults.editHistory.length !== 1 ? 's' : ''} made to this document
                       </p>
                       <p className="text-xs text-gray-400 mt-1">
-                        History entries are automatically removed after 30 days via DynamoDB TTL
+                        History entries are automatically removed after 30 days
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

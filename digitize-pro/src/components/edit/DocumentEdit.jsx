@@ -25,6 +25,7 @@ const DocumentEdit = () => {
   const [textareaRef, setTextareaRef] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [editReason, setEditReason] = useState('');
   
   // Magnification controls
   const [magnifyEnabled, setMagnifyEnabled] = useState(false);
@@ -217,7 +218,13 @@ const DocumentEdit = () => {
 
   // Track changes
   useEffect(() => {
-    setHasChanges(editedText !== originalText);
+    const hasTextChanges = editedText !== originalText;
+    setHasChanges(hasTextChanges);
+    
+    // Clear edit reason if no changes
+    if (!hasTextChanges) {
+      setEditReason('');
+    }
   }, [editedText, originalText]);
 
   // Handle text change with history
@@ -273,6 +280,7 @@ const DocumentEdit = () => {
 
       setOriginalText(editedText);
       setHasChanges(false);
+      setEditReason('');
       
       // Show success message
       alert('Document saved successfully!');
@@ -286,6 +294,12 @@ const DocumentEdit = () => {
 
   // Finalize document
   const handleFinalize = async () => {
+    // Validate edit reason if changes were made
+    if (hasChanges && !editReason.trim()) {
+      alert('Please provide a reason for the edits you made.');
+      return;
+    }
+    
     try {
       setFinalizing(true);
       setError(null);
@@ -293,8 +307,7 @@ const DocumentEdit = () => {
       // Prepare finalization data
       const finalizationData = {
         textSource: selectedTextType,
-        finalizedBy: 'user', // Could be replaced with actual user identification
-        notes: hasChanges ? 'User edited text before finalization' : 'Used original text without editing'
+        notes: hasChanges ? editReason : '' // Use edit reason as notes if text was edited
       };
 
       // If user made changes, include the edited text
@@ -368,6 +381,7 @@ const DocumentEdit = () => {
     setOriginalText(newText);
     initializeHistory(newText);
     setHasChanges(false);
+    setEditReason('');
   };
 
   // Reset to original
@@ -375,6 +389,7 @@ const DocumentEdit = () => {
     if (window.confirm('Are you sure you want to discard all changes?')) {
       setEditedText(originalText);
       initializeHistory(originalText);
+      setEditReason('');
     }
   };
 
@@ -816,6 +831,30 @@ const DocumentEdit = () => {
                 />
               )}
             </div>
+
+            {/* Edit Reason Field - Show only when there are changes */}
+            {hasChanges && !document?.finalized && (
+              <div className="p-4 border-t border-gray-200 bg-yellow-50">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-1">
+                    <label htmlFor="edit-reason" className="block text-sm font-medium text-gray-700 mb-1">
+                      Edit Reason <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="edit-reason"
+                      type="text"
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      placeholder="Describe why you made these changes (e.g., 'Fixed formatting errors', 'Corrected OCR mistakes')..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      This reason will be recorded in the edit history when you finalize the document
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Entity Analysis */}
             {document.ocrResults?.entityAnalysis?.entities && document.ocrResults.entityAnalysis.entities.length > 0 && (
