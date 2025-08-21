@@ -556,7 +556,14 @@ const Upload = () => {
                 }}
                 className="border border-green-600 text-green-600 px-6 py-2 rounded-lg hover:bg-green-50 transition-colors"
               >
-                {showMetadataForm ? 'Hide' : uploadQueue.filter(f => f.status === 'pending').length > 0 ? 'Edit' : 'Add'} Metadata
+                {showMetadataForm ? 'Hide' : (() => {
+                  // Check if any metadata fields have content
+                  const hasMetadata = metadata.title || metadata.author || metadata.publication || 
+                                    metadata.date || metadata.page || metadata.tags || metadata.description || 
+                                    metadata.subject || (metadata.language && metadata.language !== 'English') || 
+                                    (metadata.type && metadata.type !== 'Document') || metadata.rights || metadata.collection;
+                  return hasMetadata ? 'Edit' : 'Add';
+                })()} Metadata
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-4">Supported formats: PDF, TIFF, JPG, PNG • Maximum file size: 500MB</p>
