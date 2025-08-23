@@ -47,7 +47,9 @@ class SearchService {
       });
 
       if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('Search API error:', response.status, errorText);
+        throw new Error(`Search failed: ${response.status} - ${response.statusText}`);
       }
 
       const data = await response.json();
@@ -186,15 +188,20 @@ class SearchService {
       results: searchData.results.map(result => ({
         id: result.fileId,
         title: result.title || result.fileName || 'Untitled Document',
+        fileName: result.fileName || '',
         authors: result.authors || [result.author] || [],
         publication: result.publication || '',
-        year: result.year || result.publication_year || '',
-        snippet: result.snippet || result.ocrResults?.refinedText?.substring(0, 200) || '',
+        year: result.year || result.date || result.publication_year || '',
+        snippet: result.snippet || result.ocrResults?.finalizedText?.substring(0, 200) || '',
         fileUrl: result.fileUrl || result.cloudFrontUrl || '',
-        score: result.fuzzyScore || result.score || 100,
+        fileSize: result.fileSize || '0B',
+        fileType: result.fileType || result.contentType || '',
+        score: result.fuzzyScore || result.matchScore || result.score || 100,
         matchField: result.matchField || '',
         metadata: result.metadata || {},
-        ocrResults: result.ocrResults || {}
+        ocrResults: result.ocrResults || {},
+        uploadDate: result.uploadDate || result.uploadTimestamp || '',
+        processingStatus: result.processingStatus || ''
       })),
       totalResults: searchData.totalResults || searchData.results.length,
       searchInfo: searchData.searchInfo || {},
