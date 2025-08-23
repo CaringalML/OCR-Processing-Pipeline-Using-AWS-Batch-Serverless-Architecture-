@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload as UploadIcon, FileText, Search, X, CheckCircle, AlertCircle, Edit, RefreshCw } from 'lucide-react';
+import { Upload as UploadIcon, FileText, Search, X, CheckCircle, AlertCircle, Edit, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import uploadService from '../../services/uploadService';
 import { useDocuments } from '../../hooks/useDocuments';
@@ -16,6 +16,9 @@ const Upload = () => {
   const [loadingProcessed, setLoadingProcessed] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [detailedStatusCache, setDetailedStatusCache] = useState({});
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '', isFinalized: false });
   const fileInputRef = useRef(null);
   const { documents, fetchDocuments } = useDocuments();
 
@@ -24,12 +27,9 @@ const Upload = () => {
   // Short-batch files just show generic "processing" status
   const fetchDetailedStatus = async (fileId) => {
     try {
-      console.log(`Fetching detailed status for ${fileId}...`);
       const detailedData = await documentService.getDocument(fileId);
-      console.log(`Detailed status response for ${fileId}:`, detailedData);
       
       if (detailedData && detailedData.processingStatus) {
-        console.log(`Setting detailed status cache for ${fileId}:`, detailedData.processingStatus);
         setDetailedStatusCache(prev => ({
           ...prev,
           [fileId]: {
@@ -63,32 +63,62 @@ const Upload = () => {
   // Fetch all processed documents from /batch/processed
   useEffect(() => {
     const fetchAllProcessed = async () => {
+      
       try {
         setLoadingProcessed(true);
-        console.log('Fetching all processed documents...');
         // Fetch documents with all statuses to include in-progress files
         const data = await documentService.getAllProcessedDocuments({ status: 'all' });
-        console.log('Received data:', data);
-        console.log('Processing status breakdown:', data && Array.isArray(data) ? 
-          data.map(doc => ({fileId: doc.fileId, fileName: doc.fileName || doc.file_name, status: doc.processingStatus || doc.processing_status})) :
-          data && data.files ? data.files.map(doc => ({fileId: doc.fileId, fileName: doc.fileName || doc.file_name, status: doc.processingStatus || doc.processing_status})) : 
-          'No valid data structure'
-        );
         
         // Handle different response structures
         if (data) {
+          let newDocuments = [];
           if (Array.isArray(data)) {
-            setAllProcessedDocuments(data);
+            newDocuments = data;
           } else if (data.files && Array.isArray(data.files)) {
-            setAllProcessedDocuments(data.files);
+            newDocuments = data.files;
           } else if (data.items && Array.isArray(data.items)) {
-            setAllProcessedDocuments(data.items);
+            newDocuments = data.items;
           } else if (data.documents && Array.isArray(data.documents)) {
-            setAllProcessedDocuments(data.documents);
+            newDocuments = data.documents;
           } else {
             console.warn('Unexpected data structure:', data);
-            setAllProcessedDocuments([]);
+            newDocuments = [];
           }
+          
+          // Filter out soft-deleted files that might still be returned by the backend
+          const activeDocuments = newDocuments.filter(doc => {
+            // Check for various deletion indicators that the backend might return
+            return !doc.deleted && 
+                   !doc.isDeleted && 
+                   !doc.deleted_timestamp &&
+                   !doc.deletedAt &&
+                   doc.processingStatus !== 'deleted' &&
+                   doc.processing_status !== 'deleted';
+          });
+          
+          // CRITICAL: Preserve any files that are currently showing "deleting" status
+          setAllProcessedDocuments(prev => {
+            const result = [...activeDocuments];
+            
+            // Find any files in previous state that had "deleting" status
+            const deletingFiles = prev.filter(doc => doc.status === 'deleting');
+            
+            if (deletingFiles.length > 0) {
+              // For each deleting file, check if it still exists in backend
+              for (const deletingFile of deletingFiles) {
+                const stillInBackend = activeDocuments.some(doc => doc.fileId === deletingFile.fileId);
+                if (stillInBackend) {
+                  // File still exists in backend, replace with deleting version
+                  const index = result.findIndex(doc => doc.fileId === deletingFile.fileId);
+                  if (index !== -1) {
+                    result[index] = deletingFile; // Keep the deleting status
+                  }
+                }
+              }
+            }
+            
+            return result;
+          });
         } else {
           setAllProcessedDocuments([]);
         }
@@ -114,13 +144,6 @@ const Upload = () => {
          (doc.processingStatus === 'uploaded' || doc.processing_status === 'uploaded')) &&
         (doc.processingType === 'long-batch' || doc.processing_type === 'long-batch')
       );
-      
-      console.log('Processing files found for detailed status fetch:', processingFiles.map(doc => ({
-        fileId: doc.fileId,
-        fileName: doc.fileName || doc.file_name,
-        status: doc.processingStatus || doc.processing_status,
-        type: doc.processingType || doc.processing_type
-      })));
 
       // Fetch detailed status for files that don't have recent cached status
       const now = Date.now();
@@ -140,7 +163,7 @@ const Upload = () => {
     if (allProcessedDocuments.length > 0) {
       fetchDetailedStatusForProcessingFiles();
     }
-  }, [allProcessedDocuments, detailedStatusCache]);
+  }, [allProcessedDocuments]); // Removed detailedStatusCache to prevent infinite loops
 
   // Set up more frequent polling for long-batch files with detailed status
   useEffect(() => {
@@ -152,7 +175,6 @@ const Upload = () => {
       });
 
       if (filesWithDetailedStatus.length > 0) {
-        console.log('Polling detailed status for', filesWithDetailedStatus.length, 'processing files');
         for (const fileId of filesWithDetailedStatus) {
           await fetchDetailedStatus(fileId);
         }
@@ -160,7 +182,7 @@ const Upload = () => {
     }, 5000); // Poll every 5 seconds for processing files
 
     return () => clearInterval(interval);
-  }, [detailedStatusCache]);
+  }, []); // Empty dependency - interval should be stable
 
   // Combine upload queue and processed documents, avoiding duplicates
   const getAllDocuments = () => {
@@ -185,16 +207,51 @@ const Upload = () => {
       return true;
     });
     
-    // Map processed documents to display format
+    // Map processed documents to display format, including files being deleted with special status
     const processedDocs = allProcessedDocuments.map(doc => {
       const fileId = doc.fileId;
       const baseStatus = doc.processingStatus || doc.processing_status || "pending";
       
+      // Show deleting status if file status is 'deleting'
+      if (doc.status === 'deleting') {
+        return {
+          id: doc.fileId,
+          fileId: doc.fileId,
+          name: doc.fileName || doc.file_name || doc.original_filename || 'Unknown file',
+          size: doc.fileSize || doc.file_size || 'Unknown size',
+          status: 'deleting',
+          processingType: doc.processingType || 'unknown',
+          pages: doc.metadata?.page || doc.ocrResults?.pages || doc.pages || 'N/A',
+          extractedText: doc.ocrResults?.refinedText || doc.ocrResults?.extractedText || doc.extractedText || 'No text extracted yet',
+          formattedText: doc.ocrResults?.formattedText || doc.formattedText || '',
+          refinedText: doc.ocrResults?.refinedText || doc.refinedText || '',
+          cloudFrontUrl: doc.cloudFrontUrl,
+          uploadDate: doc.uploadTimestamp || doc.upload_timestamp,
+          processedAt: doc.ocrResults?.processedAt || null,
+          processingDuration: doc.ocrResults?.processingDuration || null,
+          languageDetection: doc.ocrResults?.languageDetection || null,
+          ocrResults: doc.ocrResults,
+          metadata: doc.metadata,
+          finalized: doc.finalized || false,
+          finalizedText: doc.finalizedText || null,
+          qualityScore: doc.textAnalysis?.qualityAssessment?.confidence_score || null,
+          isFromProcessed: true,
+          isDeleting: true
+        };
+      }
+      
       // Use detailed status from cache if available for processing files
+      // BUT NEVER override "deleting" status - this was the bug!
       const cachedStatus = detailedStatusCache[fileId];
-      const finalStatus = ((baseStatus === 'processing' || baseStatus === 'uploaded') && cachedStatus) 
-        ? cachedStatus.status 
-        : baseStatus;
+      let finalStatus;
+      if (doc.status === 'deleting') {
+        // Always preserve deleting status - never override it
+        finalStatus = 'deleting';
+      } else if ((baseStatus === 'processing' || baseStatus === 'uploaded') && cachedStatus) {
+        finalStatus = cachedStatus.status;
+      } else {
+        finalStatus = baseStatus;
+      }
 
       return {
         id: doc.fileId,
@@ -239,11 +296,14 @@ const Upload = () => {
       attached: 0,      // pending files (selected but not uploaded)
       queued: 0,        // uploaded/processing files
       completed: 0,     // processed/completed files
-      failed: 0         // failed files
+      failed: 0,        // failed files
+      deleting: 0       // files being deleted
     };
     
     allDocuments.forEach(item => {
-      if (item.status === 'pending') {
+      if (item.status === 'deleting') {
+        counts.deleting++;
+      } else if (item.status === 'pending') {
         counts.attached++;
       } else if (['uploaded', 'processing', 'uploading'].includes(item.status) || 
                  (typeof item.status === 'string' && (
@@ -292,6 +352,19 @@ const Upload = () => {
         setUploadError(`File too large: ${file.name}. Maximum size is 500MB`);
         return false;
       }
+      
+      // Warn about TIFF files
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+      if (fileExtension === 'tiff' || fileExtension === 'tif') {
+        console.warn(`⚠️ TIFF file detected: ${file.name} - TIFF files are typically large and may take longer to process`);
+        // Optionally show a toast or notification to user
+        setTimeout(() => {
+          setUploadError(`Note: TIFF file "${file.name}" may take longer to process due to larger file size`);
+          // Clear the warning after 5 seconds
+          setTimeout(() => setUploadError(null), 5000);
+        }, 100);
+      }
+      
       return true;
     });
 
@@ -327,7 +400,6 @@ const Upload = () => {
         ));
 
         // Upload the file with current metadata state (not cached metadata from queue)
-        console.log('Current metadata state:', metadata);
         const result = await uploadService.uploadDocument(item.file, metadata);
         
         // Update status to uploaded (matches backend processing_status)
@@ -342,8 +414,8 @@ const Upload = () => {
           } : f
         ));
 
-        // Refresh documents list to show newly uploaded files
-        await fetchDocuments();
+        // Skip fetchDocuments() - we have our own state management
+        // await fetchDocuments();
         
         // For short-batch files, start frequent polling for faster updates
         if (result.files?.[0]?.routing?.decision === 'short-batch') {
@@ -354,13 +426,35 @@ const Upload = () => {
           
           const fastPoll = setInterval(async () => {
             pollCount++;
-            await fetchDocuments();
             
-            // Stop fast polling after 2 minutes or if file is completed
-            const currentFile = allProcessedDocuments.find(doc => doc.fileId === fileId);
-            if (pollCount >= maxPolls || 
-                (currentFile && ['completed', 'processed', 'failed'].includes(currentFile.processingStatus))) {
-              clearInterval(fastPoll);
+            // Lightweight check - only get this specific file's status
+            try {
+              const data = await documentService.getAllProcessedDocuments({ status: 'all' });
+              const backendFiles = data?.files || data?.items || data?.documents || data || [];
+              const currentFile = backendFiles.find(doc => doc.fileId === fileId);
+              
+              if (currentFile) {
+                // Update only this specific file in our state - but preserve deleting status
+                setAllProcessedDocuments(prev => prev.map(doc => {
+                  if (doc.fileId === fileId) {
+                    // CRITICAL: Don't override deleting status during fast polling
+                    if (doc.status === 'deleting') {
+                      return doc; // Keep as-is
+                    }
+                    return { ...doc, ...currentFile };
+                  }
+                  return doc;
+                }));
+              }
+              
+              // Stop fast polling if file is completed or max polls reached
+              if (pollCount >= maxPolls || 
+                  (currentFile && ['completed', 'processed', 'failed'].includes(currentFile.processingStatus || currentFile.processing_status))) {
+                clearInterval(fastPoll);
+              }
+            } catch (error) {
+              console.error(`❌ Fast poll error for file ${fileId}:`, error);
+              // Continue polling on error
             }
           }, 3000);
         }
@@ -427,7 +521,8 @@ const Upload = () => {
       'processed': 100,    // Long-batch completed
       'completed': 100,    // Short-batch completed
       'failed': 0,         // Processing failed
-      'finalized': 100     // User finalized the document
+      'finalized': 100,    // User finalized the document
+      'deleting': 0        // File being deleted
     };
     return statusProgress[status] || 0;
   };
@@ -448,7 +543,8 @@ const Upload = () => {
       'processed': 'Processed',     // Long-batch result
       'completed': 'Completed',      // Short-batch result
       'failed': 'Failed',
-      'finalized': 'Finalized'
+      'finalized': 'Finalized',
+      'deleting': 'Deleting...'
     };
     return statusDisplay[status] || status;
   };
@@ -457,31 +553,65 @@ const Upload = () => {
   const refreshDocuments = async () => {
     try {
       setLoadingProcessed(true);
-      console.log('Manually refreshing processed documents...');
       
       // Clear detailed status cache to force fresh fetches
       setDetailedStatusCache({});
       
-      // Also trigger the useDocuments hook refresh for real-time updates
-      await fetchDocuments();
+      // Skip fetchDocuments() - we have our own state management
+      // await fetchDocuments();
       
       const data = await documentService.getAllProcessedDocuments({ status: 'all' });
-      console.log('Received data:', data);
       
-      // Handle different response structures
+      // Handle different response structures and simply use fresh backend data
       if (data) {
+        let newDocuments = [];
         if (Array.isArray(data)) {
-          setAllProcessedDocuments(data);
+          newDocuments = data;
         } else if (data.files && Array.isArray(data.files)) {
-          setAllProcessedDocuments(data.files);
+          newDocuments = data.files;
         } else if (data.items && Array.isArray(data.items)) {
-          setAllProcessedDocuments(data.items);
+          newDocuments = data.items;
         } else if (data.documents && Array.isArray(data.documents)) {
-          setAllProcessedDocuments(data.documents);
+          newDocuments = data.documents;
         } else {
           console.warn('Unexpected data structure:', data);
-          setAllProcessedDocuments([]);
+          newDocuments = [];
         }
+        
+        // Filter out soft-deleted files that might still be returned by the backend
+        const activeDocuments = newDocuments.filter(doc => {
+          // Check for various deletion indicators that the backend might return
+          return !doc.deleted && 
+                 !doc.isDeleted && 
+                 !doc.deleted_timestamp &&
+                 !doc.deletedAt &&
+                 doc.processingStatus !== 'deleted' &&
+                 doc.processing_status !== 'deleted';
+        });
+        
+        // CRITICAL: Preserve any files that are currently showing "deleting" status
+        setAllProcessedDocuments(prev => {
+          const result = [...activeDocuments];
+          
+          // Find any files in previous state that had "deleting" status
+          const deletingFiles = prev.filter(doc => doc.status === 'deleting');
+          
+          if (deletingFiles.length > 0) {
+            // For each deleting file, check if it still exists in backend
+            for (const deletingFile of deletingFiles) {
+              const stillInBackend = activeDocuments.some(doc => doc.fileId === deletingFile.fileId);
+              if (stillInBackend) {
+                // File still exists in backend, replace with deleting version
+                const index = result.findIndex(doc => doc.fileId === deletingFile.fileId);
+                if (index !== -1) {
+                  result[index] = deletingFile; // Keep the deleting status
+                }
+              }
+            }
+          }
+          
+          return result;
+        });
       } else {
         setAllProcessedDocuments([]);
       }
@@ -494,7 +624,6 @@ const Upload = () => {
       ) || [];
       
       if (processingFiles.length > 0) {
-        console.log('Refreshing detailed status for processing files...');
         for (const doc of processingFiles) {
           if (doc.fileId) {
             await fetchDetailedStatus(doc.fileId);
@@ -502,8 +631,6 @@ const Upload = () => {
         }
       }
 
-      // Show brief success feedback
-      console.log('✓ Documents refreshed successfully');
       setLastRefreshed(Date.now());
     } catch (error) {
       console.error('Error refreshing documents:', error);
@@ -512,6 +639,196 @@ const Upload = () => {
       setLoadingProcessed(false);
     }
   };
+
+  // Full refresh - simply gets fresh data from backend
+  const fullRefresh = async () => {
+    setLoadingProcessed(true);
+    try {
+      // Clear all caches to ensure completely fresh data
+      setDetailedStatusCache({});
+      
+      // Skip fetchDocuments() - we have our own state management
+      // await fetchDocuments();
+      
+      // Fetch fresh data from backend
+      const data = await documentService.getAllProcessedDocuments({ status: 'all' });
+      
+      // Handle different response structures and simply use fresh data
+      if (data) {
+        let newDocuments = [];
+        if (Array.isArray(data)) {
+          newDocuments = data;
+        } else if (data.files && Array.isArray(data.files)) {
+          newDocuments = data.files;
+        } else if (data.items && Array.isArray(data.items)) {
+          newDocuments = data.items;
+        } else if (data.documents && Array.isArray(data.documents)) {
+          newDocuments = data.documents;
+        } else {
+          console.warn('Unexpected refresh data structure:', data);
+          newDocuments = [];
+        }
+        
+        // Filter out soft-deleted files that might still be returned by the backend
+        const activeDocuments = newDocuments.filter(doc => {
+          // Check for various deletion indicators that the backend might return
+          return !doc.deleted && 
+                 !doc.isDeleted && 
+                 !doc.deleted_timestamp &&
+                 !doc.deletedAt &&
+                 doc.processingStatus !== 'deleted' &&
+                 doc.processing_status !== 'deleted';
+        });
+        
+        // CRITICAL: Preserve any files that are currently showing "deleting" status
+        setAllProcessedDocuments(prev => {
+          const result = [...activeDocuments];
+          
+          // Find any files in previous state that had "deleting" status
+          const deletingFiles = prev.filter(doc => doc.status === 'deleting');
+          
+          if (deletingFiles.length > 0) {
+            // For each deleting file, check if it still exists in backend
+            for (const deletingFile of deletingFiles) {
+              const stillInBackend = activeDocuments.some(doc => doc.fileId === deletingFile.fileId);
+              if (stillInBackend) {
+                // File still exists in backend, replace with deleting version
+                const index = result.findIndex(doc => doc.fileId === deletingFile.fileId);
+                if (index !== -1) {
+                  result[index] = deletingFile; // Keep the deleting status
+                }
+              }
+            }
+          }
+          
+          return result;
+        });
+      } else {
+        setAllProcessedDocuments([]);
+      }
+      
+      setLastRefreshed(new Date().toISOString());
+    } catch (error) {
+      console.error('❌ Error during full refresh:', error);
+      setUploadError(`Failed to refresh documents: ${error.message}`);
+    } finally {
+      setLoadingProcessed(false);
+    }
+  };
+
+  const showDeleteConfirmation = (fileId, fileName) => {
+    // Find the document to check if it's finalized
+    const document = allProcessedDocuments.find(doc => doc.fileId === fileId);
+    const isFinalized = document?.finalized || false;
+    
+    setDeleteFileInfo({ fileId, fileName, isFinalized });
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    const { fileId, fileName, isFinalized } = deleteFileInfo;
+    setShowDeleteConfirm(false);
+
+    try {
+      // Show deleting status immediately
+      setAllProcessedDocuments(prev => prev.map(doc => {
+        if (doc.fileId === fileId) {
+          return { ...doc, status: 'deleting' };
+        }
+        return doc;
+      }));
+      
+      if (isFinalized) {
+        // Finalized documents go to recycle bin
+        await documentService.deleteDocument(fileId);
+      } else {
+        // Non-finalized documents are permanently deleted
+        await documentService.permanentlyDeleteDocument(fileId);
+      }
+      
+      // Show deleting progress and auto-refresh when complete
+      const handleDeletionProgress = async () => {
+        
+        // Show progress indicators for better UX
+        let progressStep = 1;
+        const totalSteps = 5;
+        
+        const updateProgress = () => {
+          setAllProcessedDocuments(prev => prev.map(doc => {
+            if (doc.fileId === fileId && doc.status === 'deleting') {
+              return { 
+                ...doc, 
+                status: 'deleting',
+                deletionProgress: Math.min(100, (progressStep / totalSteps) * 100)
+              };
+            }
+            return doc;
+          }));
+          progressStep++;
+        };
+        
+        // Progress simulation while backend processes
+        const progressInterval = setInterval(() => {
+          if (progressStep <= totalSteps) {
+            updateProgress();
+          } else {
+            clearInterval(progressInterval);
+          }
+        }, 1000); // Update progress every second
+        
+        // Wait for a reasonable time for backend processing
+        await new Promise(resolve => setTimeout(resolve, 6000)); // 6 seconds total
+        
+        // Clear progress and refresh
+        clearInterval(progressInterval);
+        
+        // CRITICAL: For deletion refresh, completely bypass all preservation logic
+        try {
+          setLoadingProcessed(true);
+          const data = await documentService.getAllProcessedDocuments({ status: 'all' });
+          
+          let newDocuments = [];
+          if (Array.isArray(data)) {
+            newDocuments = data;
+          } else if (data && data.files && Array.isArray(data.files)) {
+            newDocuments = data.files;
+          } else if (data && data.items && Array.isArray(data.items)) {
+            newDocuments = data.items;
+          } else if (data && data.documents && Array.isArray(data.documents)) {
+            newDocuments = data.documents;
+          }
+          
+          setAllProcessedDocuments(newDocuments.filter(doc => 
+            !doc.deleted && !doc.isDeleted && !doc.deleted_timestamp && !doc.deletedAt
+          ));
+        } catch (error) {
+          console.error('❌ Post-deletion refresh failed:', error);
+          // Fallback to regular refresh
+          await refreshDocuments();
+        } finally {
+          setLoadingProcessed(false);
+        }
+      };
+      
+      handleDeletionProgress();
+      
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      setUploadError(`Failed to delete document: ${error.message}`);
+      
+      // Reset the document back to its original state on error
+      const originalDoc = allProcessedDocuments.find(doc => doc.fileId === fileId);
+      if (originalDoc) {
+        setAllProcessedDocuments(prev => prev.map(doc => {
+          if (doc.fileId === fileId) {
+            return { ...originalDoc, status: originalDoc.processingStatus || originalDoc.processing_status || 'processed' };
+          }
+          return doc;
+        }));
+      }
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -777,9 +1094,14 @@ const Upload = () => {
                   ✅ {statusCounts.completed} Completed
                 </span>
               )}
-              {statusCounts.failed > 0 && (
+{statusCounts.failed > 0 && (
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                   ❌ {statusCounts.failed} Failed
+                </span>
+              )}
+              {statusCounts.deleting > 0 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  🗑️ {statusCounts.deleting} Deleting
                 </span>
               )}
               {allDocuments.length === 0 && (
@@ -789,22 +1111,30 @@ const Upload = () => {
             <div className="flex items-center space-x-2">
               <button 
                 onClick={refreshDocuments}
-                disabled={loadingProcessed}
+                disabled={loadingProcessed || deleting}
                 className={`
                   relative p-2 rounded-full border transition-all duration-200
-                  ${loadingProcessed 
-                    ? 'border-blue-400 bg-blue-50 cursor-not-allowed' 
+                  ${(loadingProcessed || deleting)
+                    ? 'border-blue-400 bg-blue-50 cursor-not-allowed opacity-50' 
                     : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 cursor-pointer'
                   }
                   focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500
                 `}
-                title={lastRefreshed ? `Last refreshed: ${new Date(lastRefreshed).toLocaleString()}` : "Refresh documents"}
+                title={
+                  deleting 
+                    ? "Refresh disabled during deletion"
+                    : loadingProcessed 
+                      ? "Refreshing..." 
+                      : lastRefreshed 
+                        ? `Last refreshed: ${new Date(lastRefreshed).toLocaleString()}` 
+                        : "Refresh documents"
+                }
                 aria-label="Refresh"
               >
                 <RefreshCw 
                   className={`
                     w-4 h-4 transition-colors duration-200
-                    ${loadingProcessed 
+                    ${(loadingProcessed || deleting)
                       ? 'animate-spin text-blue-600' 
                       : 'text-gray-600 hover:text-gray-800'
                     }
@@ -819,7 +1149,7 @@ const Upload = () => {
               )}
             </div>
           </div>
-          <div className="space-x-2">
+          <div className="flex items-center space-x-2">
             {uploadQueue.some(f => f.status === 'completed') && (
               <button 
                 onClick={clearCompleted}
@@ -846,6 +1176,7 @@ const Upload = () => {
                                    ));
               const isCompleted = ['completed', 'processed', 'finalized'].includes(item.status);
               const isFailed = item.status === 'failed';
+              const isDeleting = item.status === 'deleting';
               const isShortBatch = item.processingType === 'short-batch' || item.routing?.decision === 'short-batch';
               const isLongBatch = item.processingType === 'long-batch' || item.routing?.decision === 'long-batch';
               const hasDetailedProgress = typeof item.status === 'string' && item.status.includes('In progress');
@@ -853,16 +1184,24 @@ const Upload = () => {
               return (
                 <div 
                   key={item.id}
-                  className={`relative overflow-hidden rounded-lg border transition-all ${
+                  className={`relative overflow-hidden rounded-lg border transition-all duration-300 ${
+                    isDeleting ? 'bg-red-50 border-red-300 opacity-90 transform scale-[0.99]' :
                     item.status === 'pending' ? 'bg-gray-50 border-gray-200' :
                     isQueued ? 'bg-amber-50 border-amber-200' :
                     isProcessing ? 'bg-blue-50 border-blue-200' :
                     isCompleted ? (item.finalized ? 'bg-green-50 border-green-200' : 'bg-emerald-50 border-emerald-200') :
                     isFailed ? 'bg-red-50 border-red-200' :
                     'bg-gray-50 border-gray-200'
-                  } ${item.isFromProcessed ? 'cursor-pointer hover:shadow-md' : ''}`}
-                  onClick={() => item.isFromProcessed && navigate(`/edit/${item.fileId}`)}
-                >
+                  } ${item.isFromProcessed && !isDeleting ? 'cursor-pointer hover:shadow-md' : ''}`}
+                  onClick={(e) => {
+                    // Don't navigate if clicking on interactive elements
+                    const isInteractive = e.target.closest('input[type="checkbox"]') || 
+                                        e.target.closest('button');
+                    if (item.isFromProcessed && !isInteractive) {
+                      navigate(`/edit/${item.fileId}`);
+                    }
+                  }}
+>
                   {/* Progress Bar */}
                   {(isProcessing || isQueued) && (
                     <div className="absolute top-0 left-0 w-full h-1 bg-gray-200">
@@ -878,21 +1217,43 @@ const Upload = () => {
                     </div>
                   )}
                   
+                  {/* Deleting Progress Bar */}
+                  {isDeleting && (
+                    <div className="absolute top-0 left-0 w-full h-1 bg-red-200 overflow-hidden">
+                      <div 
+                        className="h-full bg-red-500 transition-all duration-1000 ease-out"
+                        style={{ 
+                          width: `${item.deletionProgress || 0}%`
+                        }}
+                      />
+                    </div>
+                  )}
+                  
                   <div className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4 flex-1">
                         <div className="flex flex-col items-center">
-                          <FileText className={`w-8 h-8 ${
-                            item.status === 'pending' ? 'text-gray-600' :
-                            isQueued ? 'text-amber-600' :
-                            hasDetailedProgress ? 'text-purple-600' : // Long-batch detailed
-                            isProcessing && isShortBatch ? 'text-green-600' : // Short-batch processing
-                            isProcessing && isLongBatch ? 'text-blue-600' : // Long-batch simple processing
-                            isProcessing ? 'text-blue-600' : // Default processing
-                            isCompleted ? (item.finalized ? 'text-green-600' : 'text-emerald-600') :
-                            isFailed ? 'text-red-600' :
-                            'text-gray-600'
-                          }`} />
+                          {isDeleting ? (
+                            <div className="relative">
+                              <FileText className="w-8 h-8 text-red-400 opacity-50" />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Trash2 className="w-5 h-5 text-red-600 animate-pulse" />
+                              </div>
+                            </div>
+                          ) : (
+                            <FileText className={`w-8 h-8 ${
+                              item.status === 'pending' ? 'text-gray-600' :
+                              isQueued ? 'text-amber-600' :
+                              hasDetailedProgress ? 'text-purple-600' : // Long-batch detailed
+                              isProcessing && isShortBatch ? 'text-green-600' : // Short-batch processing
+                              isProcessing && isLongBatch ? 'text-blue-600' : // Long-batch simple processing
+                              isProcessing ? 'text-blue-600' : // Default processing
+                              isCompleted ? (item.finalized ? 'text-green-600' : 'text-emerald-600') :
+                              isFailed ? 'text-red-600' :
+                              'text-gray-600'
+                            }`} />
+                          )
+                        }
                           {item.qualityScore && (
                             <span className={`text-xs mt-1 font-semibold ${
                               item.qualityScore >= 80 ? 'text-green-600' :
@@ -906,8 +1267,11 @@ const Upload = () => {
                         
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <p className="font-medium text-gray-900">{item.name}</p>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            <p className={`font-medium ${isDeleting ? 'text-red-800 line-through opacity-75' : 'text-gray-900'}`}>
+                              {item.name}
+                            </p>
+                            <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium ${
+                              isDeleting ? 'bg-red-100 text-red-800' :
                               item.status === 'pending' ? 'bg-gray-100 text-gray-800' :
                               isQueued ? 'bg-amber-100 text-amber-800' :
                               isProcessing ? 'bg-blue-100 text-blue-800' :
@@ -915,7 +1279,10 @@ const Upload = () => {
                               isFailed ? 'bg-red-100 text-red-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {hasDetailedProgress ? 'Processing' : getStatusDisplay(item.status)}
+                              {isDeleting && (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              )}
+                              <span>{hasDetailedProgress ? 'Processing' : getStatusDisplay(item.status)}</span>
                             </span>
                             {(isShortBatch || isLongBatch) && (
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -1005,16 +1372,33 @@ const Upload = () => {
                           <AlertCircle className="w-5 h-5 text-red-600" />
                         )}
                         {item.isFromProcessed && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/edit/${item.fileId}`);
-                            }}
-                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-white/50 rounded-lg transition-colors"
-                            title="Edit Document"
-                          >
-                            <Edit className="w-5 h-5" />
-                          </button>
+                          <>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/edit/${item.fileId}`);
+                              }}
+                              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-white/50 rounded-lg transition-colors"
+                              title="Edit Document"
+                            >
+                              <Edit className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                showDeleteConfirmation(item.fileId, item.name);
+                              }}
+                              disabled={isDeleting}
+                              className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Delete Document"
+                            >
+                              {isDeleting ? (
+                                <RefreshCw className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-5 h-5" />
+                              )}
+                            </button>
+                          </>
                         )}
                         {!item.isFromProcessed && (
                           <button 
@@ -1047,12 +1431,60 @@ const Upload = () => {
               <div className="p-8 text-center text-gray-500">
                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-600 font-medium">No documents in queue</p>
-                <p className="text-sm text-gray-400 mt-1">Upload documents above or check the API connection</p>
+                <p className="text-sm text-gray-400 mt-1">Upload documents above or check your internet connection</p>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                  <Trash2 className="h-6 w-6 text-red-600" />
+                </div>
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Delete Document
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Are you sure you want to delete <span className="font-medium text-gray-900">"{deleteFileInfo.fileName}"</span>?
+                </p>
+                {deleteFileInfo.isFinalized ? (
+                  <p className="text-sm text-amber-600 bg-amber-50 rounded-md p-3 mb-4">
+                    <span className="font-medium">Note:</span> This document will be moved to the recycle bin and can be restored later.
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-600 bg-red-50 rounded-md p-3 mb-4">
+                    <span className="font-medium">Warning:</span> This action cannot be undone. The document will be permanently deleted.
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  {deleteFileInfo.isFinalized ? 'Move to Recycle Bin' : 'Delete Permanently'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

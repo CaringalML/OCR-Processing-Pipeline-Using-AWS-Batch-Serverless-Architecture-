@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Edit, Trash2, Calendar, User, Tag } from 'lucide-react';
+import { FileText, Download, Eye, Edit, Trash2, Calendar, User, Tag, CheckSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '../../hooks/useDocuments';
 import uploadService from '../../services/uploadService';
@@ -18,8 +18,10 @@ const Inventory = () => {
     status: 'all',
     search: ''
   });
-  const [selectedDocuments, setSelectedDocuments] = useState([]);
+  const [selectedDocuments, setSelectedDocuments] = useState(new Set());
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteFileInfo, setDeleteFileInfo] = useState({ fileIds: [], fileNames: [], isBulk: false });
 
   // Fetch only finalized documents for inventory
   useEffect(() => {
@@ -122,18 +124,67 @@ const Inventory = () => {
   };
 
   const handleDocumentSelect = (fileId) => {
-    setSelectedDocuments(prev => 
-      prev.includes(fileId) 
-        ? prev.filter(id => id !== fileId)
-        : [...prev, fileId]
-    );
+    setSelectedDocuments(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(fileId)) {
+        newSelected.delete(fileId);
+      } else {
+        newSelected.add(fileId);
+      }
+      return newSelected;
+    });
   };
 
   const handleSelectAll = () => {
-    if (selectedDocuments.length === filteredDocuments.length) {
-      setSelectedDocuments([]);
+    if (selectedDocuments.size === filteredDocuments.length) {
+      // If all are selected, deselect all
+      setSelectedDocuments(new Set());
     } else {
-      setSelectedDocuments(filteredDocuments.map(doc => doc.fileId));
+      // Otherwise select all filtered documents
+      const allFileIds = filteredDocuments.map(doc => doc.fileId || doc.file_id);
+      setSelectedDocuments(new Set(allFileIds));
+    }
+  };
+
+  const showBulkDeleteConfirmation = () => {
+    if (selectedDocuments.size === 0) return;
+
+    const selectedFiles = filteredDocuments.filter(doc => 
+      selectedDocuments.has(doc.fileId || doc.file_id)
+    );
+
+    const fileNames = selectedFiles.map(doc => getFileName(doc));
+    const fileIds = selectedFiles.map(doc => doc.fileId || doc.file_id);
+    
+    setDeleteFileInfo({ fileIds, fileNames, isBulk: true });
+    setShowDeleteConfirm(true);
+  };
+
+  const handleBulkDelete = async () => {
+    setShowDeleteConfirm(false);
+    const { fileIds } = deleteFileInfo;
+
+    try {
+      // Delete all selected documents (moves to recycle bin)
+      const deletePromises = fileIds.map(fileId => 
+        documentService.deleteDocument(fileId)
+      );
+      
+      await Promise.all(deletePromises);
+      
+      // Remove from local state
+      const deletedIds = new Set(fileIds);
+      setDocuments(prev => 
+        prev.filter(doc => !deletedIds.has(doc.fileId || doc.file_id))
+      );
+      
+      // Clear selection
+      setSelectedDocuments(new Set());
+      
+      console.log(`✓ ${fileIds.length} document${fileIds.length > 1 ? 's' : ''} moved to recycle bin`);
+    } catch (error) {
+      console.error('Error deleting documents:', error);
+      alert(`Failed to delete documents: ${error.message}`);
     }
   };
 
@@ -156,15 +207,22 @@ const Inventory = () => {
     }
   };
 
-  const handleDelete = async (fileId) => {
-    if (window.confirm('Are you sure you want to delete this document? It will be moved to the recycle bin.')) {
-      try {
-        await deleteDocument(fileId);
-        setSelectedDocuments(prev => prev.filter(id => id !== fileId));
-      } catch (error) {
-        console.error('Delete failed:', error);
-        alert('Failed to delete document');
-      }
+  const showDeleteConfirmation = (fileId, fileName) => {
+    setDeleteFileInfo({ fileIds: [fileId], fileNames: [fileName], isBulk: false });
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDelete = async () => {
+    setShowDeleteConfirm(false);
+    const { fileIds } = deleteFileInfo;
+    const fileId = fileIds[0];
+    
+    try {
+      await deleteDocument(fileId);
+      setSelectedDocuments(prev => prev.filter(id => id !== fileId));
+    } catch (error) {
+      console.error('Delete failed:', error);
+      alert('Failed to delete document');
     }
   };
 
@@ -245,15 +303,7 @@ const Inventory = () => {
             {filteredDocuments.length} finalized document(s) • Ready for use
           </p>
         </div>
-        <div className="flex space-x-3">
-          {selectedDocuments.length > 0 && (
-            <button 
-              onClick={() => selectedDocuments.forEach(handleDelete)}
-              className="border border-red-300 text-red-700 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              Delete Selected ({selectedDocuments.length})
-            </button>
-          )}
+        <div>
           <button className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
             Export Data
           </button>
@@ -320,17 +370,29 @@ const Inventory = () => {
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900">Documents</h2>
-            {filteredDocuments.length > 0 && (
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  checked={selectedDocuments.length === filteredDocuments.length && filteredDocuments.length > 0}
-                  onChange={handleSelectAll}
-                  className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500" 
-                />
-                <span className="ml-2 text-sm text-gray-600">Select all</span>
-              </label>
-            )}
+            <div className="flex items-center space-x-4">
+              {filteredDocuments.length > 0 && (
+                <label className="flex items-center space-x-2 text-sm text-gray-600">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedDocuments.size > 0 && selectedDocuments.size === filteredDocuments.length}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
+                  />
+                  <span>Select all</span>
+                </label>
+              )}
+              
+              {selectedDocuments.size > 0 && (
+                <button 
+                  onClick={showBulkDeleteConfirmation}
+                  className="inline-flex items-center px-3 py-1.5 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Move {selectedDocuments.size} to Recycle Bin
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -351,9 +413,9 @@ const Inventory = () => {
                     <div onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox" 
-                        checked={selectedDocuments.includes(doc.fileId)}
-                        onChange={() => handleDocumentSelect(doc.fileId)}
-                        className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 mt-1" 
+                        checked={selectedDocuments.has(doc.fileId || doc.file_id)}
+                        onChange={() => handleDocumentSelect(doc.fileId || doc.file_id)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-1" 
                       />
                     </div>
                     <FileText className="w-10 h-10 text-gray-400 mt-1" />
@@ -431,13 +493,6 @@ const Inventory = () => {
                     >
                       <Download className="w-4 h-4" />
                     </button>
-                    <button 
-                      onClick={() => handleDelete(doc.fileId)}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -456,6 +511,70 @@ const Inventory = () => {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-amber-100">
+                  <Trash2 className="h-6 w-6 text-amber-600" />
+                </div>
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Move to Recycle Bin
+                </h3>
+                {deleteFileInfo.isBulk ? (
+                  <>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Are you sure you want to move <span className="font-medium text-gray-900">{deleteFileInfo.fileIds.length} document{deleteFileInfo.fileIds.length > 1 ? 's' : ''}</span> to the recycle bin?
+                    </p>
+                    {deleteFileInfo.fileNames.length <= 3 ? (
+                      <div className="text-sm text-gray-600 bg-gray-50 rounded-md p-3 mb-4 max-h-20 overflow-y-auto">
+                        {deleteFileInfo.fileNames.map((name, index) => (
+                          <div key={index} className="truncate">• {name}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600 bg-gray-50 rounded-md p-3 mb-4 max-h-20 overflow-y-auto">
+                        {deleteFileInfo.fileNames.slice(0, 2).map((name, index) => (
+                          <div key={index} className="truncate">• {name}</div>
+                        ))}
+                        <div className="text-gray-500 mt-1">... and {deleteFileInfo.fileNames.length - 2} more</div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500 mb-4">
+                    Are you sure you want to move <span className="font-medium text-gray-900">"{deleteFileInfo.fileNames[0]}"</span> to the recycle bin?
+                  </p>
+                )}
+                <p className="text-sm text-amber-600 bg-amber-50 rounded-md p-3 mb-4">
+                  <span className="font-medium">Note:</span> Documents can be restored from the recycle bin within 30 days.
+                </p>
+              </div>
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteFileInfo.isBulk ? handleBulkDelete : handleDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-amber-600 border border-transparent rounded-md hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
+                >
+                  Move to Recycle Bin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

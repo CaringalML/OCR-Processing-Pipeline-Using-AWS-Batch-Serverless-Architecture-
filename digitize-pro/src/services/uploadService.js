@@ -294,6 +294,12 @@ class UploadService {
   validateFileType(file) {
     const allowedTypes = ['pdf', 'tiff', 'tif', 'jpg', 'jpeg', 'png'];
     const fileExtension = file.name.split('.').pop().toLowerCase();
+    
+    // Warn about TIFF files
+    if (fileExtension === 'tiff' || fileExtension === 'tif') {
+      console.warn(`⚠️ TIFF file detected: ${file.name} - TIFF files are typically large and may take longer to process`);
+    }
+    
     return allowedTypes.includes(fileExtension);
   }
 

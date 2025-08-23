@@ -20,6 +20,16 @@ code {
     monospace;
 }
 
+/* Deletion Animation */
+@keyframes shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
 /* Modern Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

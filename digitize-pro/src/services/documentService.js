@@ -266,18 +266,29 @@ class DocumentService {
    */
   async permanentlyDeleteDocument(fileId) {
     try {
-      const response = await fetch(`${API_BASE_URL}/batch/delete/${fileId}?permanent=true`, {
+      const url = `${API_BASE_URL}/batch/delete/${fileId}?permanent=true`;
+      console.log('Permanent delete URL:', url);
+      console.log('API_BASE_URL:', API_BASE_URL);
+      
+      const response = await fetch(url, {
         method: 'DELETE',
         headers: {
           'Accept': 'application/json',
         },
       });
 
+      console.log('Permanent delete response status:', response.status);
+      console.log('Permanent delete response ok:', response.ok);
+
       if (!response.ok) {
-        throw new Error(`Failed to permanently delete document: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('Permanent delete response error:', errorText);
+        throw new Error(`Failed to permanently delete document: ${response.statusText} - ${errorText}`);
       }
 
-      return await response.json();
+      const result = await response.json();
+      console.log('Permanent delete result:', result);
+      return result;
     } catch (error) {
       console.error('Error permanently deleting document:', error);
       throw error;

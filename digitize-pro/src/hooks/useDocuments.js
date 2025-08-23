@@ -104,6 +104,21 @@ export const useDocuments = (autoLoad = true) => {
     }
   }, [fetchDocuments]);
 
+  // Permanently delete document from recycle bin
+  const permanentlyDeleteDocument = useCallback(async (fileId) => {
+    try {
+      setError(null);
+      
+      const result = await documentService.permanentlyDeleteDocument(fileId);
+      
+      return result;
+      
+    } catch (err) {
+      setError(err.message || 'Failed to permanently delete document');
+      throw err;
+    }
+  }, []);
+
   // Load recycle bin contents
   const loadRecycleBin = useCallback(async (params = {}) => {
     try {
@@ -156,6 +171,7 @@ export const useDocuments = (autoLoad = true) => {
     updateDocument,
     getDocument,
     restoreDocument,
+    permanentlyDeleteDocument,
     loadRecycleBin,
     formatDate: documentService.formatDate,
     getStatusColor: documentService.getStatusColor
