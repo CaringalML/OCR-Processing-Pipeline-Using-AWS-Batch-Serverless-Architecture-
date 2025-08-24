@@ -13,7 +13,10 @@ import {
   FileType,
   Info,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Copy,
+  Check,
+  MoreHorizontal
 } from 'lucide-react';
 import Zoom from 'react-medium-image-zoom';
 import 'react-medium-image-zoom/dist/styles.css';
@@ -32,6 +35,8 @@ const DocumentReader = () => {
   const [showMetadata, setShowMetadata] = useState(true);
   const [showEntities, setShowEntities] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showFullText, setShowFullText] = useState(false);
+  const [textCopied, setTextCopied] = useState(false);
 
   // Detect file type from filename or URL
   const getFileType = () => {
@@ -90,6 +95,33 @@ const DocumentReader = () => {
       return document.ocrResults.extractedText;
     }
     return '';
+  };
+
+  // Copy text to clipboard
+  const copyTextToClipboard = async () => {
+    const text = getFinalizedText();
+    try {
+      await navigator.clipboard.writeText(text);
+      setTextCopied(true);
+      setTimeout(() => setTextCopied(false), 2000); // Reset after 2 seconds
+    } catch (error) {
+      console.error('Failed to copy text:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setTextCopied(true);
+      setTimeout(() => setTextCopied(false), 2000);
+    }
+  };
+
+  // Get preview text (first 300 characters)
+  const getPreviewText = (text) => {
+    if (text.length <= 300) return text;
+    return text.substring(0, 300) + '...';
   };
 
 
@@ -234,16 +266,63 @@ const DocumentReader = () => {
             {finalizedText && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                 <div className="p-4 border-b border-gray-200">
-                  <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <FileText className="w-5 h-5 mr-2 text-green-600" />
-                    Extracted Text
-                  </h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <FileText className="w-5 h-5 mr-2 text-green-600" />
+                      Extracted Text
+                    </h2>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={copyTextToClipboard}
+                        className={`inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                          textCopied
+                            ? 'text-green-700 bg-green-100 border border-green-300'
+                            : 'text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300'
+                        }`}
+                        title="Copy text to clipboard"
+                      >
+                        {textCopied ? (
+                          <>
+                            <Check className="w-4 h-4 mr-1" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4 mr-1" />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                      {finalizedText.length > 300 && (
+                        <button
+                          onClick={() => setShowFullText(!showFullText)}
+                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
+                        >
+                          <MoreHorizontal className="w-4 h-4 mr-1" />
+                          {showFullText ? 'Show Less' : 'Show More'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="p-6">
                   <div className="prose max-w-none text-gray-800 leading-relaxed">
-                    {finalizedText}
+                    {showFullText || finalizedText.length <= 300 
+                      ? finalizedText 
+                      : getPreviewText(finalizedText)
+                    }
                   </div>
+                  {!showFullText && finalizedText.length > 300 && (
+                    <div className="mt-4 pt-4 border-t border-gray-200 text-center">
+                      <button
+                        onClick={() => setShowFullText(true)}
+                        className="text-green-600 hover:text-green-700 text-sm font-medium"
+                      >
+                        Read full text ({finalizedText.length} characters) →
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -275,10 +354,19 @@ const DocumentReader = () => {
                     </p>
                   </div>
                   
+                  {(document?.metadata?.date || document?.publication_date || document?.date || document?.publication_year) && (
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Publication Date</span>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {document?.metadata?.date || document?.publication_date || document?.date || document?.publication_year}
+                      </p>
+                    </div>
+                  )}
+
                   <div>
-                    <span className="text-sm font-medium text-gray-500">Upload Date</span>
+                    <span className="text-sm font-medium text-gray-500">File Size</span>
                     <p className="text-sm text-gray-900 mt-1">
-                      <LocalDateTime timestamp={document?.uploadTimestamp} />
+                      {document?.fileSize || document?.file_size || 'Unknown'}
                     </p>
                   </div>
                 </div>

@@ -104,6 +104,84 @@ def fuzzy_search_in_text(query, text, threshold=70):
     
     return None, best_score
 
+def extract_year_from_date(date_string):
+    """
+    Extract year from various date formats including modern calendar picker formats:
+    - Year only: '1925'
+    - DD/MM/YYYY: '05/08/1925' (modern calendar default)
+    - MM/DD/YYYY: '08/05/1925' (US format)
+    - YYYY-MM-DD: '1925-08-05' (ISO format)
+    - And other variations
+    """
+    if not date_string or not isinstance(date_string, str):
+        return None
+    
+    import re
+    
+    # Clean the input string
+    date_string = date_string.strip()
+    
+    # First priority: Check if it's a pure 4-digit year (most common from modern picker)
+    if re.match(r'^\d{4}$', date_string):
+        year_int = int(date_string)
+        if 1000 <= year_int <= 3000:  # Expanded range for historical documents
+            return year_int
+    
+    # Second priority: Find any 4-digit year in the string (for mixed content)
+    year_match = re.search(r'\b(1[0-9]\d{2}|20[0-9]\d|21[0-2]\d)\b', date_string)
+    if year_match:
+        return int(year_match.group())
+    
+    # Third priority: Parse structured date formats
+    date_patterns = [
+        # DD/MM/YYYY format (modern calendar default)
+        (r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$', 'day_month_year'),
+        # MM/DD/YYYY format (US style)  
+        (r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$', 'month_day_year'),
+        # YYYY/MM/DD or YYYY-MM-DD format (ISO style)
+        (r'^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$', 'year_month_day'),
+        # DD/MM/YY format with 2-digit year
+        (r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})$', 'day_month_year2'),
+    ]
+    
+    for pattern, format_type in date_patterns:
+        match = re.match(pattern, date_string)
+        if match:
+            parts = match.groups()
+            
+            try:
+                if format_type == 'year_month_day':
+                    year = int(parts[0])
+                    if 1000 <= year <= 3000:
+                        return year
+                        
+                elif format_type in ['day_month_year', 'month_day_year']:
+                    year = int(parts[2])
+                    if 1000 <= year <= 3000:
+                        return year
+                        
+                elif format_type == 'day_month_year2':
+                    # Handle 2-digit years
+                    year_2digit = int(parts[2])
+                    if year_2digit <= 30:
+                        year = 2000 + year_2digit
+                    else:
+                        year = 1900 + year_2digit
+                    return year
+                    
+            except (ValueError, IndexError):
+                continue
+    
+    # Fourth priority: Look for standalone year patterns in text
+    # This handles cases like "year 1925" or "in 1925"
+    year_in_text = re.search(r'\b(?:year|in|from|since)?\s*(\d{4})\b', date_string, re.IGNORECASE)
+    if year_in_text:
+        year = int(year_in_text.group(1))
+        if 1000 <= year <= 3000:
+            return year
+    
+    return None
+
 def lambda_handler(event, context):
     """
     AWS Lambda handler for unified document search functionality
@@ -148,6 +226,36 @@ def lambda_handler(event, context):
         collection = query_params.get('collection', '').strip()
         document_type = query_params.get('document_type', '').strip()
         
+        # Enhanced smart date search detection for modern calendar picker formats
+        import re
+        if search_term and not year_start and not year_end:
+            # Check for pure year input (most common from modern picker)
+            if re.match(r'^\d{4}$', search_term.strip()):
+                year = search_term.strip()
+                if 1000 <= int(year) <= 3000:
+                    year_start = year
+                    year_end = year
+                    search_term = ''  # Clear search term since we're doing a pure date search
+            
+            # Check for full date formats from modern picker
+            elif re.match(r'^\d{1,2}[/.-]\d{1,2}[/.-]\d{4}$', search_term.strip()):
+                # Handle DD/MM/YYYY or MM/DD/YYYY formats
+                extracted_year = extract_year_from_date(search_term.strip())
+                if extracted_year:
+                    year_start = str(extracted_year)
+                    year_end = str(extracted_year)
+                    search_term = ''  # Clear search term since we're doing a pure date search
+            
+            # Check for "year YYYY" pattern
+            elif re.match(r'^year\s+\d{4}$', search_term.strip(), re.IGNORECASE):
+                year_match = re.search(r'\b(\d{4})\b', search_term)
+                if year_match:
+                    year = year_match.group()
+                    if 1000 <= int(year) <= 3000:
+                        year_start = year
+                        year_end = year
+                        search_term = ''
+        
         # Intelligent fuzzy search - automatically enabled when needed
         fuzzy_explicit = query_params.get('fuzzy', '').lower()
         fuzzy_threshold = int(query_params.get('fuzzyThreshold', '70'))  # Lower default for better user experience
@@ -172,8 +280,8 @@ def lambda_handler(event, context):
         limit = int(query_params.get('num', '20'))  # Scholar uses 'num' parameter
         limit = min(limit, 100)
         
-        # Validate search term is provided
-        if not search_term:
+        # Validate search parameters - allow empty search_term if year filters are provided
+        if not search_term and not year_start and not year_end and not author and not publication:
             return {
                 'statusCode': 400,
                 'headers': {
@@ -183,7 +291,7 @@ def lambda_handler(event, context):
                 'body': json.dumps({
                     'success': False,
                     'error': 'Bad Request',
-                    'message': 'Search term (q) parameter is required',
+                    'message': 'Search term (q) or year filters are required',
                     'timestamp': datetime.utcnow().isoformat()
                 })
             }
@@ -217,12 +325,10 @@ def lambda_handler(event, context):
         if publication:
             filter_expressions.append(Attr('publication').contains(publication))
         
-        # Year range filtering (academic papers often filtered by publication year)
-        if year_start and year_start.isdigit():
-            filter_expressions.append(Attr('publication_year').gte(year_start))
-        
-        if year_end and year_end.isdigit():
-            filter_expressions.append(Attr('publication_year').lte(year_end))
+        # Store year filters for post-processing since date parsing in DynamoDB filters is complex
+        # We'll apply year filtering after retrieving results for better accuracy
+        year_start_int = int(year_start) if year_start and year_start.isdigit() else None
+        year_end_int = int(year_end) if year_end and year_end.isdigit() else None
         
         # Collection and Document Type filters
         if collection:
@@ -243,8 +349,8 @@ def lambda_handler(event, context):
         # Execute search with academic projections
         scan_params = {
             'Limit': limit * 2 if fuzzy else limit,
-            'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
-            'ExpressionAttributeNames': {'#key': 'key'}
+            'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_date, #date, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
+            'ExpressionAttributeNames': {'#key': 'key', '#date': 'date'}
         }
         
         # For fuzzy search, scan all documents and apply fuzzy matching in code
@@ -256,10 +362,7 @@ def lambda_handler(event, context):
                 non_text_filters.append(Attr('publication_author').contains(author))
             if publication:
                 non_text_filters.append(Attr('publication').contains(publication))
-            if year_start and year_start.isdigit():
-                non_text_filters.append(Attr('publication_year').gte(year_start))
-            if year_end and year_end.isdigit():
-                non_text_filters.append(Attr('publication_year').lte(year_end))
+            # Note: Year filtering will be applied in post-processing for accuracy
             if collection:
                 non_text_filters.append(Attr('publication_collection').contains(collection))
             if document_type:
@@ -287,8 +390,8 @@ def lambda_handler(event, context):
             # Re-run scan without text filters for fuzzy processing
             scan_params_fallback = {
                 'Limit': limit * 2,
-                'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
-                'ExpressionAttributeNames': {'#key': 'key'}
+                'ProjectionExpression': 'file_id, file_name, upload_timestamp, processing_status, file_size, content_type, #key, publication, publication_year, publication_date, #date, publication_title, publication_author, publication_description, publication_page, publication_tags, publication_collection, publication_document_type, finalized_text, text_source, finalized_timestamp, total_pages',
+                'ExpressionAttributeNames': {'#key': 'key', '#date': 'date'}
             }
             response = results_table.scan(**scan_params_fallback)
             items = response.get('Items', [])
@@ -300,17 +403,47 @@ def lambda_handler(event, context):
             match_score = 100  # Default score for exact matches
             fuzzy_matched = False
             
+            # Apply year filtering in post-processing for better accuracy
+            if year_start_int or year_end_int:
+                # Extract year from multiple possible date fields
+                item_year = None
+                for date_field in ['publication_year', 'publication_date', 'date']:
+                    date_value = item.get(date_field, '')
+                    if date_value:
+                        item_year = extract_year_from_date(str(date_value))
+                        if item_year:
+                            break
+                
+                # Also check upload timestamp year if no publication date found
+                if not item_year and item.get('upload_timestamp'):
+                    upload_year = extract_year_from_date(item.get('upload_timestamp', ''))
+                    if upload_year:
+                        item_year = upload_year
+                
+                # Filter by year range
+                if item_year:
+                    if year_start_int and item_year < year_start_int:
+                        continue
+                    if year_end_int and item_year > year_end_int:
+                        continue
+                elif year_start_int or year_end_int:
+                    # If year filtering is specified but no year found, skip this item
+                    continue
+            
             # Build file URL from results table data
             s3_key = item.get('key', '')  # 'key' is the field name in results table
             file_url = f"https://{cloudfront_domain}/{s3_key}" if cloudfront_domain and s3_key else None
             
-            # Build Google Scholar-style result item
+            # Build Google Scholar-style result item with smart date handling
+            # Try multiple date sources: publication_year, publication_date, or date field
+            date_value = item.get('publication_year', '') or item.get('publication_date', '') or item.get('date', '')
+            
             result_item = {
                 'fileId': item.get('file_id'),
                 'title': item.get('publication_title', item.get('file_name', 'Untitled')),
                 'authors': [item.get('publication_author', '')] if item.get('publication_author') else [],
                 'publication': item.get('publication', ''),
-                'date': item.get('publication_year', ''),
+                'date': date_value,
                 'description': item.get('publication_description', ''),
                 'page': item.get('publication_page', ''),
                 'tags': item.get('publication_tags', []),
@@ -485,10 +618,28 @@ def lambda_handler(event, context):
             
             search_results = search_results[:limit]
         
-        # Build Google Scholar-style response
+        # Build Google Scholar-style response with enhanced date search messaging
+        date_search_performed = bool(year_start or year_end)
+        
+        # Determine search message based on date search type
+        search_message = f'About {len(search_results)} results'
+        if date_search_performed and not search_term:
+            if year_start == year_end:
+                search_message += f' from {year_start}'
+            else:
+                search_message += f' from {year_start} to {year_end}'
+        elif search_term and date_search_performed:
+            search_message += f' for "{search_term}"'
+            if year_start == year_end:
+                search_message += f' in {year_start}'
+            else:
+                search_message += f' ({year_start}-{year_end})'
+        elif search_term:
+            search_message += f' for "{search_term}"'
+        
         response_data = {
             'success': True,
-            'message': f'About {len(search_results)} results',
+            'message': search_message,
             'query': {
                 'q': search_term,
                 'author': author,

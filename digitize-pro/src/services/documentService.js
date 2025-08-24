@@ -19,7 +19,10 @@ class DocumentService {
       if (params.fileId) queryParams.append('fileId', params.fileId);
       if (params.limit) queryParams.append('limit', params.limit);
       if (params.status) queryParams.append('status', params.status);
-      if (params.finalized !== undefined) queryParams.append('finalized', params.finalized);
+      // Only add finalized param if explicitly set
+      if (params.finalized !== undefined) {
+        queryParams.append('finalized', params.finalized.toString());
+      }
 
       const url = `${API_BASE_URL}/batch/processed${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
       

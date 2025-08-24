@@ -31,10 +31,11 @@ def lambda_handler(event, context):
     
     # Get configuration
     results_table_name = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
+    finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
     recycle_bin_table_name = os.environ.get('RECYCLE_BIN_TABLE')
     s3_bucket = os.environ.get('S3_BUCKET')
     
-    if not all([results_table_name, recycle_bin_table_name, s3_bucket]):
+    if not all([results_table_name, finalized_table_name, recycle_bin_table_name, s3_bucket]):
         return {
             'statusCode': 500,
             'headers': {
@@ -71,14 +72,26 @@ def lambda_handler(event, context):
         
         # Initialize tables
         results_table = dynamodb.Table(results_table_name)
+        finalized_table = dynamodb.Table(finalized_table_name)
         recycle_bin_table = dynamodb.Table(recycle_bin_table_name)
         
-        # Get file data from results table to verify file exists
+        # Check if file exists in results table (processing documents)
         results_response = results_table.get_item(
             Key={'file_id': file_id}
         )
         
+        # Check if file exists in finalized table (finalized documents)
+        finalized_response = None
         if 'Item' not in results_response:
+            # Scan finalized table to find by file_id since it uses composite key
+            finalized_response = finalized_table.scan(
+                FilterExpression='file_id = :file_id',
+                ExpressionAttributeValues={
+                    ':file_id': file_id
+                }
+            )
+        
+        if 'Item' not in results_response and (not finalized_response or not finalized_response.get('Items')):
             # Check if file is in recycle bin
             if permanent:
                 recycle_response = recycle_bin_table.query(
@@ -145,8 +158,58 @@ def lambda_handler(event, context):
                     })
                 }
         
-        file_metadata = results_response['Item']
+        # Determine which table the file is in and get metadata
+        is_finalized = False
+        file_metadata = None
         
+        if 'Item' in results_response:
+            file_metadata = results_response['Item']
+        elif finalized_response and finalized_response.get('Items'):
+            is_finalized = True
+            file_metadata = finalized_response['Items'][0]
+        
+        # Check if this is a permanent delete request
+        if permanent:
+            # Permanent delete: Remove from appropriate table and S3 directly
+            if is_finalized:
+                # Delete from finalized table (uses composite key)
+                finalized_table.delete_item(
+                    Key={
+                        'file_id': file_id,
+                        'finalized_timestamp': file_metadata['finalized_timestamp']
+                    }
+                )
+            else:
+                # Delete from results table
+                results_table.delete_item(
+                    Key={'file_id': file_id}
+                )
+            
+            # Delete from S3 if file exists
+            if 'key' in file_metadata:
+                try:
+                    s3.delete_object(
+                        Bucket=s3_bucket,
+                        Key=file_metadata['key']
+                    )
+                    print(f"Deleted S3 object: {file_metadata['key']}")
+                except Exception as e:
+                    print(f"Error deleting S3 object: {str(e)}")
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'message': f'File {file_id} permanently deleted',
+                    'fileId': file_id,
+                    'fileName': file_metadata.get('file_name', 'Unknown')
+                })
+            }
+        
+        # Soft delete: Move to recycle bin
         # The file data is already combined in the results table
         processing_results = file_metadata
         
@@ -171,10 +234,20 @@ def lambda_handler(event, context):
         # Move to recycle bin
         recycle_bin_table.put_item(Item=recycle_bin_item)
         
-        # Delete from results table (now the unified table)
-        results_table.delete_item(
-            Key={'file_id': file_id}
-        )
+        # Delete from appropriate table
+        if is_finalized:
+            # Delete from finalized table (uses composite key)
+            finalized_table.delete_item(
+                Key={
+                    'file_id': file_id,
+                    'finalized_timestamp': file_metadata['finalized_timestamp']
+                }
+            )
+        else:
+            # Delete from results table
+            results_table.delete_item(
+                Key={'file_id': file_id}
+            )
         
         # Note: We keep the S3 file for now, it will be deleted after 30 days
         # or when permanently deleted from recycle bin

@@ -26,8 +26,18 @@ const LocalTime = ({
   const getDate = (ts) => {
     if (ts instanceof Date) return ts;
     if (typeof ts === 'string') {
-      // Handle ISO strings, Unix timestamps as strings, etc.
-      const parsed = new Date(ts);
+      // Check if timestamp has timezone info
+      let dateStr = ts;
+      
+      // If the timestamp doesn't end with 'Z' or timezone offset, assume it's UTC
+      if (!ts.endsWith('Z') && !ts.match(/[+-]\d{2}:\d{2}$/) && !ts.includes('+00:00')) {
+        // This is likely a UTC timestamp without the Z suffix
+        if (ts.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+          dateStr = ts + 'Z'; // Add Z to indicate UTC
+        }
+      }
+      
+      const parsed = new Date(dateStr);
       if (!isNaN(parsed.getTime())) return parsed;
     }
     if (typeof ts === 'number') {

@@ -714,6 +714,16 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
           aws_sqs_queue.short_batch_queue.arn,
           aws_sqs_queue.short_batch_dlq.arn
         ]
+      },
+      {
+        Effect = var.iam_effect_allow
+        Action = [
+          "sqs:SendMessage"
+        ]
+        Resource = [
+          aws_sqs_queue.batch_queue.arn,
+          aws_sqs_queue.short_batch_dlq.arn
+        ]
       }
     ]
   })
@@ -971,11 +981,12 @@ resource "aws_iam_policy" "deleter_policy" {
         Action = [
           "dynamodb:GetItem",
           "dynamodb:Query",
-          "dynamodb:DeleteItem"
+          "dynamodb:DeleteItem",
+          "dynamodb:Scan"
         ]
         Resource = [
           aws_dynamodb_table.processing_results.arn,
-          aws_dynamodb_table.processing_results.arn
+          aws_dynamodb_table.ocr_finalized.arn
         ]
       },
       {
@@ -1044,11 +1055,14 @@ resource "aws_iam_policy" "restorer_policy" {
         Action = [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ]
         Resource = [
           aws_dynamodb_table.processing_results.arn,
-          "${aws_dynamodb_table.processing_results.arn}/index/*"
+          "${aws_dynamodb_table.processing_results.arn}/index/*",
+          aws_dynamodb_table.ocr_finalized.arn,
+          "${aws_dynamodb_table.ocr_finalized.arn}/index/*"
         ]
       },
       {

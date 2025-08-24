@@ -5,6 +5,7 @@ import uploadService from '../../services/uploadService';
 import { useDocuments } from '../../hooks/useDocuments';
 import documentService from '../../services/documentService';
 import LocalTime, { LocalTimeOnly, LocalDateTime, LocalTimeRelative } from '../common/LocalTime';
+import ModernDatePicker from '../common/ModernDatePicker';
 
 const Upload = () => {
   const navigate = useNavigate();
@@ -951,12 +952,11 @@ const Upload = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                  <input
-                    type="text"
+                  <ModernDatePicker
                     value={metadata.date}
-                    onChange={(e) => setMetadata({...metadata, date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    placeholder="YYYY-MM-DD or just YYYY"
+                    onChange={(date) => setMetadata({...metadata, date: date})}
+                    placeholder="Select publication date"
+                    className="w-full"
                   />
                 </div>
                 

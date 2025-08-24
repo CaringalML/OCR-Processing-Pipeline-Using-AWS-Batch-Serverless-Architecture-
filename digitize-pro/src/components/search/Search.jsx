@@ -1,50 +1,236 @@
-import React, { useState, useEffect } from 'react';
-import { Search as SearchIcon, FileText, ChevronDown, Download, Quote, Star, Clock, FileImage } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search as SearchIcon, FileText, Clock, Filter } from 'lucide-react';
 import useSearch from '../../hooks/useSearch';
 import useDebounce from '../../hooks/useDebounce';
+import ModernDatePicker from '../common/ModernDatePicker';
 
 const Search = () => {
   const [query, setQuery] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState({
-    author: '',
-    publication: '',
-    yearFrom: '',
-    yearTo: ''
-  });
+  const [dateFilter, setDateFilter] = useState('');
+  const [showDateFilter, setShowDateFilter] = useState(false);
   const { searchResults, searching, searchError, quickSearch, advancedSearch, clearSearch } = useSearch();
   
-  // Debounce search query
-  const debouncedQuery = useDebounce(query, 500);
+  // Debounce search query - longer delay to allow complete year typing
+  const debouncedQuery = useDebounce(query, 800);
 
-  // Auto-search when debounced query changes
-  useEffect(() => {
-    if (debouncedQuery.trim()) {
-      performSearch();
-    } else {
-      clearSearch();
+  // Auto-detect date patterns in search query
+  const detectAndSetDateSearch = useCallback((searchQuery) => {
+    
+    // Check for 4-digit year patterns (1800-2030)
+    const yearPattern = /\b(1[8-9]\d{2}|20[0-3]\d)\b/;
+    const yearMatch = searchQuery.match(yearPattern);
+    
+    if (yearMatch) {
+      const year = yearMatch[0];
+      
+      // Check if it's a pure year search (just "1925" or "year 1925")
+      const pureYearPattern = /^(year\s+)?\d{4}$/i;
+      
+      if (pureYearPattern.test(searchQuery.trim())) {
+        
+        // Directly trigger advanced search in the background without opening the panel
+        console.log('🎯 Year detected:', year, 'from query:', searchQuery);
+        setTimeout(async () => {
+          try {
+            // Smart fuzzy for years: Try exact year search first
+            const exactSearchParams = {
+              query: '',
+              author: '',
+              publication: '',
+              yearFrom: year,
+              yearTo: year,
+              sortBy: 'relevance',
+              enableFuzzy: false,
+              fuzzyThreshold: 70
+            };
+            console.log('🚀 Trying exact year search for:', year);
+            const exactResults = await advancedSearch(exactSearchParams);
+            console.log('✅ Exact year search results:', exactResults);
+
+            // If no results, try SMART EXPANDED YEAR RANGE for typos
+            // Adaptive range based on era (historical docs need wider range)
+            if (exactResults.results.length === 0) {
+              console.log('🔄 No exact year results, trying smart expanded year range...');
+              const yearInt = parseInt(year);
+              
+              // Smart range calculation based on historical period
+              let yearRange = 1; // Default ±1 year
+              if (yearInt < 1900) yearRange = 2;      // Historical docs: ±2 years
+              else if (yearInt < 1950) yearRange = 1; // Early 1900s: ±1 year
+              else if (yearInt < 2000) yearRange = 1; // Mid 1900s: ±1 year
+              else yearRange = 1;                     // Modern: ±1 year
+              
+              const expandedRangeParams = {
+                query: '',
+                author: '',
+                publication: '',
+                yearFrom: (yearInt - yearRange).toString(),
+                yearTo: (yearInt + yearRange).toString(),
+                sortBy: 'relevance',
+                enableFuzzy: false, // Use exact search with smart range
+                fuzzyThreshold: 85
+              };
+              
+              const expandedResults = await advancedSearch(expandedRangeParams);
+              console.log(`✅ Smart expanded range ${yearInt-yearRange}-${yearInt+yearRange} for ${year} (±${yearRange} years):`, expandedResults);
+              
+              // If still no results, try even wider range for very old documents
+              if (expandedResults.results.length === 0 && yearInt < 1800) {
+                console.log('🔄 Still no results, trying wider range for very historical documents...');
+                const wideRangeParams = {
+                  ...expandedRangeParams,
+                  yearFrom: (yearInt - 5).toString(),
+                  yearTo: (yearInt + 5).toString()
+                };
+                const wideResults = await advancedSearch(wideRangeParams);
+                console.log(`✅ Wide historical range ${yearInt-5}-${yearInt+5} for very old documents:`, wideResults);
+              }
+            }
+          } catch (error) {
+            console.error('❌ Date search failed:', error);
+          }
+        }, 200);
+        return true;
+      }
+      
+      // Check for date range patterns like "1920-1930" or "1920 to 1930"
+      const rangePatterns = [
+        /\b(\d{4})\s*[-–—]\s*(\d{4})\b/,
+        /\b(\d{4})\s+to\s+(\d{4})\b/i,
+        /\bfrom\s+(\d{4})\s+to\s+(\d{4})\b/i
+      ];
+      
+      for (let pattern of rangePatterns) {
+        const rangeMatch = searchQuery.match(pattern);
+        if (rangeMatch) {
+          const startYear = rangeMatch[1];
+          const endYear = rangeMatch[2];
+          
+          // Remove the date range from the search query
+          const cleanedQuery = searchQuery.replace(pattern, '').trim();
+          if (cleanedQuery !== searchQuery) {
+            setQuery(cleanedQuery);
+          }
+          
+          // Trigger search with the year range filters in background
+          setTimeout(async () => {
+            try {
+              await advancedSearch({
+                query: cleanedQuery,
+                author: '',
+                publication: '',
+                yearFrom: startYear,
+                yearTo: endYear,
+                sortBy: 'relevance',
+                enableFuzzy: false, // Disable fuzzy for year range searches
+                fuzzyThreshold: 70
+              });
+            } catch (error) {
+              console.error('Date range search failed:', error);
+            }
+          }, 100);
+          return true;
+        }
+      }
     }
-  }, [debouncedQuery]);
+    
+    return false; // No date pattern detected
+  }, [advancedSearch, setQuery]);
 
-  const performSearch = async () => {
+  // Smart fuzzy search for regular queries
+  const smartQuickSearch = useCallback(async (query) => {
     try {
-      if (showAdvanced) {
+      // Try exact search first (using advancedSearch with fuzzy disabled)
+      console.log('🚀 Trying exact text search for:', query);
+      const exactResults = await advancedSearch({
+        query: query,
+        author: '',
+        publication: '',
+        yearFrom: '',
+        yearTo: '',
+        sortBy: 'relevance',
+        enableFuzzy: false,
+        fuzzyThreshold: 75
+      });
+      
+      console.log('✅ Exact search results:', exactResults);
+      
+      // Check if we have good results (high relevance scores)
+      const hasGoodResults = exactResults.results.length > 0 && 
+        exactResults.results.some(result => (result.score || 100) >= 90);
+      
+      // If no good results and less than 3 results, try fuzzy as fallback
+      if (!hasGoodResults && exactResults.results.length < 3) {
+        console.log('🔄 No good exact results, trying fuzzy fallback for:', query);
         await advancedSearch({
-          query: debouncedQuery.trim(),
-          author: advancedFilters.author,
-          publication: advancedFilters.publication,
-          yearFrom: advancedFilters.yearFrom,
-          yearTo: advancedFilters.yearTo,
+          query: query,
+          author: '',
+          publication: '',
+          yearFrom: '',
+          yearTo: '',
           sortBy: 'relevance',
           enableFuzzy: true,
-          fuzzyThreshold: 70
+          fuzzyThreshold: 75 // Higher threshold for better quality
         });
+      }
+    } catch (error) {
+      console.error('Smart quick search failed:', error);
+    }
+  }, [advancedSearch]);
+
+  const performSearch = useCallback(async () => {
+    try {
+      if (dateFilter) {
+        // If date filter is set, use advanced search with date parameters
+        const yearFromDate = extractYearFromDate(dateFilter);
+        const searchParams = {
+          query: debouncedQuery,
+          author: '',
+          publication: '',
+          yearFrom: yearFromDate ? yearFromDate.toString() : '',
+          yearTo: yearFromDate ? yearFromDate.toString() : '',
+          sortBy: 'relevance',
+          enableFuzzy: false, // Smart fuzzy: start with exact
+          fuzzyThreshold: 75
+        };
+
+        // Smart fuzzy for date filter searches
+        console.log('🚀 Trying exact search with date filter:', searchParams);
+        const exactResults = await advancedSearch(searchParams);
+        
+        // Fallback to fuzzy if needed
+        const hasGoodResults = exactResults.results.length > 0 && 
+          exactResults.results.some(result => (result.score || 100) >= 90);
+        
+        if (!hasGoodResults && exactResults.results.length < 3) {
+          console.log('🔄 Date filter search: trying fuzzy fallback...');
+          await advancedSearch({...searchParams, enableFuzzy: true});
+        }
       } else {
-        await quickSearch(debouncedQuery);
+        // Smart fuzzy for regular searches
+        await smartQuickSearch(debouncedQuery);
       }
     } catch (error) {
       console.error('Search failed:', error);
     }
+  }, [dateFilter, debouncedQuery, advancedSearch, smartQuickSearch]);
+
+  // Helper function to extract year from date string
+  const extractYearFromDate = (dateString) => {
+    if (!dateString) return null;
+    
+    // Pure year (like "1925")
+    if (/^\d{4}$/.test(dateString.trim())) {
+      return parseInt(dateString.trim());
+    }
+    
+    // Date format (like "05/08/1925" or "08/05/1925")
+    const dateMatch = dateString.match(/\d{1,2}[/.-]\d{1,2}[/.-](\d{4})/);
+    if (dateMatch) {
+      return parseInt(dateMatch[1]);
+    }
+    
+    return null;
   };
 
   const handleSearch = async (e) => {
@@ -62,6 +248,32 @@ const Search = () => {
     }
     return authorList;
   };
+
+  // Auto-search when debounced query or date filter changes
+  useEffect(() => {
+    if (debouncedQuery.trim() || dateFilter) {
+      const trimmedQuery = debouncedQuery.trim();
+      
+      // Skip search for very short numeric queries (1-3 digits, likely partial years)
+      if (/^\d{1,3}$/.test(trimmedQuery)) {
+        console.log('🚫 Skipping search for short numeric query:', trimmedQuery);
+        return;
+      }
+      
+      // Auto-detect date patterns in query (if no explicit date filter is set)
+      const dateDetected = dateFilter ? false : detectAndSetDateSearch(trimmedQuery);
+      console.log('🔍 Date detected:', dateDetected, 'for query:', trimmedQuery);
+      // Only perform normal search if no date was detected in query
+      if (!dateDetected) {
+        console.log('📝 Performing regular search for:', trimmedQuery);
+        performSearch();
+      } else {
+        console.log('🚫 Skipping regular search, year search will handle it');
+      }
+    } else {
+      clearSearch();
+    }
+  }, [debouncedQuery, dateFilter, performSearch, clearSearch]);
 
   // Elephind-style snippet highlighting with context
   const highlightSnippet = (text, searchTerm) => {
@@ -114,11 +326,16 @@ const Search = () => {
               <span className="text-gray-600 ml-2">Search</span>
             </h1>
             <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="text-green-600 hover:text-green-700 hover:bg-green-50 px-3 py-1 rounded-md text-sm flex items-center transition-colors"
+              onClick={() => setShowDateFilter(!showDateFilter)}
+              className={`flex items-center px-3 py-1 rounded-md text-sm transition-colors ${
+                showDateFilter || dateFilter 
+                  ? 'text-green-700 bg-green-50' 
+                  : 'text-green-600 hover:text-green-700 hover:bg-green-50'
+              }`}
             >
-              Advanced search
-              <ChevronDown className={`w-4 h-4 ml-1 transform transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              <Filter className="w-4 h-4 mr-1" />
+              Date Filter
+              {dateFilter && <span className="ml-1 text-xs">•</span>}
             </button>
           </div>
         </div>
@@ -155,95 +372,70 @@ const Search = () => {
             </div>
           </form>
 
-          {/* Advanced Search Panel */}
-          {showAdvanced && (
-            <div className="mt-4 p-5 bg-green-50 rounded-lg border border-green-200">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-green-800 mb-1">
-                    All these words
+          {/* Date Filter Panel */}
+          {showDateFilter && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-blue-800 mb-2">
+                    Filter by Date
                   </label>
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  <ModernDatePicker
+                    value={dateFilter}
+                    onChange={setDateFilter}
+                    placeholder="Select date or type year (e.g., 1925)"
+                    className="w-full max-w-md"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-green-800 mb-1">
-                    Author
-                  </label>
-                  <input
-                    type="text"
-                    value={advancedFilters.author}
-                    onChange={(e) => setAdvancedFilters(prev => ({ ...prev, author: e.target.value }))}
-                    placeholder="e.g., John Doe"
-                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-green-800 mb-1">
-                    Publication
-                  </label>
-                  <input
-                    type="text"
-                    value={advancedFilters.publication}
-                    onChange={(e) => setAdvancedFilters(prev => ({ ...prev, publication: e.target.value }))}
-                    placeholder="e.g., Nature"
-                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-green-800 mb-1">
-                    Date range
-                  </label>
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={advancedFilters.yearFrom}
-                      onChange={(e) => setAdvancedFilters(prev => ({ ...prev, yearFrom: e.target.value }))}
-                      placeholder="From"
-                      className="w-24 px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                    <span className="text-gray-500">to</span>
-                    <input
-                      type="text"
-                      value={advancedFilters.yearTo}
-                      onChange={(e) => setAdvancedFilters(prev => ({ ...prev, yearTo: e.target.value }))}
-                      placeholder="To"
-                      className="w-24 px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDateFilter('')}
+                    className="px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={() => setShowDateFilter(false)}
+                    className="px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors"
+                  >
+                    Hide
+                  </button>
                 </div>
               </div>
+              {dateFilter && (
+                <div className="mt-3 text-sm text-blue-700">
+                  <span className="font-medium">Active filter:</span> Documents from {dateFilter}
+                </div>
+              )}
             </div>
           )}
 
           {/* Search Status Bar */}
           {(searchResults.length > 0 || searching) && (
-            <div className="mt-4 flex items-center justify-between text-sm">
-              <div className="text-gray-600">
-                {searching ? (
-                  <span className="flex items-center">
-                    <Clock className="w-4 h-4 mr-1 animate-pulse" />
-                    Searching...
-                  </span>
-                ) : (
-                  <span>
-                    About <span className="font-semibold text-green-700">{searchResults.length}</span> results
-                    {query && <span> for "<span className="font-semibold">{query}</span>"</span>}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-4">
-                <button className="text-green-600 hover:text-green-700 hover:underline">
-                  Sort by relevance
-                </button>
-                <span className="text-gray-400">|</span>
-                <button className="text-green-600 hover:text-green-700 hover:underline">
-                  Sort by date
-                </button>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <div className="text-gray-600">
+                  {searching ? (
+                    <span className="flex items-center">
+                      <Clock className="w-4 h-4 mr-1 animate-pulse" />
+                      Searching...
+                    </span>
+                  ) : (
+                    <span>
+                      About <span className="font-semibold text-green-700">{searchResults.length}</span> results
+                      {query && <span> for "<span className="font-semibold">{query}</span>"</span>}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4">
+                  <button className="text-green-600 hover:text-green-700 hover:underline">
+                    Sort by relevance
+                  </button>
+                  <span className="text-gray-400">|</span>
+                  <button className="text-green-600 hover:text-green-700 hover:underline">
+                    Sort by date
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -290,9 +482,9 @@ const Search = () => {
                           <span className="text-gray-400">•</span>
                         </>
                       )}
-                      {result.year && (
+                      {result.date && (
                         <>
-                          <span>{result.year}</span>
+                          <span>{result.date}</span>
                           <span className="text-gray-400">•</span>
                         </>
                       )}
@@ -342,25 +534,6 @@ const Search = () => {
                     <FileText className="w-4 h-4 mr-1" />
                     Read Document
                   </a>
-                  {result.fileUrl && (
-                    <a
-                      href={result.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-green-600 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors"
-                    >
-                      <Download className="w-4 h-4 mr-1" />
-                      Download
-                    </a>
-                  )}
-                  <button className="inline-flex items-center text-gray-500 hover:text-green-600 hover:bg-green-50 px-2 py-1 rounded transition-colors">
-                    <Quote className="w-4 h-4 mr-1" />
-                    Cite
-                  </button>
-                  <button className="inline-flex items-center text-gray-500 hover:text-green-600 hover:bg-green-50 px-2 py-1 rounded transition-colors">
-                    <Star className="w-4 h-4 mr-1" />
-                    Save
-                  </button>
                 </div>
               </div>
             ))}
@@ -379,16 +552,37 @@ const Search = () => {
             <p className="text-gray-500">
               Start typing to search across all finalized documents
             </p>
-            <div className="mt-6 flex justify-center gap-4 text-sm">
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full">
-                Auto-search enabled
-              </span>
-              <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full">
-                Fuzzy matching
-              </span>
-              <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full">
-                Full-text search
-              </span>
+            <div className="mt-6 space-y-4">
+              <div className="flex justify-center gap-3 text-sm flex-wrap">
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full">
+                  ⚡ Smart Date Search
+                </span>
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">
+                  📅 Modern Calendar
+                </span>
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
+                  🎯 Auto-detection
+                </span>
+                <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full">
+                  🔍 Fuzzy matching
+                </span>
+                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full">
+                  📄 Full-text search
+                </span>
+              </div>
+              <div className="text-center text-sm text-gray-500">
+                <p className="mb-2"><strong>Enhanced Search Tips:</strong></p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-3xl mx-auto">
+                  <p>🔍 <strong>Smart Date Search:</strong> Type "1925" for instant year search</p>
+                  <p>📅 <strong>Date Filter:</strong> Use the Date Filter button for precise date selection</p>
+                  <p>⚡ <strong>Quick Typing:</strong> Just type the year in search box (e.g., "1925")</p>
+                  <p>🎯 <strong>Auto-Detection:</strong> Search automatically detects date patterns</p>
+                </div>
+                <div className="mt-3 text-xs text-gray-400">
+                  <p><strong>Date Format Support:</strong> "1925", "05/08/1925", "08/05/1925", "year 1925" all work!</p>
+                  <p>Searches both document publication dates and upload dates</p>
+                </div>
+              </div>
             </div>
           </div>
         ) : null}

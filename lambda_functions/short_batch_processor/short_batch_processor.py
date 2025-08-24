@@ -43,6 +43,7 @@ logger.setLevel(logging.INFO)
 RESULTS_TABLE = os.environ.get('RESULTS_TABLE', 'ocr-processor-batch-processing-results')
 PROCESSED_BUCKET = os.environ.get('PROCESSED_BUCKET')
 DEAD_LETTER_QUEUE_URL = os.environ.get('DEAD_LETTER_QUEUE_URL')
+LONG_BATCH_QUEUE_URL = os.environ.get('LONG_BATCH_QUEUE_URL')
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 BUDGET_LIMIT = float(os.environ.get('BUDGET_LIMIT', '10.0'))
@@ -213,6 +214,37 @@ def send_to_dlq(message: dict[str, Any], reason: str) -> None:
         logger.info(f"Message sent to DLQ: {reason}")
     except Exception as e:
         logger.error(f"Failed to send message to DLQ: {e}")
+
+def redirect_to_long_batch(message: dict[str, Any], reason: str) -> None:
+    """Redirect message to long-batch queue for processing"""
+    try:
+        if not LONG_BATCH_QUEUE_URL:
+            logger.warning("LONG_BATCH_QUEUE_URL not configured, sending to DLQ instead")
+            send_to_dlq(message, reason)
+            return
+            
+        sqs_client = get_aws_client('sqs')
+        
+        # The message should already have the S3 event structure
+        sqs_client.send_message(
+            QueueUrl=LONG_BATCH_QUEUE_URL,
+            MessageBody=json.dumps(message),
+            MessageAttributes={
+                'RedirectedFrom': {
+                    'StringValue': 'short-batch',
+                    'DataType': 'String'
+                },
+                'RedirectReason': {
+                    'StringValue': reason,
+                    'DataType': 'String'
+                }
+            }
+        )
+        logger.info(f"Message redirected to long-batch queue: {reason}")
+    except Exception as e:
+        logger.error(f"Failed to redirect message to long-batch queue: {e}")
+        # If redirect fails, send to DLQ as fallback
+        send_to_dlq(message, f"Failed to redirect: {str(e)}")
 
 def clean_extracted_text(text: str) -> str:
     """Simple text cleaning - removes newlines and normalizes spacing since Claude should generate clean text"""
@@ -1146,6 +1178,31 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
         ocr_result = process_document_with_claude_ocr(document_bytes, document_id, content_type, upload_timestamp)
         
         if not ocr_result['success']:
+            # Check if this should be redirected to long-batch
+            if ocr_result.get('redirect_to_long_batch'):
+                logger.info(f"Redirecting document {document_id} to long-batch due to Claude API overload")
+                redirect_to_long_batch(message, f"Claude API overloaded (529): {ocr_result['error']}")
+                
+                # Update status to indicate redirect
+                try:
+                    if RESULTS_TABLE:
+                        dynamodb = get_aws_client('dynamodb')
+                        results_table = dynamodb.Table(RESULTS_TABLE)
+                        results_table.update_item(
+                            Key={'file_id': document_id},
+                            UpdateExpression='SET processing_status = :status, error_message = :error, processing_type = :type',
+                            ExpressionAttributeValues={
+                                ':status': 'redirected_to_long_batch',
+                                ':error': 'Redirected to long-batch due to Claude API overload',
+                                ':type': 'short-batch-redirected'
+                            }
+                        )
+                except Exception as db_error:
+                    logger.error(f"Failed to update status for redirected document: {db_error}")
+                
+                # Don't raise exception - this is a successful redirect, not a failure
+                return
+            
             # Check if it's a budget issue
             if 'budget limit exceeded' in ocr_result.get('error', '').lower():
                 send_to_dlq(message, f"Budget limit exceeded: {ocr_result['error']}")
@@ -1327,9 +1384,21 @@ def process_document(message: dict[str, Any]) -> dict[str, Any]:
         return result
         
     except Exception as e:
-        logger.error(f"Error processing document {document_id}: {e}")
+        error_str = str(e)
+        logger.error(f"Error processing document {document_id}: {error_str}")
         
-        # Update results table with error status
+        # Check if this is a Claude API overload error (529)
+        if 'Error code: 529' in error_str or 'overloaded_error' in error_str.lower():
+            logger.warning(f"Claude API overloaded (529 error) for document {document_id}, will redirect to long-batch")
+            # Return a special status to indicate redirect is needed
+            return {
+                'success': False,
+                'error': error_str,
+                'redirect_to_long_batch': True,
+                'document_id': document_id
+            }
+        
+        # Update results table with error status for other errors
         try:
             if RESULTS_TABLE:
                 dynamodb = get_aws_client('dynamodb')

@@ -8,16 +8,40 @@ export const useDocuments = (autoLoad = true) => {
   const [error, setError] = useState(null);
   const [hasMore, setHasMore] = useState(false);
 
-  // Fetch documents from API
+  // Fetch documents from API (with option for both finalized and non-finalized)
   const fetchDocuments = useCallback(async (params = {}) => {
     try {
       setLoading(true);
       setError(null);
       
-      const data = await documentService.getProcessedDocuments(params);
-      setDocuments(data.files || []);
-      setHasMore(data.hasMore || false);
-      return data;
+      // For dashboard, fetch both finalized and non-finalized documents
+      if (params.includeAll) {
+        const [finalizedData, nonFinalizedData] = await Promise.all([
+          documentService.getProcessedDocuments({ ...params, finalized: true }),
+          documentService.getProcessedDocuments({ ...params }) // No finalized param = non-finalized
+        ]);
+        
+        // Combine both datasets
+        const allFiles = [
+          ...(finalizedData.files || []),
+          ...(nonFinalizedData.files || [])
+        ];
+        
+        // Remove duplicates based on fileId
+        const uniqueFiles = Array.from(
+          new Map(allFiles.map(file => [file.fileId, file])).values()
+        );
+        
+        setDocuments(uniqueFiles);
+        setHasMore(finalizedData.hasMore || nonFinalizedData.hasMore || false);
+        return { files: uniqueFiles, hasMore: finalizedData.hasMore || nonFinalizedData.hasMore };
+      } else {
+        // Default behavior - fetch based on params
+        const data = await documentService.getProcessedDocuments(params);
+        setDocuments(data.files || []);
+        setHasMore(data.hasMore || false);
+        return data;
+      }
       
     } catch (err) {
       setError(err.message || 'Failed to fetch documents');

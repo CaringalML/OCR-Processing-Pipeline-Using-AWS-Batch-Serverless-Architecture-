@@ -168,7 +168,8 @@ def lambda_handler(event, context):
                 print(f"Warning: Failed to store edit history: {str(e)}")
                 # Continue with the update even if edit history fails
         
-        # Update the finalized document (no longer storing edit_history in main table)
+        # Update the finalized document (entity_analysis and other metadata are automatically preserved)
+        # Note: Since we're only updating specific fields, existing fields like entity_analysis remain unchanged
         update_expression = 'SET finalized_text = :new_text, last_edited_timestamp = :edit_time, edit_count = if_not_exists(edit_count, :zero) + :one'
         expression_values = {
             ':new_text': finalized_text,

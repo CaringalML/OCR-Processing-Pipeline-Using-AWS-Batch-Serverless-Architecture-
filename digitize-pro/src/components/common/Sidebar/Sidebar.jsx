@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Upload as UploadIcon, Package, Trash2, Search, X, FileText, Settings } from "lucide-react";
+import { Home, Upload as UploadIcon, Package, Trash2, Search, X, FileText } from "lucide-react";
 
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
@@ -66,11 +66,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center justify-center">
-            <Settings className="w-5 h-5 text-gray-400 cursor-pointer hover:text-gray-600" />
-          </div>
-        </div>
       </div>
     </>
   );

@@ -371,6 +371,7 @@ resource "aws_lambda_function" "short_batch_processor" {
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.id
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
+      LONG_BATCH_QUEUE_URL  = aws_sqs_queue.batch_queue.url
       SNS_TOPIC_ARN         = aws_sns_topic.critical_alerts.arn
       ANTHROPIC_API_KEY     = var.anthropic_api_key
       BUDGET_LIMIT          = var.budget_limit_default
@@ -659,6 +660,7 @@ resource "aws_lambda_function" "deleter" {
   environment {
     variables = {
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE   = aws_dynamodb_table.ocr_finalized.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
       S3_BUCKET         = aws_s3_bucket.upload_bucket.id
       LOG_LEVEL         = var.lambda_log_level
@@ -692,6 +694,7 @@ resource "aws_lambda_function" "restorer" {
   environment {
     variables = {
       RESULTS_TABLE     = aws_dynamodb_table.processing_results.name
+      FINALIZED_TABLE   = aws_dynamodb_table.ocr_finalized.name
       RECYCLE_BIN_TABLE = aws_dynamodb_table.recycle_bin.name
       LOG_LEVEL         = var.lambda_log_level
       ENVIRONMENT       = var.environment

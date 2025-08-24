@@ -28,10 +28,10 @@ def lambda_handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     
     # Get configuration
-    results_table_name = os.environ.get('RESULTS_TABLE')
+    finalized_table_name = os.environ.get('FINALIZED_TABLE', 'ocr-processor-batch-finalized-results')
     recycle_bin_table_name = os.environ.get('RECYCLE_BIN_TABLE')
     
-    if not all([results_table_name, recycle_bin_table_name]):
+    if not all([finalized_table_name, recycle_bin_table_name]):
         return {
             'statusCode': 500,
             'headers': {
@@ -62,8 +62,8 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Initialize tables (using single results table)
-        results_table = dynamodb.Table(results_table_name)
+        # Initialize tables (only finalized and recycle bin needed)
+        finalized_table = dynamodb.Table(finalized_table_name)
         recycle_bin_table = dynamodb.Table(recycle_bin_table_name)
         
         # Get item from recycle bin
@@ -87,12 +87,30 @@ def lambda_handler(event, context):
         
         recycled_item = recycle_response['Items'][0]
         
-        # Check if file already exists (shouldn't happen, but check anyway)
-        existing_metadata = results_table.get_item(
-            Key={'file_id': file_id}
-        )
+        # Get the original document metadata
+        original_metadata = recycled_item['original_metadata']
         
-        if 'Item' in existing_metadata:
+        # Only finalized documents should be in the recycle bin
+        # Non-finalized documents from Upload page are permanently deleted
+        if 'finalized_timestamp' not in original_metadata:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'error': 'Invalid Operation',
+                    'message': f'Non-finalized documents should not be in recycle bin'
+                })
+            }
+        
+        # Check if file already exists in finalized table
+        existing_finalized = finalized_table.scan(
+            FilterExpression='file_id = :file_id',
+            ExpressionAttributeValues={':file_id': file_id}
+        )
+        if existing_finalized.get('Items'):
             return {
                 'statusCode': 409,
                 'headers': {
@@ -101,24 +119,20 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({
                     'error': 'Conflict',
-                    'message': f'File {file_id} already exists in active files'
+                    'message': f'File {file_id} already exists in finalized documents'
                 })
             }
         
-        # Restore metadata
-        original_metadata = recycled_item['original_metadata']
+        # Restore finalized document to finalized table
         restored_timestamp = datetime.now(timezone.utc)
         original_metadata['restored_at'] = restored_timestamp.isoformat()
         original_metadata['restored_from_recycle_bin'] = True
         
-        results_table.put_item(Item=original_metadata)
+        # Restore to finalized table (only finalized documents should be in recycle bin)
+        finalized_table.put_item(Item=original_metadata)
         
-        # Restore results if they existed
-        if recycled_item.get('original_results'):
-            original_results = recycled_item['original_results']
-            original_results['restored_at'] = restored_timestamp.isoformat()
-            
-            results_table.put_item(Item=original_results)
+        # No need to restore results separately for finalized documents
+        # All data is already in the finalized document metadata
         
         # Delete from recycle bin
         recycle_bin_table.delete_item(

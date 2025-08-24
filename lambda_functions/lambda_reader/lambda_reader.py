@@ -863,10 +863,20 @@ def lambda_handler(event, context):
                         'processedAt': processing_result.get('processed_at', processing_result.get('processing_timestamp', '')),
                         'tokenUsage': processing_result.get('token_usage', {}),
                         'languageDetection': processing_result.get('language_detection', {}),
-                        'entityAnalysis': processing_result.get('entity_analysis', {}),
                         'textAnalysis': processing_result.get('textAnalysis', {}),
                         'editHistory': get_edit_history(dynamodb, edit_history_table_name, file_id)
                     }
+                    
+                    # Handle entity analysis for finalized results
+                    # Since ocr_finalizer.py now properly transforms entity data during finalization,
+                    # we should just pass through the already-transformed data
+                    entity_analysis = processing_result.get('entity_analysis', {})
+                    if entity_analysis and isinstance(entity_analysis, dict):
+                        # Use the already-transformed entity analysis from finalized table as-is
+                        response_data['finalizedResults']['entityAnalysis'] = entity_analysis
+                    else:
+                        # No entity analysis data available
+                        response_data['finalizedResults']['entityAnalysis'] = {'entities': []}
                 else:
                     # For regular results, show standard OCR data
                     response_data['ocrResults'] = {

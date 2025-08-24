@@ -50,6 +50,41 @@ def format_file_size(size_bytes):
 # File size threshold for routing (300KB)
 FILE_SIZE_THRESHOLD_KB = int(os.environ.get('FILE_SIZE_THRESHOLD_KB', '300'))
 
+# Allowed file types for upload (Option 1: Keep TIFF support)
+ALLOWED_EXTENSIONS = {'pdf', 'tiff', 'tif', 'jpg', 'jpeg', 'png'}
+ALLOWED_MIME_TYPES = {
+    'application/pdf',
+    'image/tiff',
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'application/octet-stream'  # Allow as fallback for unknown types
+}
+
+def validate_file(filename: str, content_type: str) -> Tuple[bool, str]:
+    """
+    Validate file type based on extension and MIME type
+    Returns (is_valid, message)
+    """
+    # Check file extension
+    if '.' not in filename:
+        return False, "File must have an extension"
+    
+    file_extension = filename.rsplit('.', 1)[-1].lower()
+    
+    if file_extension not in ALLOWED_EXTENSIONS:
+        return False, f"Invalid file type: .{file_extension}. Allowed types: PDF, TIFF, JPG, PNG"
+    
+    # Option 3: Warn about TIFF files
+    if file_extension in ('tiff', 'tif'):
+        logger.warning(f"⚠️ TIFF file detected: {filename} - TIFF files are typically large and may take longer to process")
+    
+    # Check MIME type if provided
+    if content_type and content_type.lower() not in ALLOWED_MIME_TYPES:
+        logger.warning(f"Unexpected MIME type: {content_type} for file {filename}, proceeding anyway")
+    
+    return True, "Valid file"
+
 def make_routing_decision(file_size_bytes: int, file_type: str, priority: str) -> Dict[str, Any]:
     """
     Simple, bulletproof routing decision based on 300KB threshold.
@@ -278,6 +313,23 @@ def lambda_handler(event, context):
             original_filename = file_info['filename']
             content_type = file_info['content_type']
             
+            # Validate file type (backend validation for security)
+            is_valid, validation_message = validate_file(original_filename, content_type)
+            if not is_valid:
+                logger.warning(f"File validation failed: {validation_message}")
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({
+                        'error': 'Invalid file type',
+                        'message': validation_message,
+                        'filename': original_filename
+                    })
+                }
+            
             # Generate unique file ID
             file_id = str(uuid.uuid4())
             timestamp = datetime.utcnow().isoformat()
@@ -289,6 +341,10 @@ def lambda_handler(event, context):
             # Get file type from filename extension
             file_extension = os.path.splitext(original_filename)[1]
             file_type = file_extension.lstrip('.').lower()
+            
+            # Extra warning for large TIFF files
+            if file_type in ('tiff', 'tif') and file_size_mb > 10:
+                logger.warning(f"⚠️ Large TIFF file detected: {original_filename} ({file_size_mb:.1f}MB) - Will be routed to long-batch processing")
             
             # Get priority from form data
             priority = form_data.get('priority', 'normal')

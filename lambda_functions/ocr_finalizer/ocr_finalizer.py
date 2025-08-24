@@ -188,6 +188,44 @@ def lambda_handler(event, context):
         # Track if user made edits before finalizing
         was_edited = bool(edited_text)
         
+        # Transform entity_analysis to match frontend expectations
+        # Check both snake_case and camelCase field names
+        entity_analysis = current_results.get('entity_analysis', current_results.get('entityAnalysis', {}))
+        transformed_entity_analysis = {}
+        if entity_analysis and isinstance(entity_analysis, dict):
+            # Check if it already has entities array (direct from batch processor)
+            if entity_analysis.get('entities'):
+                # Use the existing entities array as-is (it contains actual entity names)
+                transformed_entity_analysis = {
+                    'entities': entity_analysis.get('entities', []),
+                    'entity_summary': entity_analysis.get('entity_summary', {}),
+                    'total_entities': entity_analysis.get('total_entities', 0),
+                    'entity_types': list(entity_analysis.get('entity_summary', {}).keys()) if entity_analysis.get('entity_summary') else [],
+                    'detection_source': 'AWS Comprehend Analysis'
+                }
+            elif entity_analysis.get('entity_summary'):
+                # Extract actual entity text values from entity_summary instead of category keys
+                entity_texts = []
+                entity_summary = entity_analysis.get('entity_summary', {})
+                for category, entity_list in entity_summary.items():
+                    if isinstance(entity_list, list):
+                        for entity in entity_list:
+                            if isinstance(entity, dict) and entity.get('text'):
+                                entity_texts.append(entity['text'])
+                            elif isinstance(entity, str):
+                                entity_texts.append(entity)
+                
+                transformed_entity_analysis = {
+                    'entities': entity_texts,  # Use actual entity names, not category keys
+                    'entity_summary': entity_summary,
+                    'total_entities': len(entity_texts),
+                    'entity_types': list(entity_summary.keys()),
+                    'detection_source': 'AWS Comprehend Analysis'
+                }
+            else:
+                # Keep original structure if no recognizable format
+                transformed_entity_analysis = entity_analysis
+        
         # Create edit history entry if user made edits during finalization
         if was_edited:
             edit_timestamp = datetime.now(timezone.utc).isoformat()
@@ -247,7 +285,7 @@ def lambda_handler(event, context):
             'edit_history': current_results.get('edit_history', []),
             'token_usage': current_results.get('token_usage', {}),
             'language_detection': current_results.get('language_detection', {}),
-            'entity_analysis': current_results.get('entity_analysis', {}),
+            'entity_analysis': transformed_entity_analysis,
             'textAnalysis': current_results.get('textAnalysis', {}),
             
             # Publication metadata fields

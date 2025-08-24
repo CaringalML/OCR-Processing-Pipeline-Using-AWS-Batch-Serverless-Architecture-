@@ -20,12 +20,13 @@ class SearchService {
    */
   async searchDocuments(params) {
     try {
-      if (!params.q) {
-        throw new Error('Search query is required');
+      // Allow empty query if we have year filters for date-only searches
+      if (!params.q && !params.as_ylo && !params.as_yhi) {
+        throw new Error('Search query or date filters are required');
       }
 
       const queryParams = new URLSearchParams();
-      queryParams.append('q', params.q);
+      if (params.q) queryParams.append('q', params.q);
       
       // Add optional parameters
       if (params.author) queryParams.append('author', params.author);
@@ -38,6 +39,10 @@ class SearchService {
       if (params.fuzzyThreshold) queryParams.append('fuzzyThreshold', params.fuzzyThreshold);
 
       const url = `${API_BASE_URL}/batch/search?${queryParams.toString()}`;
+      
+      // Debug: Log the actual URL being called
+      console.log('🔍 Search API URL:', url);
+      console.log('🔍 Search params:', params);
       
       const response = await fetch(url, {
         method: 'GET',

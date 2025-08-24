@@ -353,6 +353,52 @@ resource "aws_lambda_permission" "batch_delete_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/DELETE/batch/delete/*"
 }
 
+# Batch Delete OPTIONS Method (for CORS)
+resource "aws_api_gateway_method" "batch_delete_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_delete_file_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Delete OPTIONS Integration (for CORS)
+resource "aws_api_gateway_integration" "batch_delete_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_delete_file_id.id
+  http_method = aws_api_gateway_method.batch_delete_options.http_method
+  type = "MOCK"
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Delete OPTIONS Method Response
+resource "aws_api_gateway_method_response" "batch_delete_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_delete_file_id.id
+  http_method = aws_api_gateway_method.batch_delete_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Delete OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "batch_delete_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_delete_file_id.id
+  http_method = aws_api_gateway_method.batch_delete_options.http_method
+  status_code = aws_api_gateway_method_response.batch_delete_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+  depends_on = [aws_api_gateway_integration.batch_delete_options]
+}
+
 # Batch Recycle Bin GET Method (view recycle bin)
 resource "aws_api_gateway_method" "batch_recycle_bin_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -929,6 +975,7 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.batch_processed_finalize_options,
     # New Unified Batch File Management
     aws_api_gateway_integration.batch_delete_post,
+    aws_api_gateway_integration.batch_delete_options,
     aws_api_gateway_integration.batch_recycle_bin_get,
     aws_api_gateway_integration.batch_restore_post,
     aws_api_gateway_integration.batch_search_get,

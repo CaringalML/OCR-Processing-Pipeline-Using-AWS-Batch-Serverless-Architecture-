@@ -15,7 +15,8 @@ const useSearch = () => {
    * Perform a search
    */
   const search = useCallback(async (params) => {
-    if (!params.q || params.q.trim() === '') {
+    // Allow empty query if we have year filters for date-only searches
+    if ((!params.q || params.q.trim() === '') && !params.as_ylo && !params.as_yhi) {
       setSearchResults([]);
       return { results: [] };
     }
