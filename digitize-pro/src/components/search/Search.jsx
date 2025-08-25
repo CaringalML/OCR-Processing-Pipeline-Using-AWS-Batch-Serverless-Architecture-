@@ -8,7 +8,7 @@ const Search = () => {
   const [query, setQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
-  const { searchResults, searching, searchError, quickSearch, advancedSearch, clearSearch } = useSearch();
+  const { searchResults, searching, searchError, advancedSearch, clearSearch } = useSearch();
   
   // Debounce search query - longer delay to allow complete year typing
   const debouncedQuery = useDebounce(query, 800);
@@ -273,7 +273,7 @@ const Search = () => {
     } else {
       clearSearch();
     }
-  }, [debouncedQuery, dateFilter, performSearch, clearSearch]);
+  }, [debouncedQuery, dateFilter, performSearch, clearSearch, detectAndSetDateSearch]);
 
   // Elephind-style snippet highlighting with context
   const highlightSnippet = (text, searchTerm) => {

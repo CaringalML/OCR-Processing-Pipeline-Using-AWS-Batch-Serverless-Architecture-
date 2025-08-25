@@ -2,7 +2,6 @@ import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const StatsCard = ({ label, value, change, trend = "neutral", className = "" }) => {
-  const isPositive = change && change.startsWith('+');
   
   // Color scheme based on label and trend
   const getCardColors = (label, trend) => {

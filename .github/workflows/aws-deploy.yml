@@ -1,4 +1,4 @@
-name: Terraform Validate and Deploy to AWS ECR
+name: Deploy Frontend and Backend
 
 on:
   push:
@@ -8,7 +8,92 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate-and-deploy:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+
+    - name: Terraform Init (Frontend Infrastructure)
+      run: |
+        cd digitize-pro/frontend-terraform
+        terraform init
+
+    - name: Terraform Validate (Frontend Infrastructure)
+      run: |
+        cd digitize-pro/frontend-terraform
+        terraform validate
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: digitize-pro/package-lock.json
+
+    - name: Install Dependencies
+      run: |
+        cd digitize-pro
+        npm ci
+
+    - name: Create Environment File
+      run: |
+        cd digitize-pro
+        cat << EOF > .env
+        REACT_APP_API_GATEWAY_URL=${{ secrets.REACT_APP_API_GATEWAY_URL }}
+        REACT_APP_AWS_REGION=${{ secrets.REACT_APP_AWS_REGION }}
+        REACT_APP_S3_BUCKET_NAME=${{ secrets.REACT_APP_S3_BUCKET_NAME }}
+        REACT_APP_ENVIRONMENT=production
+        EOF
+
+    - name: Run ESLint (Treat Warnings as Errors)
+      run: |
+        cd digitize-pro
+        npx eslint src --ext .js,.jsx --max-warnings 0
+      env:
+        CI: true
+
+    - name: Run Tests
+      run: |
+        cd digitize-pro
+        npm test -- --coverage --watchAll=false
+      env:
+        CI: true
+
+    - name: Build Frontend
+      run: |
+        cd digitize-pro
+        npm run build
+      env:
+        CI: true
+        GENERATE_SOURCEMAP: false
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Deploy to S3
+      run: |
+        aws s3 sync ./digitize-pro/build s3://digitize-pro-frontend/frontend-build --delete
+        echo "✅ S3 deployment completed"
+
+    - name: Invalidate CloudFront
+      run: |
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+          --paths "/*"
+        echo "✅ CloudFront invalidation initiated"
+
+  deploy-backend:
     runs-on: ubuntu-latest
 
     steps:

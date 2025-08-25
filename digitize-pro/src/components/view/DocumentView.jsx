@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, Calendar, User, Tag, FileText, Clock, Eye, Copy, Edit, Save, X, Search, ZoomIn, ZoomOut, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Clock, Eye, Copy, Edit, Save, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import Zoom from 'react-medium-image-zoom';
 import 'react-medium-image-zoom/dist/styles.css';
 import documentService from '../../services/documentService';
@@ -186,7 +186,6 @@ const DocumentView = () => {
     const absoluteMagnifierLeft = rect.left + magnifierX;
     const absoluteMagnifierRight = absoluteMagnifierLeft + magnifierWidth;
     const absoluteMagnifierTop = rect.top + magnifierY;
-    const absoluteMagnifierBottom = absoluteMagnifierTop + magnifierHeight;
     
     // Check right edge - if magnifier goes off viewport right, move to left of cursor
     if (absoluteMagnifierRight > viewportWidth) {

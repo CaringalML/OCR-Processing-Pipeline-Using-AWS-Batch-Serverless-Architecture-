@@ -13,7 +13,7 @@ const RecycleBin = () => {
   const [restoring, setRestoring] = useState(false);
   const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '' });
+  const [deleteFileInfo] = useState({ fileId: null, fileName: '' });
 
   const loadRecycleBinData = useCallback(async () => {
     try {
@@ -42,32 +42,6 @@ const RecycleBin = () => {
     );
   };
 
-  const handleSelectAll = () => {
-    if (selectedItems.length === deletedItems.length) {
-      setSelectedItems([]);
-    } else {
-      setSelectedItems(deletedItems.map(item => item.fileId));
-    }
-  };
-
-  const handleRestore = async (fileId) => {
-    try {
-      setRestoring(true);
-      setError(null);
-      await restoreDocument(fileId);
-      setDeletedItems(prev => prev.filter(item => item.fileId !== fileId));
-      setSelectedItems(prev => prev.filter(id => id !== fileId));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRestoring(false);
-    }
-  };
-
-  const showDeleteConfirmation = (fileId, fileName) => {
-    setDeleteFileInfo({ fileId, fileName });
-    setShowDeleteConfirm(true);
-  };
 
   const handlePermanentDelete = async () => {
     setShowDeleteConfirm(false);

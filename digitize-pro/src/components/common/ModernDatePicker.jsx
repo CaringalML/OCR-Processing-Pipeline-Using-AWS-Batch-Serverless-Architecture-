@@ -8,7 +8,6 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
   const [selectedDate, setSelectedDate] = useState(null);
   const [isEditingYear, setIsEditingYear] = useState(false);
   const [yearInput, setYearInput] = useState('');
-  const [isTypingInInput, setIsTypingInInput] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const containerRef = useRef(null);
   const yearInputRef = useRef(null);
@@ -89,7 +88,6 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
   // Get calendar days for current month
   const getCalendarDays = () => {
     const firstDay = new Date(currentYear, currentMonth, 1);
-    const lastDay = new Date(currentYear, currentMonth + 1, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
     
@@ -170,8 +168,7 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
   const handleMainInputChange = (e) => {
     const value = e.target.value;
     setInputValue(value);
-    setIsTypingInInput(true);
-    
+        
     // Auto-parse and validate as user types
     if (value.trim()) {
       const date = parseDate(value.trim());
@@ -194,7 +191,6 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
           if (year >= 1000 && year <= 3000) {
             onChange(trimmedValue); // Just pass the year as-is
             setIsOpen(false);
-            setIsTypingInInput(false);
             return;
           }
         }
@@ -205,7 +201,6 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
           const formattedDate = formatDate(date);
           onChange(formattedDate);
           setIsOpen(false);
-          setIsTypingInInput(false);
         } else {
           // Invalid date format - keep input open for correction
           setIsOpen(true);
@@ -215,7 +210,6 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
         onChange('');
         setSelectedDate(null);
         setIsOpen(false);
-        setIsTypingInInput(false);
       }
     }
   };
@@ -224,14 +218,12 @@ const ModernDatePicker = ({ value, onChange, placeholder = "Select date", classN
     // Small delay to allow calendar clicks to register
     setTimeout(() => {
       if (!isOpen) {
-        setIsTypingInInput(false);
-      }
+              }
     }, 150);
   };
   
   const handleMainInputFocus = () => {
-    setIsTypingInInput(true);
-  };
+      };
   
   const isToday = (date) => {
     const today = new Date();

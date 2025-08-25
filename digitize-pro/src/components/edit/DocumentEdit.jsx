@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Download, RefreshCw, Eye, EyeOff, Undo, Redo, CheckCircle, FileText, Code, X, Search, ZoomIn, Copy, Clock } from 'lucide-react';
+import { ArrowLeft, Download, RefreshCw, Eye, EyeOff, Undo, Redo, CheckCircle, FileText, Code, Search, Clock } from 'lucide-react';
 import { useDocuments } from '../../hooks/useDocuments';
 import documentService from '../../services/documentService';
 import uploadService from '../../services/uploadService';
@@ -12,7 +12,6 @@ const DocumentEdit = () => {
   
   const [document, setDocument] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [editedText, setEditedText] = useState('');
   const [originalText, setOriginalText] = useState('');
@@ -22,11 +21,10 @@ const DocumentEdit = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [selectedTextType, setSelectedTextType] = useState('refined'); // 'formatted' or 'refined'
   const [finalizing, setFinalizing] = useState(false);
-  const [textareaRef, setTextareaRef] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [editReason, setEditReason] = useState('');
-  
+
   // Magnification controls
   const [magnifyEnabled, setMagnifyEnabled] = useState(false);
   const [magnifyLevel, setMagnifyLevel] = useState(2);
@@ -165,7 +163,6 @@ const DocumentEdit = () => {
     const absoluteMagnifierLeft = rect.left + magnifierX;
     const absoluteMagnifierRight = absoluteMagnifierLeft + magnifierWidth;
     const absoluteMagnifierTop = rect.top + magnifierY;
-    const absoluteMagnifierBottom = absoluteMagnifierTop + magnifierHeight;
     
     // Check right edge - if magnifier goes off viewport right, move to left of cursor
     if (absoluteMagnifierRight > viewportWidth) {
@@ -258,39 +255,6 @@ const DocumentEdit = () => {
     }
   };
 
-  // Save changes
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-
-      const updateData = {
-        userEdited: true,
-        editTimestamp: new Date().toISOString()
-      };
-
-      // Save to the selected text type field
-      if (selectedTextType === 'formatted') {
-        updateData.formattedText = editedText;
-      } else {
-        updateData.refinedText = editedText;
-      }
-
-      await documentService.editOCRResults(fileId, updateData);
-
-      setOriginalText(editedText);
-      setHasChanges(false);
-      setEditReason('');
-      
-      // Show success message
-      alert('Document saved successfully!');
-    } catch (err) {
-      setError(err.message);
-      console.error('Save error:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   // Finalize document
   const handleFinalize = async () => {
@@ -817,7 +781,6 @@ const DocumentEdit = () => {
                 </div>
               ) : (
                 <textarea
-                  ref={setTextareaRef}
                   value={editedText}
                   onChange={(e) => handleTextChange(e.target.value)}
                   disabled={document?.finalized}

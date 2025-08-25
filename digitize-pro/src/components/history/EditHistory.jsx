@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, User, FileText, ChevronRight, Minimize2, Maximize2, Info, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Clock, ChevronRight, Minimize2, Maximize2, Info, RefreshCw } from 'lucide-react';
 import documentService from '../../services/documentService';
 import { LocalDateTime } from '../common/LocalTime';
 
@@ -14,11 +14,7 @@ const EditHistory = () => {
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side' or 'inline'
 
-  useEffect(() => {
-    fetchDocumentAndHistory();
-  }, [fileId]);
-
-  const fetchDocumentAndHistory = async () => {
+  const fetchDocumentAndHistory = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -47,7 +43,11 @@ const EditHistory = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fileId]);
+
+  useEffect(() => {
+    fetchDocumentAndHistory();
+  }, [fetchDocumentAndHistory]);
 
 
   const getTextChangeSummary = (edit) => {

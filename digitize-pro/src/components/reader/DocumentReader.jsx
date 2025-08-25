@@ -21,8 +21,7 @@ import {
 import Zoom from 'react-medium-image-zoom';
 import 'react-medium-image-zoom/dist/styles.css';
 import documentService from '../../services/documentService';
-import { LocalDateTime, LocalDateTimeFull } from '../common/LocalTime';
-
+ 
 const DocumentReader = () => {
   const { fileId } = useParams();
   const navigate = useNavigate();

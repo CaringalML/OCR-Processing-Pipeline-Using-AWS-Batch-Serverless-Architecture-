@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload as UploadIcon, FileText, Search, X, CheckCircle, AlertCircle, Edit, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Upload as UploadIcon, FileText, X, CheckCircle, AlertCircle, Edit, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import uploadService from '../../services/uploadService';
 import { useDocuments } from '../../hooks/useDocuments';
 import documentService from '../../services/documentService';
-import LocalTime, { LocalTimeOnly, LocalDateTime, LocalTimeRelative } from '../common/LocalTime';
+import { LocalTimeOnly, LocalDateTime } from '../common/LocalTime';
 import ModernDatePicker from '../common/ModernDatePicker';
 
 const Upload = () => {
@@ -17,16 +17,16 @@ const Upload = () => {
   const [loadingProcessed, setLoadingProcessed] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [detailedStatusCache, setDetailedStatusCache] = useState({});
-  const [deleting, setDeleting] = useState(false);
+  const [deleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '', isFinalized: false });
   const fileInputRef = useRef(null);
-  const { documents, fetchDocuments } = useDocuments();
+  useDocuments();
 
   // Fetch detailed status for individual processing files
   // Note: Only long-batch files get detailed "In progress X%" statuses
   // Short-batch files just show generic "processing" status
-  const fetchDetailedStatus = async (fileId) => {
+  const fetchDetailedStatus = useCallback(async (fileId) => {
     try {
       const detailedData = await documentService.getDocument(fileId);
       
@@ -44,7 +44,7 @@ const Upload = () => {
       console.error(`Failed to fetch detailed status for ${fileId}:`, error);
     }
     return null;
-  };
+  }, []);
 
   const [metadata, setMetadata] = useState({
     title: "",
@@ -164,7 +164,7 @@ const Upload = () => {
     if (allProcessedDocuments.length > 0) {
       fetchDetailedStatusForProcessingFiles();
     }
-  }, [allProcessedDocuments]); // Removed detailedStatusCache to prevent infinite loops
+  }, [allProcessedDocuments, detailedStatusCache, fetchDetailedStatus]);
 
   // Set up more frequent polling for long-batch files with detailed status
   useEffect(() => {
@@ -183,7 +183,7 @@ const Upload = () => {
     }, 5000); // Poll every 5 seconds for processing files
 
     return () => clearInterval(interval);
-  }, []); // Empty dependency - interval should be stable
+  }, [detailedStatusCache, fetchDetailedStatus]);
 
   // Combine upload queue and processed documents, avoiding duplicates
   const getAllDocuments = () => {
@@ -642,80 +642,6 @@ const Upload = () => {
   };
 
   // Full refresh - simply gets fresh data from backend
-  const fullRefresh = async () => {
-    setLoadingProcessed(true);
-    try {
-      // Clear all caches to ensure completely fresh data
-      setDetailedStatusCache({});
-      
-      // Skip fetchDocuments() - we have our own state management
-      // await fetchDocuments();
-      
-      // Fetch fresh data from backend
-      const data = await documentService.getAllProcessedDocuments({ status: 'all' });
-      
-      // Handle different response structures and simply use fresh data
-      if (data) {
-        let newDocuments = [];
-        if (Array.isArray(data)) {
-          newDocuments = data;
-        } else if (data.files && Array.isArray(data.files)) {
-          newDocuments = data.files;
-        } else if (data.items && Array.isArray(data.items)) {
-          newDocuments = data.items;
-        } else if (data.documents && Array.isArray(data.documents)) {
-          newDocuments = data.documents;
-        } else {
-          console.warn('Unexpected refresh data structure:', data);
-          newDocuments = [];
-        }
-        
-        // Filter out soft-deleted files that might still be returned by the backend
-        const activeDocuments = newDocuments.filter(doc => {
-          // Check for various deletion indicators that the backend might return
-          return !doc.deleted && 
-                 !doc.isDeleted && 
-                 !doc.deleted_timestamp &&
-                 !doc.deletedAt &&
-                 doc.processingStatus !== 'deleted' &&
-                 doc.processing_status !== 'deleted';
-        });
-        
-        // CRITICAL: Preserve any files that are currently showing "deleting" status
-        setAllProcessedDocuments(prev => {
-          const result = [...activeDocuments];
-          
-          // Find any files in previous state that had "deleting" status
-          const deletingFiles = prev.filter(doc => doc.status === 'deleting');
-          
-          if (deletingFiles.length > 0) {
-            // For each deleting file, check if it still exists in backend
-            for (const deletingFile of deletingFiles) {
-              const stillInBackend = activeDocuments.some(doc => doc.fileId === deletingFile.fileId);
-              if (stillInBackend) {
-                // File still exists in backend, replace with deleting version
-                const index = result.findIndex(doc => doc.fileId === deletingFile.fileId);
-                if (index !== -1) {
-                  result[index] = deletingFile; // Keep the deleting status
-                }
-              }
-            }
-          }
-          
-          return result;
-        });
-      } else {
-        setAllProcessedDocuments([]);
-      }
-      
-      setLastRefreshed(new Date().toISOString());
-    } catch (error) {
-      console.error('❌ Error during full refresh:', error);
-      setUploadError(`Failed to refresh documents: ${error.message}`);
-    } finally {
-      setLoadingProcessed(false);
-    }
-  };
 
   const showDeleteConfirmation = (fileId, fileName) => {
     // Find the document to check if it's finalized
@@ -727,7 +653,7 @@ const Upload = () => {
   };
 
   const handleConfirmDelete = async () => {
-    const { fileId, fileName, isFinalized } = deleteFileInfo;
+    const { fileId, isFinalized } = deleteFileInfo;
     setShowDeleteConfirm(false);
 
     try {

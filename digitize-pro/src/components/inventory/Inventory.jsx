@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Edit, Trash2, Calendar, User, Tag, CheckSquare } from 'lucide-react';
+import { FileText, Download, Eye, Trash2, Calendar, User, Tag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '../../hooks/useDocuments';
 import uploadService from '../../services/uploadService';
 import documentService from '../../services/documentService';
-import LocalTime, { LocalDateShort, LocalDateTime } from '../common/LocalTime';
+import { LocalDateTime } from '../common/LocalTime';
 
 const Inventory = () => {
   const navigate = useNavigate();
@@ -19,7 +19,6 @@ const Inventory = () => {
     search: ''
   });
   const [selectedDocuments, setSelectedDocuments] = useState(new Set());
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteFileInfo, setDeleteFileInfo] = useState({ fileIds: [], fileNames: [], isBulk: false });
 
@@ -207,11 +206,6 @@ const Inventory = () => {
     }
   };
 
-  const showDeleteConfirmation = (fileId, fileName) => {
-    setDeleteFileInfo({ fileIds: [fileId], fileNames: [fileName], isBulk: false });
-    setShowDeleteConfirm(true);
-  };
-
   const handleDelete = async () => {
     setShowDeleteConfirm(false);
     const { fileIds } = deleteFileInfo;
@@ -223,22 +217,6 @@ const Inventory = () => {
     } catch (error) {
       console.error('Delete failed:', error);
       alert('Failed to delete document');
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed':
-      case 'processed':
-        return 'bg-green-100 text-green-800';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'uploaded':
-        return 'bg-blue-100 text-blue-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -276,22 +254,6 @@ const Inventory = () => {
     return doc.uploadTimestamp || doc.upload_timestamp;
   };
 
-  const getFinalizedText = (doc) => {
-    // For finalized documents, get the finalizedText
-    if (doc.finalizedResults?.finalizedText) {
-      return doc.finalizedResults.finalizedText;
-    }
-    if (doc.finalizedText) {
-      return doc.finalizedText;
-    }
-    // Fallback to OCR results
-    return doc.ocrResults?.refinedText || doc.ocrResults?.formattedText || doc.ocrResults?.extractedText || 'No text available';
-  };
-
-  const getTextPreview = (text, maxLength = 150) => {
-    if (!text) return 'No text available';
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-  };
 
   return (
     <div className="space-y-6">
