@@ -690,7 +690,7 @@ variable "cors_allowed_headers" {
 variable "cors_allowed_origin" {
   description = "CORS allowed origin. '*' allows all origins (use specific domains in production for security)."
   type        = string
-  default     = "'*'"
+  default     = "'https://d3kmkpcucx6beu.cloudfront.net'"
 }
 
 # =============================================================================

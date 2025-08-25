@@ -107,6 +107,12 @@ output "infrastructure" {
       project_name       = var.project_name
       deployment_time    = timestamp()
     }
+    
+    # 🔒 Security Configuration
+    security = {
+      cors_allowed_origin = var.cors_allowed_origin
+      cors_allowed_headers = var.cors_allowed_headers
+    }
   }
 }
 

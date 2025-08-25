@@ -13,7 +13,8 @@ const RecycleBin = () => {
   const [restoring, setRestoring] = useState(false);
   const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteFileInfo] = useState({ fileId: null, fileName: '' });
+  const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '' });
+  const [showDeleteSelectedConfirm, setShowDeleteSelectedConfirm] = useState(false);
 
   const loadRecycleBinData = useCallback(async () => {
     try {
@@ -107,6 +108,24 @@ const RecycleBin = () => {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    setShowDeleteSelectedConfirm(false);
+    
+    try {
+      for (const fileId of selectedItems) {
+        console.log('Starting permanent delete for fileId:', fileId);
+        const result = await permanentlyDeleteDocument(fileId);
+        console.log('Permanent delete successful:', result);
+      }
+      setDeletedItems(prev => prev.filter(item => !selectedItems.includes(item.fileId)));
+      setSelectedItems([]);
+      setError(null); // Clear any previous errors
+    } catch (err) {
+      console.error('Delete selected failed:', err);
+      setError(err.message);
+    }
+  };
+
   // Removed getTimeAgo function - using LocalTimeRelative component instead
 
   return (
@@ -126,16 +145,24 @@ const RecycleBin = () => {
             </div>
             <div className="flex space-x-3">
               {selectedItems.length > 0 && (
-                <button 
-                  onClick={handleRestoreSelected}
-                  disabled={restoring}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
-                >
-                  {restoring && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  <span>
-                    {restoring ? 'Restoring...' : `Restore Selected (${selectedItems.length})`}
-                  </span>
-                </button>
+                <>
+                  <button 
+                    onClick={handleRestoreSelected}
+                    disabled={restoring}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                  >
+                    {restoring && <RefreshCw className="w-4 h-4 animate-spin" />}
+                    <span>
+                      {restoring ? 'Restoring...' : `Restore Selected (${selectedItems.length})`}
+                    </span>
+                  </button>
+                  <button 
+                    onClick={() => setShowDeleteSelectedConfirm(true)}
+                    className="border border-red-300 text-red-700 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    Delete Selected ({selectedItems.length})
+                  </button>
+                </>
               )}
               {deletedItems.length > 0 && (
                 <button 
@@ -184,6 +211,34 @@ const RecycleBin = () => {
                         Deleted <LocalTimeRelative timestamp={item.deletedAt || item.deleted_timestamp || item.upload_timestamp} /> • {uploadService.formatFileSize(item.metadata?.filesize || item.file_size || 0)}
                       </p>
                     </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restoreDocument(item.fileId);
+                        setDeletedItems(prev => prev.filter(i => i.fileId !== item.fileId));
+                        setSelectedItems(prev => prev.filter(id => id !== item.fileId));
+                      }}
+                      className="text-green-600 hover:text-green-800 px-3 py-1 text-sm border border-green-300 rounded hover:bg-green-50 transition-colors"
+                      title="Restore this item"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteFileInfo({ 
+                          fileId: item.fileId, 
+                          fileName: item.metadata?.filename || item.file_name || item.original_filename || 'Unknown file' 
+                        });
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="text-red-600 hover:text-red-800 px-3 py-1 text-sm border border-red-300 rounded hover:bg-red-50 transition-colors"
+                      title="Delete permanently"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               ))}
@@ -236,6 +291,48 @@ const RecycleBin = () => {
                   className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                 >
                   Empty Recycle Bin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Selected Confirmation Modal */}
+      {showDeleteSelectedConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                  <Trash2 className="h-6 w-6 text-red-600" />
+                </div>
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Permanently Delete Selected Items
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Are you sure you want to permanently delete <span className="font-medium text-gray-900">{selectedItems.length} selected item{selectedItems.length > 1 ? 's' : ''}</span>?
+                </p>
+                <p className="text-sm text-red-600 bg-red-50 rounded-md p-3 mb-4">
+                  <span className="font-medium">Warning:</span> This action cannot be undone. The selected items will be permanently deleted and cannot be restored.
+                </p>
+              </div>
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteSelectedConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  Delete Selected
                 </button>
               </div>
             </div>
