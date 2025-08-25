@@ -212,34 +212,6 @@ const RecycleBin = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        restoreDocument(item.fileId);
-                        setDeletedItems(prev => prev.filter(i => i.fileId !== item.fileId));
-                        setSelectedItems(prev => prev.filter(id => id !== item.fileId));
-                      }}
-                      className="text-green-600 hover:text-green-800 px-3 py-1 text-sm border border-green-300 rounded hover:bg-green-50 transition-colors"
-                      title="Restore this item"
-                    >
-                      Restore
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteFileInfo({ 
-                          fileId: item.fileId, 
-                          fileName: item.metadata?.filename || item.file_name || item.original_filename || 'Unknown file' 
-                        });
-                        setShowDeleteConfirm(true);
-                      }}
-                      className="text-red-600 hover:text-red-800 px-3 py-1 text-sm border border-red-300 rounded hover:bg-red-50 transition-colors"
-                      title="Delete permanently"
-                    >
-                      Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>
