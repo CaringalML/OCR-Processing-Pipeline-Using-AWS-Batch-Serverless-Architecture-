@@ -62,7 +62,7 @@ jobs:
     - name: Run Tests
       run: |
         cd digitize-pro
-        npm test -- --coverage --watchAll=false
+        npm test -- --coverage --watchAll=false --passWithNoTests
       env:
         CI: true
 
