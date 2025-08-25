@@ -12,8 +12,6 @@ const RecycleBin = () => {
   const [error, setError] = useState(null);
   const [restoring, setRestoring] = useState(false);
   const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '' });
   const [showDeleteSelectedConfirm, setShowDeleteSelectedConfirm] = useState(false);
 
   const loadRecycleBinData = useCallback(async () => {
@@ -44,22 +42,6 @@ const RecycleBin = () => {
   };
 
 
-  const handlePermanentDelete = async () => {
-    setShowDeleteConfirm(false);
-    const { fileId } = deleteFileInfo;
-    
-    try {
-      console.log('Starting permanent delete for fileId:', fileId);
-      const result = await permanentlyDeleteDocument(fileId);
-      console.log('Permanent delete successful:', result);
-      setDeletedItems(prev => prev.filter(item => item.fileId !== fileId));
-      setSelectedItems(prev => prev.filter(id => id !== fileId));
-      setError(null); // Clear any previous errors
-    } catch (err) {
-      console.error('Permanent delete failed:', err);
-      setError(err.message);
-    }
-  };
 
   const handleRestoreSelected = async () => {
     try {
@@ -305,48 +287,6 @@ const RecycleBin = () => {
                   className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                 >
                   Delete Selected
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Individual Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="p-6">
-              <div className="flex items-center mb-4">
-                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
-                  <Trash2 className="h-6 w-6 text-red-600" />
-                </div>
-              </div>
-              <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Permanently Delete
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Are you sure you want to permanently delete <span className="font-medium text-gray-900">"{deleteFileInfo.fileName}"</span>?
-                </p>
-                <p className="text-sm text-red-600 bg-red-50 rounded-md p-3 mb-4">
-                  <span className="font-medium">Warning:</span> This action cannot be undone. The item will be permanently deleted and cannot be restored.
-                </p>
-              </div>
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePermanentDelete}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                >
-                  Delete Permanently
                 </button>
               </div>
             </div>
