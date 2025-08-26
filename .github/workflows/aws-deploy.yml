@@ -2,9 +2,9 @@ name: Deploy Frontend and Backend
 
 on:
   push:
-    branches: [ v4-python ]
+    branches: [ v5-python-cognito-auth ]
   pull_request:
-    branches: [ v4-python ]
+    branches: [ v5-python-cognito-auth ]
   workflow_dispatch:
 
 jobs:
