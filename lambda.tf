@@ -173,6 +173,7 @@ resource "aws_lambda_function" "uploader" {
       SHORT_BATCH_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
       LONG_BATCH_QUEUE_URL   = aws_sqs_queue.batch_queue.url
       FILE_SIZE_THRESHOLD_KB = var.file_size_threshold_kb
+      DEPLOYMENT_MODE        = var.deployment_mode
       LOG_LEVEL              = var.lambda_log_level
       ENVIRONMENT            = var.environment
     }
@@ -396,8 +397,9 @@ resource "aws_lambda_function" "short_batch_processor" {
 
 # Lambda Event Source Mapping for Long Batch Queue with Long Polling
 resource "aws_lambda_event_source_mapping" "long_batch_sqs_trigger" {
+  count            = var.deployment_mode == "full" ? 1 : 0
   event_source_arn = aws_sqs_queue.batch_queue.arn
-  function_name    = aws_lambda_function.sqs_batch_processor.arn
+  function_name    = aws_lambda_function.sqs_batch_processor[0].arn
 
   # Batch configuration optimized for long polling efficiency
   batch_size                         = var.event_source_batch_size_large         # Process up to 10 messages per invocation
@@ -439,6 +441,7 @@ resource "aws_lambda_event_source_mapping" "short_batch_sqs_trigger" {
 
 # SQS to Batch Processor Lambda Function
 resource "aws_lambda_function" "sqs_batch_processor" {
+  count            = var.deployment_mode == "full" ? 1 : 0
   filename         = data.archive_file.sqs_processor_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-sqs-batch-processor"
   role             = aws_iam_role.sqs_processor_role.arn
@@ -450,8 +453,8 @@ resource "aws_lambda_function" "sqs_batch_processor" {
 
   environment {
     variables = {
-      BATCH_JOB_QUEUE      = aws_batch_job_queue.main.name
-      BATCH_JOB_DEFINITION = aws_batch_job_definition.main.name
+      BATCH_JOB_QUEUE      = aws_batch_job_queue.main[0].name
+      BATCH_JOB_DEFINITION = aws_batch_job_definition.main[0].name
       SQS_QUEUE_URL        = aws_sqs_queue.batch_queue.url
       DYNAMODB_TABLE       = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE        = aws_dynamodb_table.processing_results.name
@@ -563,6 +566,7 @@ resource "aws_cloudwatch_log_group" "sqs_to_batch_submitter_logs" {
 
 # Batch Status Reconciliation Lambda Function
 resource "aws_lambda_function" "batch_status_reconciliation" {
+  count            = var.deployment_mode == "full" ? 1 : 0
   filename         = data.archive_file.batch_reconciliation_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-batch-status-reconciliation"
   role             = aws_iam_role.batch_reconciliation_role.arn
@@ -605,6 +609,7 @@ resource "aws_cloudwatch_log_group" "batch_status_reconciliation_logs" {
 
 # Dead Job Detector Lambda Function
 resource "aws_lambda_function" "dead_job_detector" {
+  count            = var.deployment_mode == "full" ? 1 : 0
   filename         = data.archive_file.dead_job_detector_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-dead-job-detector"
   role             = aws_iam_role.dead_job_detector_role.arn

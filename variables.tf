@@ -7,6 +7,21 @@
 # processing and search system. The infrastructure supports intelligent document
 # analysis, semantic search, and enterprise-grade document management.
 #
+# DEPLOYMENT MODES:
+# The system supports two deployment configurations controlled by 'deployment_mode':
+#
+# 1. SHORT-BATCH MODE (deployment_mode = "short-batch"):
+#    - Lambda-only processing for files ≤300KB
+#    - Lower cost, faster deployment, minimal infrastructure
+#    - Perfect for: Testing, development, small-scale deployments
+#    - Deploy with: make short-apply
+#
+# 2. FULL MODE (deployment_mode = "full") [DEFAULT]:
+#    - Complete infrastructure with Lambda + AWS Batch
+#    - Handles files of any size (Lambda ≤300KB, Batch >300KB)
+#    - Perfect for: Production, high-volume processing
+#    - Deploy with: make full-apply or make apply
+#
 # SYSTEM OVERVIEW:
 # - Dual processing paths: Lambda (≤300KB) and AWS Batch (>300KB files)  
 # - Three-tier API access: Public, Registered (API key), Premium (high limits)
@@ -53,6 +68,26 @@ variable "environment" {
   description = "Environment identifier (dev/staging/prod). Used in resource naming and tagging for cost allocation and organization."
   type        = string
   default     = "batch"
+}
+
+variable "deployment_mode" {
+  description = <<-EOT
+    Deployment mode controls which infrastructure components are deployed:
+    - 'short-batch': Lambda-only processing for files ≤300KB
+      * Deploys: Lambda functions, SQS queues for short processing, API Gateway, DynamoDB, S3, CloudFront
+      * Excludes: AWS Batch, ECR, long-batch queues, batch monitoring functions
+      * Use case: Cost-optimized for small files, faster deployment, lower overhead
+    - 'full': Complete infrastructure with both Lambda and AWS Batch
+      * Deploys: All components including AWS Batch for files >300KB
+      * Use case: Production deployments handling files of all sizes
+  EOT
+  type        = string
+  default     = "full"
+  
+  validation {
+    condition     = contains(["short-batch", "full"], var.deployment_mode)
+    error_message = "deployment_mode must be either 'short-batch' or 'full'"
+  }
 }
 
 variable "api_stage_name" {

@@ -313,7 +313,7 @@ resource "aws_lambda_function" "cleanup_function" {
 
   environment {
     variables = {
-      BATCH_JOB_QUEUE   = aws_batch_job_queue.main.name
+      BATCH_JOB_QUEUE   = var.deployment_mode == "full" ? aws_batch_job_queue.main[0].name : ""
       CLEANUP_AGE_HOURS = var.cleanup_age_hours
       LOG_LEVEL         = var.cleanup_log_level
       PROCESSING_TYPE   = var.cleanup_processing_type

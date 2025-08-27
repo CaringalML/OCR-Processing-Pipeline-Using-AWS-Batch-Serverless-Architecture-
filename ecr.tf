@@ -1,4 +1,5 @@
 resource "aws_ecr_repository" "main" {
+  count                = var.deployment_mode == "full" ? 1 : 0
   name                 = "${var.project_name}-${var.environment}-app"
   image_tag_mutability = var.ecr_image_tag_mutability
   force_delete         = var.ecr_force_delete # Ensures images are deleted with the repo
@@ -25,7 +26,8 @@ resource "aws_ecr_repository" "main" {
 }
 
 resource "aws_ecr_lifecycle_policy" "main" {
-  repository = aws_ecr_repository.main.name
+  count      = var.deployment_mode == "full" ? 1 : 0
+  repository = aws_ecr_repository.main[0].name
 
   policy = jsonencode({
     rules = [

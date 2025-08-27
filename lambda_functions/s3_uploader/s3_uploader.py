@@ -50,6 +50,9 @@ def format_file_size(size_bytes):
 # File size threshold for routing (300KB)
 FILE_SIZE_THRESHOLD_KB = int(os.environ.get('FILE_SIZE_THRESHOLD_KB', '300'))
 
+# Deployment mode - determines if long-batch processing is available
+DEPLOYMENT_MODE = os.environ.get('DEPLOYMENT_MODE', 'full')
+
 # Allowed file types for upload (Option 1: Keep TIFF support)
 ALLOWED_EXTENSIONS = {'pdf', 'tiff', 'tif', 'jpg', 'jpeg', 'png'}
 ALLOWED_MIME_TYPES = {
@@ -85,6 +88,27 @@ def validate_file(filename: str, content_type: str) -> Tuple[bool, str]:
     
     return True, "Valid file"
 
+def is_long_batch_available() -> bool:
+    """
+    Check if long-batch processing is available based on deployment mode
+    """
+    return DEPLOYMENT_MODE == 'full'
+
+def validate_large_file_support(file_size_bytes: int, route: str) -> Tuple[bool, str]:
+    """
+    Validate if large files are supported in the current deployment mode
+    Returns (is_valid, error_message)
+    """
+    if not is_long_batch_available():
+        file_size_kb = file_size_bytes / 1024
+        if file_size_kb > FILE_SIZE_THRESHOLD_KB:
+            return False, f"Large file processing unavailable. This deployment only supports files ≤{FILE_SIZE_THRESHOLD_KB}KB. File size: {file_size_kb:.0f}KB. Contact administrator to enable full deployment mode for large file processing."
+        
+        if route == 'long-batch':
+            return False, f"Long-batch processing unavailable. This deployment only supports short-batch processing (files ≤{FILE_SIZE_THRESHOLD_KB}KB). Use /short-batch/upload or /batch/upload endpoints instead."
+    
+    return True, "Large file processing available"
+
 def make_routing_decision(file_size_bytes: int, file_type: str, priority: str) -> Dict[str, Any]:
     """
     Simple, bulletproof routing decision based on 300KB threshold.
@@ -110,12 +134,19 @@ def make_routing_decision(file_size_bytes: int, file_type: str, priority: str) -
         decision['s3_folder'] = 'short-batch-files'
         decision['queue_url'] = os.environ.get('SHORT_BATCH_QUEUE_URL')
     else:
-        decision['route'] = 'long-batch'
-        decision['reason'].append(f'File size ({file_size_kb:.0f}KB) > {FILE_SIZE_THRESHOLD_KB}KB threshold')
-        decision['estimated_processing_time'] = '5-60 minutes (up to 24 hours for very large files)'
-        decision['processor_type'] = 'aws_batch'
-        decision['s3_folder'] = 'long-batch-files'
-        decision['queue_url'] = os.environ.get('LONG_BATCH_QUEUE_URL')
+        # Check if long-batch processing is available
+        if is_long_batch_available():
+            decision['route'] = 'long-batch'
+            decision['reason'].append(f'File size ({file_size_kb:.0f}KB) > {FILE_SIZE_THRESHOLD_KB}KB threshold')
+            decision['estimated_processing_time'] = '5-60 minutes (up to 24 hours for very large files)'
+            decision['processor_type'] = 'aws_batch'
+            decision['s3_folder'] = 'long-batch-files'
+            decision['queue_url'] = os.environ.get('LONG_BATCH_QUEUE_URL')
+        else:
+            # Long-batch unavailable - this will be caught as an error in validation
+            decision['route'] = 'error'
+            decision['reason'].append(f'File size ({file_size_kb:.0f}KB) > {FILE_SIZE_THRESHOLD_KB}KB threshold but long-batch processing unavailable')
+            decision['error'] = f'Large file processing unavailable in short-batch-only deployment mode'
     
     # Priority override for urgent processing
     if priority == 'urgent' and file_size_kb <= FILE_SIZE_THRESHOLD_KB * 2:  # Allow up to 600KB for urgent
@@ -349,12 +380,50 @@ def lambda_handler(event, context):
             # Get priority from form data
             priority = form_data.get('priority', 'normal')
             
+            # Early validation for large file support in current deployment mode
+            large_file_valid, large_file_error = validate_large_file_support(file_size, route_decision)
+            if not large_file_valid:
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({
+                        'error': 'Large file processing unavailable',
+                        'message': large_file_error,
+                        'filename': original_filename,
+                        'file_size': format_file_size(file_size),
+                        'deployment_mode': DEPLOYMENT_MODE,
+                        'suggestion': 'Contact administrator to enable full deployment mode for large file processing'
+                    })
+                }
+            
             # Determine final routing based on endpoint and file characteristics
             if route_decision == 'auto':
                 # Use smart routing for auto routes
                 routing_decision = make_routing_decision(file_size, file_type, priority)
                 final_route = routing_decision['route']
                 routing_reasons = routing_decision['reason']
+                
+                # Handle error case when large file processing is unavailable
+                if final_route == 'error':
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'error': 'Large file processing unavailable',
+                            'message': routing_decision.get('error', 'Unknown routing error'),
+                            'filename': original_filename,
+                            'file_size': format_file_size(file_size),
+                            'deployment_mode': DEPLOYMENT_MODE,
+                            'max_file_size': f'{FILE_SIZE_THRESHOLD_KB}KB',
+                            'suggestion': 'Contact administrator to enable full deployment mode for large file processing'
+                        })
+                    }
             else:
                 # Validate forced routing
                 validation = validate_file_size_for_route(file_size, route_decision)
@@ -509,15 +578,20 @@ def lambda_handler(event, context):
                     'routing_method': route_decision,
                     'force_routing': force_routing
                 },
+                'deployment_info': {
+                    'mode': DEPLOYMENT_MODE,
+                    'long_batch_available': is_long_batch_available(),
+                    'max_file_size': f'{FILE_SIZE_THRESHOLD_KB}KB' if not is_long_batch_available() else 'No limit'
+                },
                 'routing_info': {
                     'threshold_kb': FILE_SIZE_THRESHOLD_KB,
                     'short_batch': f'Files ≤ {FILE_SIZE_THRESHOLD_KB}KB → Fast Lambda processing (30s-5min)',
-                    'long_batch': f'Files > {FILE_SIZE_THRESHOLD_KB}KB → AWS Batch processing (5-30min)'
+                    'long_batch': f'Files > {FILE_SIZE_THRESHOLD_KB}KB → AWS Batch processing (5-30min)' if is_long_batch_available() else 'Large file processing unavailable in this deployment'
                 },
                 'available_endpoints': {
                     '/batch/upload': 'Smart routing based on file size and priority',
                     '/short-batch/upload': 'Force Lambda processing (files ≤50MB)',
-                    '/long-batch/upload': 'Force AWS Batch processing (any size)'
+                    '/long-batch/upload': 'Force AWS Batch processing (any size)' if is_long_batch_available() else 'UNAVAILABLE - Long-batch processing disabled in this deployment'
                 }
             })
         }

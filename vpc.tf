@@ -115,6 +115,7 @@ resource "aws_security_group" "vpc_endpoints" {
 
 # Security Group for AWS Batch
 resource "aws_security_group" "batch" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   name_prefix = "${var.project_name}-batch-"
   vpc_id      = aws_vpc.main.id
   description = "Security group for AWS Batch compute environment"

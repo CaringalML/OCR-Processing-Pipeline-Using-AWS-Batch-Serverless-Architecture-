@@ -47,6 +47,7 @@ resource "aws_iam_role_policy" "lambda_batch_policy" {
 
 # AWS Batch service role
 resource "aws_iam_role" "batch_service_role" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-batch-service-role"
 
   assume_role_policy = jsonencode({
@@ -64,12 +65,14 @@ resource "aws_iam_role" "batch_service_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "batch_service_role_policy" {
-  role       = aws_iam_role.batch_service_role.name
+  count      = var.deployment_mode == "full" ? 1 : 0
+  role       = aws_iam_role.batch_service_role[0].name
   policy_arn = var.aws_batch_service_role_policy_arn
 }
 
 # ECS instance role for Batch
 resource "aws_iam_role" "ecs_instance_role" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-ecs-instance-role"
 
   assume_role_policy = jsonencode({
@@ -87,17 +90,20 @@ resource "aws_iam_role" "ecs_instance_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_instance_role_policy" {
-  role       = aws_iam_role.ecs_instance_role.name
+  count      = var.deployment_mode == "full" ? 1 : 0
+  role       = aws_iam_role.ecs_instance_role[0].name
   policy_arn = var.ecs_container_service_role_policy_arn
 }
 
 resource "aws_iam_instance_profile" "ecs_instance_profile" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-ecs-instance-profile"
-  role = aws_iam_role.ecs_instance_role.name
+  role = aws_iam_role.ecs_instance_role[0].name
 }
 
 # Task execution role for Batch jobs
 resource "aws_iam_role" "batch_task_execution_role" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-batch-task-execution-role"
 
   assume_role_policy = jsonencode({
@@ -115,12 +121,14 @@ resource "aws_iam_role" "batch_task_execution_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "batch_task_execution_role_policy" {
-  role       = aws_iam_role.batch_task_execution_role.name
+  count      = var.deployment_mode == "full" ? 1 : 0
+  role       = aws_iam_role.batch_task_execution_role[0].name
   policy_arn = var.ecs_task_execution_role_policy_arn
 }
 
 # Task role for Batch jobs
 resource "aws_iam_role" "batch_task_role" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-batch-task-role"
 
   assume_role_policy = jsonencode({
@@ -138,8 +146,9 @@ resource "aws_iam_role" "batch_task_role" {
 }
 
 resource "aws_iam_role_policy" "batch_task_policy" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-batch-task-policy"
-  role = aws_iam_role.batch_task_role.id
+  role = aws_iam_role.batch_task_role[0].id
 
   policy = jsonencode({
     Version = var.iam_policy_version

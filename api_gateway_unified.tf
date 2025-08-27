@@ -25,6 +25,7 @@ resource "aws_api_gateway_rest_api" "main" {
 
 # Long Batch Resource
 resource "aws_api_gateway_resource" "long_batch" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
   path_part   = var.api_path_long_batch
@@ -32,44 +33,50 @@ resource "aws_api_gateway_resource" "long_batch" {
 
 # Long Batch - Upload
 resource "aws_api_gateway_resource" "long_batch_upload" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
+  parent_id   = aws_api_gateway_resource.long_batch[0].id
   path_part   = var.api_path_upload
 }
 
 # Long Batch - Processed
 resource "aws_api_gateway_resource" "long_batch_processed" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
+  parent_id   = aws_api_gateway_resource.long_batch[0].id
   path_part   = var.api_path_processed
 }
 
 
 # Long Batch - Delete
 resource "aws_api_gateway_resource" "long_batch_delete" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
+  parent_id   = aws_api_gateway_resource.long_batch[0].id
   path_part   = var.api_path_delete
 }
 
 # Long Batch - Delete with fileId
 resource "aws_api_gateway_resource" "long_batch_delete_file_id" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch_delete.id
+  parent_id   = aws_api_gateway_resource.long_batch_delete[0].id
   path_part   = "{fileId}"
 }
 
 # Long Batch - Recycle Bin
 resource "aws_api_gateway_resource" "long_batch_recycle_bin" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
+  parent_id   = aws_api_gateway_resource.long_batch[0].id
   path_part   = var.api_path_recycle_bin
 }
 
 # Long Batch - Restore
 resource "aws_api_gateway_resource" "long_batch_restore" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch.id
+  parent_id   = aws_api_gateway_resource.long_batch[0].id
   path_part   = var.api_path_restore
 }
 
@@ -366,7 +373,7 @@ resource "aws_api_gateway_integration" "batch_delete_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.batch_delete_file_id.id
   http_method = aws_api_gateway_method.batch_delete_options.http_method
-  type = "MOCK"
+  type        = "MOCK"
   request_templates = {
     "application/json" = var.mock_response_template
   }
@@ -465,9 +472,9 @@ resource "aws_api_gateway_method" "batch_search_get" {
 
 # Batch Search GET Integration (to search Lambda)
 resource "aws_api_gateway_integration" "batch_search_get" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.batch_search.id
-  http_method = aws_api_gateway_method.batch_search_get.http_method
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.batch_search.id
+  http_method             = aws_api_gateway_method.batch_search_get.http_method
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
   uri                     = aws_lambda_function.search.invoke_arn
@@ -563,8 +570,9 @@ resource "aws_api_gateway_integration_response" "finalized_edit_options" {
 
 # Long Batch - Restore with fileId
 resource "aws_api_gateway_resource" "long_batch_restore_file_id" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.long_batch_restore.id
+  parent_id   = aws_api_gateway_resource.long_batch_restore[0].id
   path_part   = "{fileId}"
 }
 
@@ -660,17 +668,19 @@ resource "aws_api_gateway_resource" "short_batch_invoices_processed" {
 
 # Long Batch Upload POST Method
 resource "aws_api_gateway_method" "long_batch_upload_post" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_upload.id
+  resource_id   = aws_api_gateway_resource.long_batch_upload[0].id
   http_method   = "POST"
   authorization = "NONE"
 }
 
 # Long Batch Upload POST Integration (now uses unified uploader)
 resource "aws_api_gateway_integration" "long_batch_upload_post" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_upload.id
-  http_method = aws_api_gateway_method.long_batch_upload_post.http_method
+  resource_id = aws_api_gateway_resource.long_batch_upload[0].id
+  http_method = aws_api_gateway_method.long_batch_upload_post[0].http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
@@ -680,17 +690,19 @@ resource "aws_api_gateway_integration" "long_batch_upload_post" {
 
 # Long Batch Delete Method
 resource "aws_api_gateway_method" "long_batch_delete_delete" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_delete_file_id.id
+  resource_id   = aws_api_gateway_resource.long_batch_delete_file_id[0].id
   http_method   = "DELETE"
   authorization = "NONE"
 }
 
 # Long Batch Delete Integration
 resource "aws_api_gateway_integration" "long_batch_delete_delete" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_delete_file_id.id
-  http_method = aws_api_gateway_method.long_batch_delete_delete.http_method
+  resource_id = aws_api_gateway_resource.long_batch_delete_file_id[0].id
+  http_method = aws_api_gateway_method.long_batch_delete_delete[0].http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
@@ -699,17 +711,19 @@ resource "aws_api_gateway_integration" "long_batch_delete_delete" {
 
 # Long Batch Recycle Bin GET Method
 resource "aws_api_gateway_method" "long_batch_recycle_bin_get" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_recycle_bin.id
+  resource_id   = aws_api_gateway_resource.long_batch_recycle_bin[0].id
   http_method   = "GET"
   authorization = "NONE"
 }
 
 # Long Batch Recycle Bin GET Integration
 resource "aws_api_gateway_integration" "long_batch_recycle_bin_get" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_recycle_bin.id
-  http_method = aws_api_gateway_method.long_batch_recycle_bin_get.http_method
+  resource_id = aws_api_gateway_resource.long_batch_recycle_bin[0].id
+  http_method = aws_api_gateway_method.long_batch_recycle_bin_get[0].http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
@@ -718,17 +732,19 @@ resource "aws_api_gateway_integration" "long_batch_recycle_bin_get" {
 
 # Long Batch Restore POST Method
 resource "aws_api_gateway_method" "long_batch_restore_post" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.long_batch_restore_file_id.id
+  resource_id   = aws_api_gateway_resource.long_batch_restore_file_id[0].id
   http_method   = "POST"
   authorization = "NONE"
 }
 
 # Long Batch Restore POST Integration
 resource "aws_api_gateway_integration" "long_batch_restore_post" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.long_batch_restore_file_id.id
-  http_method = aws_api_gateway_method.long_batch_restore_post.http_method
+  resource_id = aws_api_gateway_resource.long_batch_restore_file_id[0].id
+  http_method = aws_api_gateway_method.long_batch_restore_post[0].http_method
 
   integration_http_method = var.api_integration_http_method
   type                    = var.api_integration_type
@@ -965,15 +981,15 @@ resource "aws_api_gateway_integration_response" "invoice_processed_options" {
 # DEPLOYMENT AND STAGE
 # ========================================
 
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   depends_on = [
-    # Unified Batch Dependencies
+    # Base integrations
     aws_api_gateway_integration.batch_upload_post,
     aws_api_gateway_integration.batch_processed_get,
     aws_api_gateway_integration.batch_processed_finalize_post,
     aws_api_gateway_integration.batch_processed_finalize_options,
-    # New Unified Batch File Management
     aws_api_gateway_integration.batch_delete_post,
     aws_api_gateway_integration.batch_delete_options,
     aws_api_gateway_integration.batch_recycle_bin_get,
@@ -981,25 +997,19 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.batch_search_get,
     aws_api_gateway_integration.finalized_edit_put,
     aws_api_gateway_integration.finalized_edit_options,
-    # Long Batch Dependencies
-    aws_api_gateway_integration.long_batch_upload_post,
-    aws_api_gateway_integration.long_batch_delete_delete,
-    aws_api_gateway_integration.long_batch_recycle_bin_get,
-    aws_api_gateway_integration.long_batch_restore_post,
-    # Short Batch Dependencies
     aws_api_gateway_integration.short_batch_upload_post,
     aws_api_gateway_integration.short_batch_delete_delete,
     aws_api_gateway_integration.short_batch_recycle_bin_get,
     aws_api_gateway_integration.short_batch_restore_post,
-    # Invoice Processing Dependencies
     aws_api_gateway_integration.invoice_upload_post,
     aws_api_gateway_integration.invoice_processed_get,
   ]
 
+
   rest_api_id = aws_api_gateway_rest_api.main.id
 
   triggers = {
-    redeployment = sha1(jsonencode([
+    redeployment = sha1(jsonencode(concat([
       aws_api_gateway_resource.batch.id,
       aws_api_gateway_resource.batch_upload.id,
       aws_api_gateway_resource.batch_processed.id,
@@ -1016,11 +1026,12 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.batch_search_get.id,
       aws_api_gateway_integration.finalized_edit_put.id,
       aws_api_gateway_integration.finalized_edit_options.id,
-      aws_api_gateway_resource.long_batch.id,
       aws_api_gateway_resource.short_batch.id,
-      aws_api_gateway_resource.long_batch_upload.id,
       aws_api_gateway_resource.short_batch_upload.id,
-    ]))
+      ], var.deployment_mode == "full" ? [
+      aws_api_gateway_resource.long_batch[0].id,
+      aws_api_gateway_resource.long_batch_upload[0].id,
+    ] : [])))
   }
 
   lifecycle {
@@ -1045,6 +1056,7 @@ resource "aws_api_gateway_stage" "main" {
 
 # Lambda permissions for API Gateway (now using unified uploader)
 resource "aws_lambda_permission" "uploader_long_batch_api_gateway" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.uploader.function_name
@@ -1078,6 +1090,7 @@ resource "aws_lambda_permission" "invoice_reader_api_gateway" {
 
 
 resource "aws_lambda_permission" "deleter_long_batch" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.deleter.function_name
@@ -1094,6 +1107,7 @@ resource "aws_lambda_permission" "deleter_short_batch" {
 }
 
 resource "aws_lambda_permission" "recycle_bin_reader_long_batch" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.recycle_bin_reader.function_name
@@ -1110,6 +1124,7 @@ resource "aws_lambda_permission" "recycle_bin_reader_short_batch" {
 }
 
 resource "aws_lambda_permission" "restorer_long_batch" {
+  count         = var.deployment_mode == "full" ? 1 : 0
   statement_id  = "AllowExecutionFromAPIGatewayLongBatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.restorer.function_name
