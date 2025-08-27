@@ -20,6 +20,7 @@ const Upload = () => {
   const [deleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteFileInfo, setDeleteFileInfo] = useState({ fileId: null, fileName: '', isFinalized: false });
+  const [deploymentInfo, setDeploymentInfo] = useState({ mode: null, longBatchAvailable: null, maxFileSize: null });
   const fileInputRef = useRef(null);
   useDocuments();
 
@@ -348,9 +349,18 @@ const Upload = () => {
         setUploadError(`Invalid file type: ${file.name}. Supported: PDF, TIFF, JPG, PNG`);
         return false;
       }
-      // Validate file size (500MB limit)
-      if (!uploadService.validateFileSize(file, 500)) {
-        setUploadError(`File too large: ${file.name}. Maximum size is 500MB`);
+      // Validate file size based on deployment mode
+      const maxSizeMB = deploymentInfo.mode === 'short-batch' ? 
+        (parseFloat(deploymentInfo.maxFileSize) / 1024) || 0.3 :  // Convert KB to MB, default to 0.3MB (300KB)
+        500;  // Full deployment allows 500MB
+        
+      if (!uploadService.validateFileSize(file, maxSizeMB)) {
+        const currentSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        if (deploymentInfo.mode === 'short-batch') {
+          setUploadError(`File too large: ${file.name} (${currentSizeMB}MB). Maximum size in short-batch mode is ${deploymentInfo.maxFileSize || '300KB'}. Contact administrator to enable large file processing.`);
+        } else {
+          setUploadError(`File too large: ${file.name} (${currentSizeMB}MB). Maximum size is ${maxSizeMB}MB`);
+        }
         return false;
       }
       
@@ -402,6 +412,15 @@ const Upload = () => {
 
         // Upload the file with current metadata state (not cached metadata from queue)
         const result = await uploadService.uploadDocument(item.file, metadata);
+        
+        // Extract and store deployment info from the response
+        if (result.deployment_info) {
+          setDeploymentInfo({
+            mode: result.deployment_info.mode,
+            longBatchAvailable: result.deployment_info.long_batch_available,
+            maxFileSize: result.deployment_info.max_file_size
+          });
+        }
         
         // Update status to uploaded (matches backend processing_status)
         setUploadQueue(prev => prev.map(f => 
@@ -461,10 +480,26 @@ const Upload = () => {
         }
       } catch (error) {
         console.error('Upload failed:', error);
+        
+        // Check if this is a deployment mode error (large file processing unavailable)
+        const isDeploymentModeError = error.message.includes('Large file processing unavailable') || 
+                                     error.message.includes('deployment only supports files') ||
+                                     error.message.includes('Long-batch processing unavailable');
+        
         // Update status to failed
         setUploadQueue(prev => prev.map(f => 
-          f.id === item.id ? { ...f, status: 'failed', error: error.message } : f
+          f.id === item.id ? { 
+            ...f, 
+            status: 'failed', 
+            error: error.message,
+            isDeploymentError: isDeploymentModeError
+          } : f
         ));
+        
+        // Set a more prominent error message for deployment mode issues
+        if (isDeploymentModeError) {
+          setUploadError(error.message);
+        }
       }
     }
 
@@ -810,7 +845,18 @@ const Upload = () => {
                 })()} Metadata
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-4">Supported formats: PDF, TIFF, JPG, PNG • Maximum file size: 500MB</p>
+            <p className="text-xs text-gray-400 mt-4">
+              Supported formats: PDF, TIFF, JPG, PNG • Maximum file size: 
+              {deploymentInfo.mode === 'short-batch' ? 
+                ` ${deploymentInfo.maxFileSize || '300KB'} (short-batch mode)` :
+                deploymentInfo.mode === 'full' ?
+                ' 500MB (full deployment)' :
+                ' 500MB'
+              }
+              {deploymentInfo.mode === 'short-batch' && (
+                <span className="text-amber-600"> ⚠️ Large file processing disabled</span>
+              )}
+            </p>
           </div>
 
           {/* Upload Action Bar - Always visible when there are pending files */}
@@ -985,6 +1031,22 @@ const Upload = () => {
           )}
         </div>
       </div>
+
+      {/* Deployment Mode Info Banner */}
+      {deploymentInfo.mode === 'short-batch' && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center justify-between">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2 text-amber-600" />
+            <div>
+              <p className="font-medium">Limited Deployment Mode</p>
+              <p className="text-sm text-amber-700">
+                Large file processing is disabled. Files over {deploymentInfo.maxFileSize || '300KB'} will be rejected. 
+                Contact your administrator to enable full deployment mode for unlimited file processing.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {uploadError && (
@@ -1283,9 +1345,19 @@ const Upload = () => {
                           
                           {/* Error message for failed items */}
                           {isFailed && item.error && (
-                            <p className="text-xs text-red-600 mt-1">
-                              Error: {item.error}
-                            </p>
+                            <div className={`text-xs mt-1 p-2 rounded ${
+                              item.isDeploymentError ? 'bg-amber-50 border border-amber-200' : ''
+                            }`}>
+                              {item.isDeploymentError ? (
+                                <div className="space-y-1">
+                                  <p className="text-amber-800 font-medium">⚠️ Deployment Limitation</p>
+                                  <p className="text-amber-700">{item.error}</p>
+                                  <p className="text-amber-600 text-xs">Contact your administrator to enable large file processing.</p>
+                                </div>
+                              ) : (
+                                <p className="text-red-600">Error: {item.error}</p>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
