@@ -385,6 +385,295 @@ aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"
 
 ## 🏗️ Architecture Overview
 
+### **📊 Infrastructure Architecture Flowchart**
+
+```mermaid
+flowchart TB
+    subgraph "Internet Layer"
+        Users[👥 Users/Clients]
+        CF[☁️ CloudFront CDN]
+    end
+
+    subgraph "API Layer"
+        APIGW[🚪 API Gateway<br/>Rate Limiting + Auth]
+    end
+
+    subgraph "VPC Network"
+        subgraph "Public Subnets"
+            IGW[🌐 Internet Gateway]
+        end
+
+        subgraph "Private Subnets"
+            subgraph "Lambda Functions"
+                L1[📤 S3 Uploader]
+                L2[🔍 Document Search]
+                L3[📖 Lambda Reader]
+                L4[✏️ OCR Editor]
+                L5[🗑️ File Deleter]
+                L6[♻️ File Restorer]
+                L7[📋 Recycle Bin Reader]
+                L8[⚡ Short Batch Processor<br/>Claude AI]
+                L9[🔄 SQS to Batch Submitter<br/>Full Mode Only]
+            end
+
+            subgraph "AWS Batch - Full Mode Only"
+                BCE[🖥️ Batch Compute Environment<br/>Fargate Containers]
+                BJQ[📋 Batch Job Queue]
+                BJD[📦 Batch Job Definition]
+            end
+        end
+
+        subgraph "VPC Endpoints"
+            GWEP[🆓 Gateway Endpoints<br/>S3, DynamoDB - FREE]
+            IFEP[💰 Interface Endpoints<br/>ECR, Logs, ECS, etc.<br/>Full Mode Only - $155/mo]
+        end
+    end
+
+    subgraph "Storage & Database"
+        S3[🗄️ S3 Bucket<br/>Document Storage]
+        DDB1[(🗃️ DynamoDB<br/>File Metadata)]
+        DDB2[(🗃️ DynamoDB<br/>Processing Results)]
+        DDB3[(🗃️ DynamoDB<br/>Recycle Bin)]
+    end
+
+    subgraph "Message Queues"
+        SQS1[📬 Short Batch Queue]
+        SQS2[📬 Long Batch Queue<br/>Full Mode Only]
+        DLQ1[⚠️ Short DLQ]
+        DLQ2[⚠️ Long DLQ<br/>Full Mode Only]
+    end
+
+    subgraph "Container Registry - Full Mode Only"
+        ECR[🐳 ECR Repository<br/>OCR Container Images]
+    end
+
+    subgraph "Monitoring & Alerts"
+        CW[📊 CloudWatch<br/>Logs & Metrics]
+        SNS[📧 SNS Topics<br/>Email Alerts]
+        EB[⏰ EventBridge<br/>Scheduled Tasks]
+        CWA[🚨 CloudWatch Alarms<br/>DLQ, Rate Limit, Costs]
+        DG[📋 Dead Job Detector<br/>Full Mode Only]
+        BSR[🔄 Batch Status Reconciliation<br/>Full Mode Only]
+        CLP[🧹 Cleanup Processor<br/>Scheduled Maintenance]
+    end
+
+    subgraph "Security & Access"
+        IAM[🔐 IAM Roles & Policies<br/>Least Privilege Access]
+        SG1[🛡️ Security Groups<br/>Lambda/VPC Endpoints]
+        SG2[🛡️ Security Groups<br/>Batch - Full Mode Only]
+        RT[🛤️ Route Tables<br/>Public/Private Routing]
+    end
+
+    subgraph "External Services"
+        Claude[🤖 Claude AI API<br/>Anthropic]
+        Textract[📝 AWS Textract<br/>Full Mode Only]
+        Comprehend[🧠 AWS Comprehend<br/>Full Mode Only]
+    end
+
+    %% User Flow
+    Users -->|HTTPS| CF
+    CF -->|Cache Miss| APIGW
+    APIGW -->|Invoke| L1
+
+    %% Upload Flow
+    L1 -->|Store Files| S3
+    L1 -->|Save Metadata| DDB1
+    L1 -->|Route ≤300KB| SQS1
+    L1 -->|Route >300KB<br/>Full Mode| SQS2
+
+    %% Short Batch Processing
+    SQS1 -->|Trigger| L8
+    L8 -->|Process via| Claude
+    L8 -->|Save Results| DDB2
+    SQS1 -.->|Failed| DLQ1
+
+    %% Long Batch Processing (Full Mode)
+    SQS2 -->|Trigger| L9
+    L9 -->|Submit Job| BJQ
+    BJQ -->|Execute| BCE
+    BCE -->|Pull Image| ECR
+    BCE -->|Process via| Textract
+    BCE -->|Save Results| DDB2
+    SQS2 -.->|Failed| DLQ2
+
+    %% Other Lambda Functions
+    APIGW -->|Search| L2
+    APIGW -->|Read| L3
+    APIGW -->|Edit| L4
+    APIGW -->|Delete| L5
+    APIGW -->|Restore| L6
+    APIGW -->|List Deleted| L7
+
+    L2 -->|Query| DDB2
+    L3 -->|Read| DDB1
+    L3 -->|Read| DDB2
+    L4 -->|Update| DDB2
+    L5 -->|Move to| DDB3
+    L6 -->|Restore from| DDB3
+    L7 -->|List| DDB3
+
+    %% VPC Endpoints
+    L1 -->|Via| GWEP
+    L8 -->|Via| GWEP
+    BCE -.->|Via| IFEP
+    GWEP -->|Access| S3
+    GWEP -->|Access| DDB1
+    IFEP -.->|Access| ECR
+
+    %% Monitoring & Background Tasks
+    L1 -->|Logs| CW
+    L2 -->|Logs| CW
+    L3 -->|Logs| CW
+    L4 -->|Logs| CW
+    L5 -->|Logs| CW
+    L6 -->|Logs| CW
+    L7 -->|Logs| CW
+    L8 -->|Logs| CW
+    L9 -.->|Logs| CW
+    BCE -.->|Logs| CW
+    
+    CW -->|Trigger Alarms| CWA
+    CWA -->|Critical Alerts| SNS
+    SNS -->|Email/SMS| Users
+    
+    EB -->|Schedule Cleanup| CLP
+    EB -.->|Schedule Check| DG
+    EB -.->|Schedule Reconciliation| BSR
+    CLP -->|Clean Old Files| S3
+    DG -.->|Check Failed Jobs| BJQ
+    BSR -.->|Update Status| DDB2
+
+    %% Security & Network
+    IAM -->|Authorize| L1
+    IAM -->|Authorize| L2
+    IAM -->|Authorize| L3
+    IAM -->|Authorize| L4
+    IAM -->|Authorize| L5
+    IAM -->|Authorize| L6
+    IAM -->|Authorize| L7
+    IAM -->|Authorize| L8
+    IAM -.->|Authorize| L9
+    IAM -.->|Authorize| BCE
+    
+    SG1 -->|Secure| GWEP
+    SG1 -->|Secure| L1
+    SG2 -.->|Secure| BCE
+    RT -->|Route| IGW
+    RT -->|Route| GWEP
+
+    %% CloudFront
+    CF -->|Serve Documents| S3
+    CF -->|Cache Static Assets| S3
+
+    %% External AI Services
+    BCE -.->|Process via| Comprehend
+
+    style BCE fill:#e3f2fd
+    style BJQ fill:#e3f2fd
+    style BJD fill:#e3f2fd
+    style SQS2 fill:#e3f2fd
+    style DLQ2 fill:#e3f2fd
+    style L9 fill:#e3f2fd
+    style DG fill:#e3f2fd
+    style BSR fill:#e3f2fd
+    style SG2 fill:#e3f2fd
+    style IFEP fill:#fff3cd
+    style ECR fill:#e3f2fd
+    style Textract fill:#e3f2fd
+    style Comprehend fill:#e3f2fd
+    style GWEP fill:#d4edda
+    style Claude fill:#f8d7da
+    style IAM fill:#ffeaa7
+    style CWA fill:#fd79a8
+```
+
+### **🎯 Architecture Legend**
+
+| Color | Component Type | Examples | Cost Impact |
+|-------|----------------|----------|-------------|
+| 🔵 **Blue** | Full Mode Only | AWS Batch, Long SQS, ECR | $155+/month |
+| 🟡 **Yellow** | Paid Networking | VPC Interface Endpoints | $155/month |
+| 🟢 **Green** | Free Networking | VPC Gateway Endpoints | $0/month |
+| 🔴 **Pink** | External APIs | Claude AI, Anthropic | Pay-per-use |
+| 🟠 **Orange** | Security | IAM Roles & Policies | $0/month |
+| 🎭 **Purple** | Critical Alerts | CloudWatch Alarms | $0.10/alarm |
+| **White** | Core Services | Lambda, DynamoDB, S3 | Pay-per-use |
+
+### **📊 Complete Component Inventory**
+
+#### **✅ Always Present (Both Modes)**
+- 7 Lambda Functions (Upload, Search, Read, Edit, Delete, Restore, List)
+- 1 Short Batch Processor Lambda (Claude AI)
+- 3 DynamoDB Tables (Metadata, Results, Recycle Bin)
+- 2 SQS Queues (Short Batch + DLQ)
+- 1 S3 Bucket + CloudFront CDN
+- 2 Free VPC Gateway Endpoints (S3, DynamoDB)
+- IAM Roles & Policies (15+ roles, 20+ policies)
+- CloudWatch Logs & Basic Monitoring
+- SNS Topics for Alerts
+- EventBridge for Scheduled Tasks
+- 1 Cleanup Processor Lambda
+
+#### **🔵 Full Mode Additional Components**
+- 1 SQS to Batch Submitter Lambda
+- 2 Additional SQS Queues (Long Batch + DLQ)
+- AWS Batch Compute Environment (Fargate)
+- AWS Batch Job Queue & Job Definition
+- ECR Repository for Container Images
+- 8 VPC Interface Endpoints (ECR, Logs, ECS, Textract, etc.)
+- 2 Additional Security Groups
+- Dead Job Detector Lambda
+- Batch Status Reconciliation Lambda
+- Enhanced CloudWatch Alarms
+
+#### **🌐 External Dependencies**
+- Claude AI API (Anthropic) - Required
+- AWS Textract API - Full Mode Only  
+- AWS Comprehend API - Full Mode Only
+
+### **🔄 Data Flow by Deployment Mode**
+
+#### **Short-Batch Mode (Lambda Only)**
+```mermaid
+flowchart LR
+    U[User] -->|Upload ≤300KB| API[API Gateway]
+    API --> UL[Uploader Lambda]
+    UL --> S3[S3 Storage]
+    UL --> SQ[Short Queue]
+    SQ --> SP[Short Processor]
+    SP --> CA[Claude AI]
+    CA --> DB[DynamoDB Results]
+    DB --> API2[API Gateway]
+    API2 -->|Results| U
+
+    style CA fill:#f8d7da
+```
+
+#### **Full Mode (Lambda + Batch)**
+```mermaid
+flowchart LR
+    U[User] -->|Upload Any Size| API[API Gateway]
+    API --> UL[Uploader Lambda]
+    UL --> S3[S3 Storage]
+    
+    UL -->|≤300KB| SQ1[Short Queue]
+    SQ1 --> SP[Short Processor]
+    SP --> CA[Claude AI]
+    
+    UL -->|>300KB| SQ2[Long Queue]
+    SQ2 --> BQ[Batch Queue]
+    BQ --> BC[Batch Container]
+    BC --> TX[AWS Textract]
+    
+    CA --> DB[DynamoDB Results]
+    TX --> DB
+    DB --> API2[API Gateway]
+    API2 -->|Results| U
+
+    style CA fill:#f8d7da
+    style TX fill:#e3f2fd
+```
+
 ### **🎯 Flexible Deployment Architecture**
 
 Our system supports two deployment modes to match your scale and budget:
