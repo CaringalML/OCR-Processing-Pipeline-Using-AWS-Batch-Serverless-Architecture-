@@ -1,5 +1,6 @@
-# Dead Letter Queue for failed messages
+# Dead Letter Queue for failed messages (Full Mode Only)
 resource "aws_sqs_queue" "batch_dlq" {
+  count                      = var.deployment_mode == "full" ? 1 : 0
   name                       = "${var.project_name}-${var.environment}-batch-dlq"
   delay_seconds              = var.sqs_delay_seconds
   max_message_size           = var.sqs_max_message_size
@@ -23,8 +24,9 @@ resource "aws_sqs_queue" "batch_dlq" {
   })
 }
 
-# Main SQS Queue for Long Batch processing - Direct SQS with Long Polling
+# Main SQS Queue for Long Batch processing - Direct SQS with Long Polling (Full Mode Only)
 resource "aws_sqs_queue" "batch_queue" {
+  count                      = var.deployment_mode == "full" ? 1 : 0
   name                       = "${var.project_name}-${var.environment}-batch-queue"
   delay_seconds              = var.sqs_delay_seconds
   max_message_size           = var.sqs_max_message_size
@@ -33,7 +35,7 @@ resource "aws_sqs_queue" "batch_queue" {
   visibility_timeout_seconds = var.sqs_visibility_timeout_batch       # 16 minutes (AWS Batch timeout + buffer)
 
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.batch_dlq.arn
+    deadLetterTargetArn = aws_sqs_queue.batch_dlq[0].arn
     maxReceiveCount     = var.sqs_max_receive_count_standard # Only 2 retries before DLQ
   })
 
@@ -47,8 +49,9 @@ resource "aws_sqs_queue" "batch_queue" {
 # Note: No SQS Queue Policy needed - Long batch now uses direct SQS messages from Lambda uploader
 # Both long-batch and short-batch now use direct API SQS messages for consistency
 
-# CloudWatch Alarm for DLQ
+# CloudWatch Alarm for DLQ (Full Mode Only)
 resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   alarm_name          = "${var.project_name}-${var.environment}-dlq-messages"
   comparison_operator = var.cloudwatch_comparison_operator_greater_than
   evaluation_periods  = var.cloudwatch_evaluation_periods_single
@@ -82,7 +85,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
   treat_missing_data  = var.cloudwatch_treat_missing_data
 
   dimensions = {
-    QueueName = aws_sqs_queue.batch_dlq.name
+    QueueName = aws_sqs_queue.batch_dlq[0].name
   }
 
   alarm_actions = [aws_sns_topic.critical_alerts.arn]
@@ -132,8 +135,9 @@ resource "aws_sqs_queue" "short_batch_queue" {
 # DLQ alarms moved to cloudwatch.tf for centralized monitoring
 # Additional CloudWatch Alarms for enhanced DLQ monitoring
 
-# Alarm for messages aging in Long Batch DLQ
+# Alarm for messages aging in Long Batch DLQ (Full Mode Only)
 resource "aws_cloudwatch_metric_alarm" "dlq_message_age" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   alarm_name          = "${var.project_name}-${var.environment}-dlq-message-age"
   comparison_operator = var.cloudwatch_comparison_operator_greater_than
   evaluation_periods  = var.cloudwatch_evaluation_periods_single
@@ -156,7 +160,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_message_age" {
   treat_missing_data  = var.cloudwatch_treat_missing_data
 
   dimensions = {
-    QueueName = aws_sqs_queue.batch_dlq.name
+    QueueName = aws_sqs_queue.batch_dlq[0].name
   }
 
   alarm_actions = [aws_sns_topic.critical_alerts.arn]
@@ -164,8 +168,9 @@ resource "aws_cloudwatch_metric_alarm" "dlq_message_age" {
   tags = var.common_tags
 }
 
-# Alarm for high message count in Long Batch DLQ
+# Alarm for high message count in Long Batch DLQ (Full Mode Only)
 resource "aws_cloudwatch_metric_alarm" "dlq_high_message_count" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   alarm_name          = "${var.project_name}-${var.environment}-dlq-high-count"
   comparison_operator = var.cloudwatch_comparison_operator_greater_than
   evaluation_periods  = var.cloudwatch_evaluation_periods_double
@@ -187,7 +192,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_high_message_count" {
   treat_missing_data  = var.cloudwatch_treat_missing_data
 
   dimensions = {
-    QueueName = aws_sqs_queue.batch_dlq.name
+    QueueName = aws_sqs_queue.batch_dlq[0].name
   }
 
   alarm_actions = [aws_sns_topic.critical_alerts.arn]

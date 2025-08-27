@@ -349,8 +349,9 @@ resource "aws_iam_role" "short_batch_submitter_role" {
   tags = var.common_tags
 }
 
-# SQS Processor Lambda Role
+# SQS Processor Lambda Role (Full Mode Only)
 resource "aws_iam_role" "sqs_processor_role" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-${var.environment}-sqs-processor-role"
 
   assume_role_policy = jsonencode({
@@ -410,10 +411,9 @@ resource "aws_iam_policy" "uploader_policy" {
           "sqs:SendMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = [
-          aws_sqs_queue.short_batch_queue.arn,
-          aws_sqs_queue.batch_queue.arn
-        ]
+        Resource = concat([
+          aws_sqs_queue.short_batch_queue.arn
+        ], var.deployment_mode == "full" ? [aws_sqs_queue.batch_queue[0].arn] : [])
       }
     ]
   })
@@ -729,17 +729,18 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
         Action = [
           "sqs:SendMessage"
         ]
-        Resource = [
-          aws_sqs_queue.batch_queue.arn,
-          aws_sqs_queue.short_batch_dlq.arn
-        ]
+        Resource = concat(
+          var.deployment_mode == "full" ? [aws_sqs_queue.batch_queue[0].arn] : [],
+          [aws_sqs_queue.short_batch_dlq.arn]
+        )
       }
     ]
   })
 }
 
-# SQS Processor Lambda Policy
+# SQS Processor Lambda Policy (Full Mode Only)
 resource "aws_iam_policy" "sqs_processor_policy" {
+  count = var.deployment_mode == "full" ? 1 : 0
   name = "${var.project_name}-${var.environment}-sqs-processor-policy"
 
   policy = jsonencode({
@@ -761,7 +762,7 @@ resource "aws_iam_policy" "sqs_processor_policy" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = aws_sqs_queue.batch_queue.arn
+        Resource = aws_sqs_queue.batch_queue[0].arn
       },
       {
         Effect = var.iam_effect_allow
@@ -822,8 +823,9 @@ resource "aws_iam_role_policy_attachment" "short_batch_processor_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "sqs_processor_policy" {
-  role       = aws_iam_role.sqs_processor_role.name
-  policy_arn = aws_iam_policy.sqs_processor_policy.arn
+  count      = var.deployment_mode == "full" ? 1 : 0
+  role       = aws_iam_role.sqs_processor_role[0].name
+  policy_arn = aws_iam_policy.sqs_processor_policy[0].arn
 }
 
 # Batch Status Reconciliation Lambda Role

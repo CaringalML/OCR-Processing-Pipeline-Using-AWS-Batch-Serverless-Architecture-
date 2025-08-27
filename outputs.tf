@@ -57,8 +57,8 @@ output "api_endpoints" {
     # Force Claude AI processing (recommended for ≤300KB files)
     force_claude_processing = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload"
     
-    # Force AWS Batch processing (for large/complex files >300KB)
-    force_batch_processing = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload"
+    # Force AWS Batch processing (for large/complex files >300KB) - Full Mode Only
+    force_batch_processing = var.deployment_mode == "full" ? "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload" : "❌ UNAVAILABLE - Long-batch processing disabled in short-batch deployment mode"
     
     # 🧾 SPECIALIZED INVOICE PROCESSING
     
@@ -67,6 +67,52 @@ output "api_endpoints" {
     
     # Get processed invoice data with structured business fields
     get_processed_invoice = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?fileId={file_id}"
+  }
+}
+
+# ========================================
+# 🎯 DEPLOYMENT MODE INFORMATION
+# ========================================
+output "deployment_info" {
+  description = "Current deployment configuration and capabilities"
+  value = {
+    # 🚀 Current Deployment Mode
+    deployment_mode = var.deployment_mode
+    
+    # 📊 Capabilities Summary
+    capabilities = {
+      max_file_size            = var.deployment_mode == "full" ? "Unlimited (AWS Batch)" : "300KB (Lambda-only)"
+      long_batch_available     = var.deployment_mode == "full"
+      batch_processing         = var.deployment_mode == "full" ? "✅ AWS Batch + Textract for large files" : "❌ Disabled"
+      claude_processing        = "✅ Claude AI for files ≤300KB"
+      api_endpoints_available  = var.deployment_mode == "full" ? "All endpoints including /long-batch/*" : "/batch/* and /short-batch/* only"
+    }
+    
+    # 💰 Cost Estimate (Monthly)
+    estimated_monthly_cost = var.deployment_mode == "full" ? "$176-295 (production scale with VPC interface endpoints)" : "$20-80 (development scale, gateway endpoints only)"
+    
+    # ⏱️ Deployment Stats
+    deployment_time = var.deployment_mode == "full" ? "5-7 minutes (includes AWS Batch)" : "2-3 minutes (Lambda-only)"
+    
+    # 🎯 Recommended Use Cases
+    recommended_for = var.deployment_mode == "full" ? [
+      "Production deployments",
+      "Enterprise document processing", 
+      "Unlimited file size processing",
+      "High-volume processing workflows"
+    ] : [
+      "Development and testing",
+      "Small-scale deployments",
+      "Cost-conscious implementations", 
+      "Files ≤300KB processing only"
+    ]
+    
+    # 🔄 Scaling Options
+    scaling_commands = {
+      upgrade_to_full    = var.deployment_mode == "short-batch" ? "make full-apply" : "Already in full mode"
+      scale_down         = var.deployment_mode == "full" ? "make long-destroy" : "Already in short-batch mode"
+      current_resources  = var.deployment_mode == "full" ? "Full infrastructure deployed" : "Short-batch resources only"
+    }
   }
 }
 
@@ -94,10 +140,10 @@ output "infrastructure" {
     # 🔄 Message Queues (for monitoring)
     queues = {
       short_batch_queue  = aws_sqs_queue.short_batch_queue.url
-      long_batch_queue   = aws_sqs_queue.batch_queue.url
+      long_batch_queue   = var.deployment_mode == "full" ? aws_sqs_queue.batch_queue[0].url : "❌ UNAVAILABLE - Long-batch queue disabled in short-batch deployment mode"
       invoice_queue      = aws_sqs_queue.invoice_queue.url
       short_batch_dlq    = aws_sqs_queue.short_batch_dlq.url
-      long_batch_dlq     = aws_sqs_queue.batch_dlq.url
+      long_batch_dlq     = var.deployment_mode == "full" ? aws_sqs_queue.batch_dlq[0].url : "❌ UNAVAILABLE - Long-batch DLQ disabled in short-batch deployment mode"
     }
     
     # 🌍 Environment Info

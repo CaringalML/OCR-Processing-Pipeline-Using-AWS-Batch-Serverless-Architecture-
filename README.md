@@ -148,38 +148,79 @@ npm run build
 ```
 
 ### 4. **Infrastructure Deployment** (3-5 minutes)
+
+#### **🚀 Deployment Modes - Choose Your Scale**
+
+**Short-Batch Mode** (Lambda-only, cost-optimized)
 ```bash
-# Initialize and validate
+# For small-scale deployments, files ≤300KB only
 terraform init
 terraform validate
-terraform plan
+make short-apply
 
-# Deploy complete infrastructure
-terraform apply -auto-approve
+# Resources created:
+# ✅ Lambda functions (5) for short processing
+# ✅ API Gateway with /short-batch and /batch endpoints  
+# ✅ DynamoDB tables (3)
+# ✅ S3 + CloudFront CDN
+# ❌ AWS Batch (not deployed)
+# ❌ ECR repository (not needed)
+# ❌ Long-batch processing capabilities
 
-# Expected output: 15+ AWS resources created
-# - Lambda functions (7)
-# - API Gateway endpoints  
-# - DynamoDB tables (3)
-# - AWS Batch compute environment
-# - ECR repository
-# - CloudFront distribution
-# - VPC endpoints
+# Perfect for: Testing, development, small organizations
+# Cost: ~$50-100/month • Deploy time: 2-3 minutes
 ```
 
-### 5. **Docker Container Deployment** (3 minutes)
+**Full Mode** (Complete enterprise infrastructure)
 ```bash
+# For production deployments, unlimited file sizes
+terraform init
+terraform validate
+make full-apply
+
+# Resources created:
+# ✅ Lambda functions (7) for all processing paths
+# ✅ API Gateway with all endpoints including /long-batch
+# ✅ DynamoDB tables (3)
+# ✅ AWS Batch compute environment + job queues
+# ✅ ECR repository for containerized processing
+# ✅ S3 + CloudFront CDN
+# ✅ VPC endpoints and security groups
+
+# Perfect for: Production, enterprise, unlimited file processing
+# Cost: ~$100-300/month • Deploy time: 5-7 minutes
+```
+
+#### **🎯 Flexible Scaling Commands**
+```bash
+# Start small, scale up when needed
+make short-apply     # Initial deployment (Lambda-only)
+make full-apply      # Upgrade to full infrastructure
+make long-destroy    # Scale down to short-batch only
+make short-destroy   # Remove everything
+make full-destroy    # Remove everything (same as short-destroy)
+
+# Preview changes before applying
+make short-plan      # Preview short-batch deployment
+make full-plan       # Preview full deployment
+```
+
+### 5. **Docker Container Deployment** (Only for Full Mode)
+```bash
+# ⚠️ SKIP THIS STEP IF USING SHORT-BATCH MODE
+# Docker containers are only needed for full deployments with AWS Batch
+
 # Method 1: Automatic via GitHub Actions (Recommended)
 git add . && git commit -m "Initial setup"
 git push origin main
 # GitHub Actions will automatically build and push to ECR
 
-# Method 2: Manual Docker deployment
+# Method 2: Manual Docker deployment (Full Mode Only)
 terraform output ecr_login_command | bash
 terraform output docker_build_command | bash  
 terraform output docker_push_command | bash
 
-# Verify container deployment
+# Verify container deployment (Full Mode Only)
 aws batch describe-job-definitions --job-definition-name ocr-processor-batch
 ```
 
@@ -202,9 +243,12 @@ curl "$API_URL/batch/processed"
 # Test 3: Test intelligent search (wait 30s-5min for processing)
 curl "$API_URL/batch/search?q=your+search+term&fuzzy=true"
 
-# Test 4: Verify both processing paths work
-# Short-batch: Upload file ≤300KB (goes to Claude AI)
-# Long-batch: Upload file >300KB (goes to AWS Batch + Textract)
+# Test 4: Verify processing paths based on deployment mode
+# Short-batch mode: Only files ≤300KB accepted (goes to Claude AI)
+# Full mode: Files ≤300KB → Claude AI, >300KB → AWS Batch + Textract
+
+# Test large file handling in short-batch mode
+curl -X POST "$API_URL/batch/upload" -F "file=@large-file.pdf"  # Should get friendly error
 ```
 
 ### 7. **Production Configuration** (Optional)
@@ -342,6 +386,21 @@ aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"
 
 ## 🏗️ Architecture Overview
 
+### **🎯 Flexible Deployment Architecture**
+
+Our system supports two deployment modes to match your scale and budget:
+
+| Component | Short-Batch Mode | Full Mode |
+|-----------|------------------|-----------|
+| **API Endpoints** | `/batch/upload`, `/short-batch/*` | All endpoints including `/long-batch/*` |
+| **File Size Limit** | ≤300KB | Unlimited |
+| **Processing Engine** | Claude AI only | Claude AI + AWS Textract |
+| **Infrastructure Cost** | ~$50-100/month | ~$100-300/month |
+| **Deployment Time** | 2-3 minutes | 5-7 minutes |
+| **Use Case** | Development, small-scale | Production, enterprise |
+
+### **🔄 Processing Flow (Deployment Mode Aware)**
+
 ```mermaid
 graph TD
     A[Client] --> B[API Gateway]
@@ -354,38 +413,59 @@ graph TD
     B --> I[Recycle Bin Reader Lambda]
     
     C --> J[S3 Upload Bucket]
-    C --> K[Direct SQS Message]
-    K --> L[Short Batch SQS Queue]
-    K --> M[Long Batch SQS Queue]
+    C --> K{Deployment Mode Check}
+    K -->|Short-Batch Mode| L[Short Batch SQS Queue Only]
+    K -->|Full Mode| M[Long Batch SQS Queue Available]
+    K -->|File >300KB + Short-Batch| N[❌ Reject with Friendly Error]
     
-    L --> N[Short Batch Processor Lambda]
-    M --> O[SQS to Batch Submitter Lambda]
-    O --> P[AWS Batch Job Queue]
-    P --> Q[OCR Processing Container]
+    L --> O[Short Batch Processor Lambda]
+    M --> P[SQS to Batch Submitter Lambda]
+    P --> Q[AWS Batch Job Queue - Full Mode Only]
+    Q --> R[OCR Processing Container - Full Mode Only]
     
-    C --> R[DynamoDB File Metadata]
-    N --> S[DynamoDB Processing Results]
-    Q --> S
-    D --> R
+    C --> S[DynamoDB File Metadata]
+    O --> T[DynamoDB Processing Results]
+    R --> T
     D --> S
-    E --> R
+    D --> T
     E --> S
-    F --> R
+    E --> T
     F --> S
-    G --> R
-    H --> R
-    I --> R
+    F --> T
+    G --> S
+    H --> S
+    I --> S
     
-    J --> T[CloudFront CDN]
+    J --> U[CloudFront CDN]
     
-    U[Dead Letter Queue] --> L
-    U --> M
-    V[Batch Status Reconciliation Lambda] --> R
-    W[Dead Job Detector Lambda] --> P
-    X[Auto Cleanup Lambda] --> Y[Scheduled EventBridge]
-    Z[CloudWatch Monitoring] --> AA[All Components]
-    BB[SNS Alerts] --> Z
+    V[Dead Letter Queue] --> L
+    V --> M
+    W[Batch Status Reconciliation - Full Mode Only] --> S
+    X[Dead Job Detector - Full Mode Only] --> Q
+    Y[Auto Cleanup Lambda] --> Z[Scheduled EventBridge]
+    AA[CloudWatch Monitoring] --> BB[All Components]
+    CC[SNS Alerts] --> AA
+    
+    style N fill:#ffebee
+    style Q fill:#e3f2fd
+    style R fill:#e3f2fd
+    style W fill:#e3f2fd
+    style X fill:#e3f2fd
 ```
+
+### **💡 Smart File Handling by Deployment Mode**
+
+**Short-Batch Mode Behavior:**
+- ✅ Files ≤300KB → Claude AI processing (30s-10min)
+- ❌ Files >300KB → Rejected with helpful error message
+- 💬 UI shows: "Large file processing disabled. Contact administrator."
+- 🎯 Perfect for: Development, testing, cost-conscious deployments
+
+**Full Mode Behavior:**
+- ✅ Files ≤300KB → Claude AI processing (30s-10min)  
+- ✅ Files >300KB → AWS Batch + Textract processing (5min-24hrs)
+- 💬 UI shows: "Processing via AWS Batch for comprehensive analysis"
+- 🎯 Perfect for: Production, enterprise, unlimited processing
 
 ---
 
@@ -430,22 +510,34 @@ curl "$API/batch/search?q=happy%20heart%20pays%20toll%20Youth%20Age"
 EC2 Instances:     $200-400
 RDS Database:      $100-200  
 Load Balancer:     $20
-NAT Gateway:       $45
+VPC Endpoints:     $155 (8 interface endpoints @ ~$21.6 each)
 Total:             $365-665
 
-# This Serverless System (Monthly)
-VPC Endpoints:     $43
-Lambda + Batch:    $10-80 (usage-based)
+# Short-Batch Mode (Monthly) - Development/Small Scale
+Lambda Functions:  $5-15 (short processing only)
 DynamoDB:          $5-25 (pay-per-request)
-S3 + CDN:          $5-30
-Total:             $63-178
+S3 + CDN:          $5-30 (document storage)
+API Gateway:       $5-10 (API calls)
+VPC Costs:         $0 (no expensive VPC interface endpoints deployed)
+Total:             $20-80
 
-💡 Save $300-500+ monthly with serverless architecture
+# Full Mode (Monthly) - Production/Enterprise  
+VPC Endpoints:     $155 (8 interface endpoints @ ~$21.6 each + gateway endpoints free)
+Lambda + Batch:    $10-80 (dual processing paths)
+DynamoDB:          $5-25 (pay-per-request)
+S3 + CDN:          $5-30 (document storage)
+ECR Repository:    $1-5 (container storage)
+Total:             $176-295
+
+💡 Save $70-469+ monthly vs traditional infrastructure
+🎯 Start with Short-Batch ($20-80), scale to Full ($176-295) when needed
+💰 VPC Interface Endpoints savings: $155/month in short-batch mode (uses free gateway endpoints only)
 ```
 
 ### 🔒 **Production Security & Compliance**
 - **🛡️ Multi-Tier Rate Limiting**: Public (10 req/s) → Premium (200 req/s)
-- **🔐 Zero-Trust Network**: Private subnets, VPC endpoints, no internet access
+- **🔐 Zero-Trust Network**: Private subnets, VPC endpoints only, no NAT gateways
+- **💰 Cost-Optimized Networking**: Free S3/DynamoDB gateway endpoints + paid interface endpoints only when needed
 - **📊 Real-Time Monitoring**: CloudWatch dashboards, automated alerts
 - **⚖️ Enterprise Ready**: GDPR-friendly, audit logs, data retention policies
 - **🚨 DDoS Protection**: Automated attack detection, 429 rate limit responses
@@ -850,15 +942,16 @@ curl "$API/search?q=machine+learning+artificial+intelligence&fuzzy=true"
 
 ### **Network Security Architecture**
 ```bash
-# Zero-trust network design
+# Zero-trust network design with VPC endpoints (no NAT gateways)
 Internet → API Gateway → Lambda (Private Subnets)
                       ↓
               VPC Endpoints Only
                       ↓  
-         AWS Services (S3, DynamoDB, etc.)
+         AWS Services (S3, DynamoDB, ECR, etc.)
          
 # No internet access for compute resources
-# All AWS service communication via private endpoints
+# All AWS service communication via private VPC endpoints
+# Cost-optimized: VPC endpoints (~$7/month each) vs NAT gateways (~$45/month)
 ```
 
 ### **Rate Limiting & DDoS Protection**
@@ -941,7 +1034,7 @@ terraform output cost_dashboard_url    # CloudWatch cost dashboard
 terraform output cost_alerts_config    # Budget alerts setup
 
 # Monthly cost breakdown (estimated)
-VPC Endpoints:     $43    # Fixed cost for private networking
+VPC Endpoints:     $155   # 8 interface endpoints for private networking
 DynamoDB:          $5-25  # Pay-per-request, auto-scaling  
 Lambda Execution:  $2-15  # Based on processing volume
 S3 Storage:        $1-20  # Document storage + CDN

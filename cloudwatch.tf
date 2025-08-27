@@ -193,8 +193,9 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_dlq_messages" {
   })
 }
 
-# Monitor Long Batch DLQ for failed processing
+# Monitor Long Batch DLQ for failed processing (Full Mode Only)
 resource "aws_cloudwatch_metric_alarm" "long_batch_dlq_messages" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   alarm_name          = "${var.project_name}-${var.environment}-long-batch-dlq-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1" # Immediate notification for failures
@@ -207,7 +208,7 @@ resource "aws_cloudwatch_metric_alarm" "long_batch_dlq_messages" {
   alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
-    QueueName = aws_sqs_queue.batch_dlq.name
+    QueueName = aws_sqs_queue.batch_dlq[0].name
   }
 
   tags = merge(var.common_tags, {

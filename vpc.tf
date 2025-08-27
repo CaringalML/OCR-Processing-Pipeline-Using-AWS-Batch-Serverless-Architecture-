@@ -82,8 +82,9 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
-# Security Group for VPC Endpoints
+# Security Group for VPC Endpoints (Full Mode Only)
 resource "aws_security_group" "vpc_endpoints" {
+  count       = var.deployment_mode == "full" ? 1 : 0
   name_prefix = "${var.project_name}-vpc-endpoints-"
   vpc_id      = aws_vpc.main.id
   description = "Security group for VPC endpoints"
@@ -190,13 +191,14 @@ resource "aws_vpc_endpoint" "dynamodb" {
   }
 }
 
-# ECR Docker Registry VPC Endpoint
+# ECR Docker Registry VPC Endpoint (Full Mode Only - for AWS Batch containers)
 resource "aws_vpc_endpoint" "ecr_dkr" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -216,13 +218,14 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   }
 }
 
-# ECR API VPC Endpoint
+# ECR API VPC Endpoint (Full Mode Only - for AWS Batch containers)
 resource "aws_vpc_endpoint" "ecr_api" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -242,13 +245,14 @@ resource "aws_vpc_endpoint" "ecr_api" {
   }
 }
 
-# CloudWatch Logs VPC Endpoint
+# CloudWatch Logs VPC Endpoint (Full Mode Only - for AWS Batch container logs)
 resource "aws_vpc_endpoint" "logs" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.logs"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -268,13 +272,14 @@ resource "aws_vpc_endpoint" "logs" {
   }
 }
 
-# ECS VPC Endpoint (for AWS Batch ECS integration)
+# ECS VPC Endpoint (Full Mode Only - for AWS Batch ECS integration)
 resource "aws_vpc_endpoint" "ecs" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -294,13 +299,14 @@ resource "aws_vpc_endpoint" "ecs" {
   }
 }
 
-# ECS Agent VPC Endpoint
+# ECS Agent VPC Endpoint (Full Mode Only - for AWS Batch containers)
 resource "aws_vpc_endpoint" "ecs_agent" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs-agent"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
@@ -308,13 +314,14 @@ resource "aws_vpc_endpoint" "ecs_agent" {
   }
 }
 
-# ECS Telemetry VPC Endpoint
+# ECS Telemetry VPC Endpoint (Full Mode Only - for AWS Batch containers)
 resource "aws_vpc_endpoint" "ecs_telemetry" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecs-telemetry"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
@@ -322,13 +329,14 @@ resource "aws_vpc_endpoint" "ecs_telemetry" {
   }
 }
 
-# Textract VPC Endpoint (CRITICAL for OCR processing)
+# Textract VPC Endpoint (Full Mode Only - for AWS Batch OCR processing)
 resource "aws_vpc_endpoint" "textract" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.textract"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -348,13 +356,14 @@ resource "aws_vpc_endpoint" "textract" {
   }
 }
 
-# Comprehend VPC Endpoint (CRITICAL for text analysis)
+# Comprehend VPC Endpoint (Full Mode Only - for AWS Batch text analysis)
 resource "aws_vpc_endpoint" "comprehend" {
+  count               = var.deployment_mode == "full" ? 1 : 0
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.comprehend"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   policy = jsonencode({
@@ -382,7 +391,7 @@ resource "aws_vpc_endpoint" "ssm" {
   service_name        = "com.amazonaws.${var.aws_region}.ssm"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
@@ -397,7 +406,7 @@ resource "aws_vpc_endpoint" "ssm_messages" {
   service_name        = "com.amazonaws.${var.aws_region}.ssmmessages"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {
@@ -412,7 +421,7 @@ resource "aws_vpc_endpoint" "ec2_messages" {
   service_name        = "com.amazonaws.${var.aws_region}.ec2messages"
   vpc_endpoint_type   = var.vpc_endpoint_type_interface
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = var.vpc_endpoint_private_dns_enabled
 
   tags = {

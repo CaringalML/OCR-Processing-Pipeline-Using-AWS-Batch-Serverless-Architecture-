@@ -171,7 +171,7 @@ resource "aws_lambda_function" "uploader" {
       UPLOAD_BUCKET_NAME     = aws_s3_bucket.upload_bucket.id
       DYNAMODB_TABLE         = aws_dynamodb_table.processing_results.name
       SHORT_BATCH_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
-      LONG_BATCH_QUEUE_URL   = aws_sqs_queue.batch_queue.url
+      LONG_BATCH_QUEUE_URL   = var.deployment_mode == "full" ? aws_sqs_queue.batch_queue[0].url : ""
       FILE_SIZE_THRESHOLD_KB = var.file_size_threshold_kb
       DEPLOYMENT_MODE        = var.deployment_mode
       LOG_LEVEL              = var.lambda_log_level
@@ -372,7 +372,7 @@ resource "aws_lambda_function" "short_batch_processor" {
       RESULTS_TABLE         = aws_dynamodb_table.processing_results.name
       PROCESSED_BUCKET      = aws_s3_bucket.upload_bucket.id
       DEAD_LETTER_QUEUE_URL = aws_sqs_queue.short_batch_dlq.url
-      LONG_BATCH_QUEUE_URL  = aws_sqs_queue.batch_queue.url
+      LONG_BATCH_QUEUE_URL  = var.deployment_mode == "full" ? aws_sqs_queue.batch_queue[0].url : ""
       SNS_TOPIC_ARN         = aws_sns_topic.critical_alerts.arn
       ANTHROPIC_API_KEY     = var.anthropic_api_key
       BUDGET_LIMIT          = var.budget_limit_default
@@ -398,7 +398,7 @@ resource "aws_lambda_function" "short_batch_processor" {
 # Lambda Event Source Mapping for Long Batch Queue with Long Polling
 resource "aws_lambda_event_source_mapping" "long_batch_sqs_trigger" {
   count            = var.deployment_mode == "full" ? 1 : 0
-  event_source_arn = aws_sqs_queue.batch_queue.arn
+  event_source_arn = aws_sqs_queue.batch_queue[0].arn
   function_name    = aws_lambda_function.sqs_batch_processor[0].arn
 
   # Batch configuration optimized for long polling efficiency
@@ -444,7 +444,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   count            = var.deployment_mode == "full" ? 1 : 0
   filename         = data.archive_file.sqs_processor_zip.output_path
   function_name    = "${var.project_name}-${var.environment}-sqs-batch-processor"
-  role             = aws_iam_role.sqs_processor_role.arn
+  role             = aws_iam_role.sqs_processor_role[0].arn
   handler          = "sqs_to_batch_submitter.lambda_handler"
   runtime          = var.lambda_runtime
   timeout          = var.lambda_timeout_standard
@@ -455,7 +455,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
     variables = {
       BATCH_JOB_QUEUE      = aws_batch_job_queue.main[0].name
       BATCH_JOB_DEFINITION = aws_batch_job_definition.main[0].name
-      SQS_QUEUE_URL        = aws_sqs_queue.batch_queue.url
+      SQS_QUEUE_URL        = aws_sqs_queue.batch_queue[0].url
       DYNAMODB_TABLE       = aws_dynamodb_table.processing_results.name
       RESULTS_TABLE        = aws_dynamodb_table.processing_results.name
       LOG_LEVEL            = var.lambda_log_level
@@ -464,7 +464,7 @@ resource "aws_lambda_function" "sqs_batch_processor" {
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.sqs_processor_policy,
+    aws_iam_role_policy_attachment.sqs_processor_policy[0],
     aws_cloudwatch_log_group.sqs_to_batch_submitter_logs
   ]
 

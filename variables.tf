@@ -100,7 +100,7 @@ variable "api_stage_name" {
 # NETWORKING CONFIGURATION
 # =============================================================================
 # These variables control the VPC and subnet configuration for the entire system.
-# The OCR system uses a multi-tier architecture with public subnets for NAT gateways
+# The OCR system uses a multi-tier architecture with public subnets for internet gateways
 # and private subnets for compute resources like AWS Batch and Lambda functions.
 
 variable "vpc_cidr" {
@@ -110,13 +110,13 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  description = "CIDR blocks for public subnets (NAT gateways, ALBs). These subnets have internet gateway routes."
+  description = "CIDR blocks for public subnets. These subnets have internet gateway routes."
   type        = list(string)
   default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDR blocks for private subnets (Batch compute, Lambda functions). Internet access via NAT gateway only."
+  description = "CIDR blocks for private subnets (Batch compute, Lambda functions). Internet access via VPC endpoints only."
   type        = list(string)
   default     = ["10.0.10.0/24", "10.0.20.0/24"]
 }
