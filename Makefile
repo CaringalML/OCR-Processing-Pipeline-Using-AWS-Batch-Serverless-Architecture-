@@ -1,4 +1,4 @@
-.PHONY: help init short-plan full-plan short-apply full-apply short-destroy full-destroy long-destroy
+.PHONY: help init short-plan full-plan short-apply full-apply full-destroy long-destroy
 
 # Default target - show help
 help:
@@ -20,9 +20,8 @@ help:
 	@echo "Scaling Down:"
 	@echo "  make long-destroy  - Remove AWS Batch components only (revert full → short-batch)"
 	@echo ""
-	@echo "Full Destruction:"
-	@echo "  make short-destroy - Destroy entire short-batch deployment"
-	@echo "  make full-destroy  - Destroy entire full deployment"
+	@echo "Full backend Destruction:"
+	@echo "  make full-destroy  - Destroy entire deployment (works for both modes)"
 
 # Initialize Terraform
 init:
@@ -50,10 +49,7 @@ long-destroy:
 	@echo "Removing AWS Batch components while preserving Lambda infrastructure..."
 	terraform apply -var="deployment_mode=short-batch" --auto-approve
 
-# Destroy entire short-batch deployment
-short-destroy:
-	terraform destroy -var="deployment_mode=short-batch" --auto-approve
-
-# Destroy entire full deployment
+# Destroy entire deployment (works for both short-batch and full modes)
 full-destroy:
-	terraform destroy -var="deployment_mode=full" --auto-approve
+	@echo "Destroying entire backend OCR infrastructure..."
+	terraform destroy --auto-approve

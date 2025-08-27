@@ -141,8 +141,7 @@ make long-destroy  # Removes AWS Batch, keeps Lambda
 ### **Destruction Commands**
 ```bash
 # Remove all resources
-make short-destroy    # Works for both modes
-make full-destroy     # Same as short-destroy
+make full-destroy     # Works for both modes
 
 # Remove only AWS Batch components (scale down)
 make long-destroy     # Keeps Lambda processing active
@@ -467,7 +466,7 @@ terraform refresh           # Sync state with real infrastructure
 ### **Emergency Procedures**
 ```bash
 # Complete system removal (emergency)
-make full-destroy    # or make short-destroy
+make full-destroy    # Works for both modes
 terraform state list # Should be empty
 
 # Restore from backup (if configured)

@@ -197,8 +197,7 @@ make full-apply
 make short-apply     # Initial deployment (Lambda-only)
 make full-apply      # Upgrade to full infrastructure
 make long-destroy    # Scale down to short-batch only
-make short-destroy   # Remove everything
-make full-destroy    # Remove everything (same as short-destroy)
+make full-destroy    # Remove everything (works for both modes)
 
 # Preview changes before applying
 make short-plan      # Preview short-batch deployment
@@ -776,7 +775,7 @@ $(terraform output docker_build_command)
 $(terraform output docker_push_command)
 
 # Quick destroy (development)
-make destroy  # or terraform destroy -auto-approve
+make full-destroy  # Works for both deployment modes
 ```
 
 ### **Environment Variables & Configuration**
