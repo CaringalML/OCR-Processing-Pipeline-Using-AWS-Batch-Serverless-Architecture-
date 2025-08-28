@@ -3,6 +3,51 @@
 # ========================================
 # Copy this file to terraform.tfvars and customize the values below
 
+# ========================================
+# API CONFIGURATION
+# ========================================
+
 # Anthropic API Key for Claude OCR
 # Get your API key from: https://console.anthropic.com/
 anthropic_api_key = "sk-ant-api03-YOUR_API_KEY_HERE"
+
+# ========================================
+# CORE PROJECT CONFIGURATION
+# ========================================
+
+# Project naming
+project_name = "ocr-processor"
+environment = "dev"  # dev, staging, prod
+
+# AWS Configuration
+aws_region = "ap-southeast-2"
+
+# ========================================
+# FRONTEND CONFIGURATION
+# ========================================
+
+# Frontend domain for Cognito authentication
+# Update this with your actual CloudFront domain after deployment
+frontend_domain = "https://d3kmkpcucx6beu.cloudfront.net"
+
+# CORS configuration
+cors_allowed_origin = "'https://d3kmkpcucx6beu.cloudfront.net'"
+
+# ========================================
+# DEPLOYMENT CONFIGURATION
+# ========================================
+
+# Deployment mode: "short-batch" or "full"
+deployment_mode = "full"
+
+# ========================================
+# OPTIONAL OVERRIDES
+# ========================================
+
+# Common tags for all resources
+common_tags = {
+  Project     = "OCR Processor"
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+  Owner       = "your-team-name"
+}

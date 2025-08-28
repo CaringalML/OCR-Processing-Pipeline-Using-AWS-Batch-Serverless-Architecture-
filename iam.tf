@@ -1388,3 +1388,139 @@ resource "aws_iam_role_policy_attachment" "invoice_reader_policy" {
   role       = aws_iam_role.invoice_reader_role.name
   policy_arn = aws_iam_policy.invoice_reader_policy.arn
 }
+# =============================================================================
+# IAM ROLES FOR COGNITO AUTHENTICATION
+# =============================================================================
+
+# IAM Role for Cognito Trigger Lambda Functions
+resource "aws_iam_role" "cognito_trigger_role" {
+  name = "${var.project_name}-${var.environment}-cognito-trigger-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-cognito-trigger-role"
+    Purpose = "IAM role for Cognito Lambda triggers"
+  })
+}
+
+# IAM Policy for Cognito Trigger Lambda Functions
+resource "aws_iam_role_policy" "cognito_trigger_policy" {
+  name = "${var.project_name}-${var.environment}-cognito-trigger-policy"
+  role = aws_iam_role.cognito_trigger_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.user_profiles.arn,
+          "${aws_dynamodb_table.user_profiles.arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach managed policy for basic Lambda execution
+resource "aws_iam_role_policy_attachment" "cognito_trigger_policy" {
+  role       = aws_iam_role.cognito_trigger_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# IAM Role for Auth API Lambda Functions
+resource "aws_iam_role" "auth_api_role" {
+  name = "${var.project_name}-${var.environment}-auth-api-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-auth-api-role"
+    Purpose = "IAM role for authentication API Lambda functions"
+  })
+}
+
+# IAM Policy for Auth API Lambda Functions
+resource "aws_iam_role_policy" "auth_api_policy" {
+  name = "${var.project_name}-${var.environment}-auth-api-policy"
+  role = aws_iam_role.auth_api_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:SignUp",
+          "cognito-idp:ConfirmSignUp",
+          "cognito-idp:InitiateAuth",
+          "cognito-idp:RespondToAuthChallenge",
+          "cognito-idp:GetUser",
+          "cognito-idp:ResendConfirmationCode",
+          "cognito-idp:ForgotPassword",
+          "cognito-idp:ConfirmForgotPassword",
+          "cognito-idp:ChangePassword",
+          "cognito-idp:GlobalSignOut"
+        ]
+        Resource = [
+          aws_cognito_user_pool.main.arn,
+          "${aws_cognito_user_pool.main.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach managed policy for basic Lambda execution
+resource "aws_iam_role_policy_attachment" "auth_api_policy" {
+  role       = aws_iam_role.auth_api_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}

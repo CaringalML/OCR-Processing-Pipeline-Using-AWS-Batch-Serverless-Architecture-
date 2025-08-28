@@ -4,7 +4,7 @@ export const VERSION = process.env.REACT_APP_VERSION || '1.0.0';
 export const ENVIRONMENT = process.env.REACT_APP_ENVIRONMENT || 'development';
 
 // API Configuration
-export const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL || 'http://localhost:3001/api';
+export const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL;
 export const API_VERSION = process.env.REACT_APP_API_VERSION || 'v1';
 
 // AWS Configuration
@@ -88,12 +88,12 @@ export const API_ENDPOINTS = {
   // Base URL from environment
   BASE: API_BASE_URL,
   
-  // Authentication
-  AUTH: {
-    LOGIN: `${API_BASE_URL}/auth/login`,
-    LOGOUT: `${API_BASE_URL}/auth/logout`,
-    REFRESH: `${API_BASE_URL}/auth/refresh`,
-  },
+  // Authentication - handled by AWS Amplify directly
+  // AUTH: {
+  //   LOGIN: `${API_BASE_URL}/auth/login`,
+  //   LOGOUT: `${API_BASE_URL}/auth/logout`,
+  //   REFRESH: `${API_BASE_URL}/auth/refresh`,
+  // },
   
   // Documents
   DOCUMENTS: {

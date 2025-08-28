@@ -395,101 +395,39 @@ variable "api_throttling_burst_limit" {
 }
 
 # =============================================================================
-# USAGE PLAN CONFIGURATION (TIERED ACCESS)
+# USAGE PLAN CONFIGURATION (SINGLE TIER COGNITO AUTH)
 # =============================================================================
-# Three-tier access model: Public (no auth), Registered (API key), Premium (high limits)
-# Each tier has different rate limits, burst capacities, and daily quotas.
+# Single authenticated tier via Cognito User Pools - all users have equal access
+# No API key tiers - authentication handled by Cognito tokens
 
-# PUBLIC TIER: No authentication required, lowest limits
-variable "public_rate_limit" {
-  description = "Public tier sustained rate limit (requests/second). No API key required - protects against basic abuse."
-  type        = number
-  default     = 10
-  validation {
-    condition     = var.public_rate_limit >= 1 && var.public_rate_limit <= 100
-    error_message = "Public rate limit should be conservative (1-100 req/sec) to prevent abuse while allowing legitimate usage."
-  }
-}
-
-variable "public_burst_limit" {
-  description = "Public tier burst capacity. Allows brief spikes in anonymous traffic for legitimate users."
-  type        = number
-  default     = 20
-  validation {
-    condition     = var.public_burst_limit >= 1 && var.public_burst_limit <= 200
-    error_message = "Public burst limit should be 1-200. Must be >= rate limit to be effective."
-  }
-}
-
-variable "public_quota_limit" {
-  description = "Public tier daily quota (requests/day). Prevents sustained abuse over longer time periods."
-  type        = number
-  default     = 1000
-  validation {
-    condition     = var.public_quota_limit >= 100 && var.public_quota_limit <= 100000
-    error_message = "Public quota should balance accessibility with abuse prevention (100-100,000 requests/day)."
-  }
-}
-
-# REGISTERED TIER: API key required, moderate limits
-variable "registered_rate_limit" {
-  description = "Registered tier rate limit (requests/second). Requires API key authentication for higher limits."
-  type        = number
-  default     = 50
-  validation {
-    condition     = var.registered_rate_limit >= 10 && var.registered_rate_limit <= 500
-    error_message = "Registered rate limit should be 10-500 req/sec, providing meaningful upgrade over public tier."
-  }
-}
-
-variable "registered_burst_limit" {
-  description = "Registered tier burst capacity. Higher burst allowance for authenticated users with legitimate traffic spikes."
+# AUTHENTICATED USER TIER: Cognito authentication required
+variable "user_rate_limit" {
+  description = "Authenticated user rate limit (requests/second). Applies to all Cognito-authenticated users."
   type        = number
   default     = 100
   validation {
-    condition     = var.registered_burst_limit >= 1 && var.registered_burst_limit <= 1000
-    error_message = "Registered burst limit should be 1-1,000. Must be >= rate limit for effectiveness."
+    condition     = var.user_rate_limit >= 1 && var.user_rate_limit <= 500
+    error_message = "User rate limit should be 1-500 req/sec for authenticated users."
   }
 }
 
-variable "registered_quota_limit" {
-  description = "Registered tier daily quota (requests/day). Generous limit for regular business use."
+variable "user_burst_limit" {
+  description = "Authenticated user burst capacity. Allows brief spikes for legitimate authenticated users."
   type        = number
-  default     = 10000
+  default     = 300
   validation {
-    condition     = var.registered_quota_limit >= 1000 && var.registered_quota_limit <= 1000000
-    error_message = "Registered quota should be 1,000-1,000,000 requests/day for business usage patterns."
+    condition     = var.user_burst_limit >= 1 && var.user_burst_limit <= 1000
+    error_message = "User burst limit should be 1-1,000. Must be >= rate limit to be effective."
   }
 }
 
-# PREMIUM TIER: Highest limits for enterprise customers
-variable "premium_rate_limit" {
-  description = "Premium tier rate limit (requests/second). Enterprise-grade limits for high-volume customers."
-  type        = number
-  default     = 200
-  validation {
-    condition     = var.premium_rate_limit >= 50 && var.premium_rate_limit <= 1000
-    error_message = "Premium rate limit should be 50-1,000 req/sec for enterprise-level usage."
-  }
-}
-
-variable "premium_burst_limit" {
-  description = "Premium tier burst capacity. Maximum burst allowance for enterprise traffic patterns."
-  type        = number
-  default     = 400
-  validation {
-    condition     = var.premium_burst_limit >= 1 && var.premium_burst_limit <= 2000
-    error_message = "Premium burst limit should be 1-2,000. Must accommodate enterprise traffic spikes."
-  }
-}
-
-variable "premium_quota_limit" {
-  description = "Premium tier daily quota (requests/day). Enterprise-scale daily processing limits."
+variable "user_quota_limit" {
+  description = "Authenticated user daily quota (requests/day). Generous limit for regular authenticated use."
   type        = number
   default     = 100000
   validation {
-    condition     = var.premium_quota_limit >= 10000 && var.premium_quota_limit <= 10000000
-    error_message = "Premium quota should be 10,000-10,000,000 requests/day for enterprise workloads."
+    condition     = var.user_quota_limit >= 1000 && var.user_quota_limit <= 1000000
+    error_message = "User quota should be 1,000-1,000,000 requests/day for authenticated users."
   }
 }
 
@@ -540,24 +478,34 @@ variable "processed_method_burst_limit" {
 }
 
 # =============================================================================
-# API KEY MANAGEMENT
+# COGNITO AUTHENTICATION CONFIGURATION
 # =============================================================================
-# Controls automatic creation of API keys for testing and development purposes.
+# Controls Cognito User Pool authentication settings and security policies.
 
-variable "create_default_api_keys" {
-  description = "Auto-create demo API keys for testing registered/premium tiers. Disable in production for security."
-  type        = bool
-  default     = true
+variable "cognito_password_minimum_length" {
+  description = "Minimum password length for Cognito users"
+  type        = number
+  default     = 8
+  validation {
+    condition     = var.cognito_password_minimum_length >= 8 && var.cognito_password_minimum_length <= 128
+    error_message = "Password minimum length should be 8-128 characters for security."
+  }
 }
 
-variable "api_key_names" {
-  description = "Names for default API keys to create. Used for development and demonstration purposes only."
-  type        = list(string)
-  default     = ["demo-registered-user", "demo-premium-user"]
+variable "cognito_mfa_configuration" {
+  description = "MFA configuration for Cognito User Pool (OPTIONAL, OFF, or ON)"
+  type        = string
+  default     = "OFF"
   validation {
-    condition     = length(var.api_key_names) <= 10
-    error_message = "Maximum 10 API keys can be auto-created to prevent key sprawl and security issues."
+    condition     = contains(["OFF", "ON", "OPTIONAL"], var.cognito_mfa_configuration)
+    error_message = "MFA configuration must be OFF, ON, or OPTIONAL."
   }
+}
+
+variable "cognito_deletion_protection" {
+  description = "Enable deletion protection for Cognito User Pool in production"
+  type        = bool
+  default     = true
 }
 
 # =============================================================================
@@ -726,6 +674,12 @@ variable "cors_allowed_origin" {
   description = "CORS allowed origin. '*' allows all origins (use specific domains in production for security)."
   type        = string
   default     = "'https://d3kmkpcucx6beu.cloudfront.net'"
+}
+
+variable "frontend_domain" {
+  description = "Frontend domain for Cognito authentication URLs"
+  type        = string
+  default     = "https://d3kmkpcucx6beu.cloudfront.net"
 }
 
 # =============================================================================

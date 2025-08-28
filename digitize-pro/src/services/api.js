@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../utils/constants';
+import authService from './authService';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -12,10 +13,14 @@ const api = axios.create({
 
 // Request interceptor for auth tokens
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    try {
+      const token = await authService.getAccessToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error('Error getting access token:', error);
     }
     return config;
   },
@@ -29,11 +34,15 @@ api.interceptors.response.use(
   (response) => {
     return response;
   },
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
       // Handle unauthorized access
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
+      try {
+        await authService.signOut();
+      } catch (signOutError) {
+        console.error('Error signing out:', signOutError);
+      }
+      window.location.href = '/signin';
     }
     return Promise.reject(error);
   }
@@ -41,10 +50,10 @@ api.interceptors.response.use(
 
 // API endpoints
 export const apiEndpoints = {
-  // Authentication
-  login: '/auth/login',
-  logout: '/auth/logout',
-  refresh: '/auth/refresh',
+  // Authentication - handled by Amplify directly, these are for reference only
+  // signup: '/auth/signup',
+  // verify: '/auth/verify', 
+  // signin: '/auth/signin',
 
   // Documents
   documents: '/documents',

@@ -201,7 +201,8 @@ resource "aws_api_gateway_method" "batch_upload_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_upload.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Upload POST Integration (to uploader Lambda)
@@ -229,7 +230,8 @@ resource "aws_api_gateway_method" "batch_processed_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_processed.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Processed GET Integration (to reader Lambda)
@@ -337,7 +339,8 @@ resource "aws_api_gateway_method" "batch_delete_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_delete_file_id.id
   http_method   = "DELETE"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Delete Integration (to deleter Lambda)
@@ -467,7 +470,8 @@ resource "aws_api_gateway_method" "batch_search_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_search.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Search GET Integration (to search Lambda)
@@ -1003,6 +1007,13 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.short_batch_restore_post,
     aws_api_gateway_integration.invoice_upload_post,
     aws_api_gateway_integration.invoice_processed_get,
+    # Auth integrations
+    aws_api_gateway_integration.auth_signup_post,
+    aws_api_gateway_integration.auth_signup_options,
+    aws_api_gateway_integration.auth_verify_post,
+    aws_api_gateway_integration.auth_verify_options,
+    aws_api_gateway_integration.auth_signin_post,
+    aws_api_gateway_integration.auth_signin_options,
   ]
 
 
@@ -1138,4 +1149,259 @@ resource "aws_lambda_permission" "restorer_short_batch" {
   function_name = aws_lambda_function.restorer.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/short-batch/restore/*"
+}
+# =============================================================================
+# AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+# Auth Resource (/auth)
+resource "aws_api_gateway_resource" "auth" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "auth"
+}
+
+# Auth Signup Resource (/auth/signup)
+resource "aws_api_gateway_resource" "auth_signup" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "signup"
+}
+
+# Auth Verify Resource (/auth/verify)
+resource "aws_api_gateway_resource" "auth_verify" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "verify"
+}
+
+# Auth Signin Resource (/auth/signin)
+resource "aws_api_gateway_resource" "auth_signin" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "signin"
+}
+
+# Auth Refresh Resource (/auth/refresh)
+resource "aws_api_gateway_resource" "auth_refresh" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "refresh"
+}
+
+# Auth Resend Resource (/auth/resend)
+resource "aws_api_gateway_resource" "auth_resend" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "resend"
+}
+
+# =============================================================================
+# AUTH SIGNUP METHODS
+# =============================================================================
+
+# Signup POST Method
+resource "aws_api_gateway_method" "auth_signup_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_signup.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# Signup OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "auth_signup_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_signup.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Signup POST Integration
+resource "aws_api_gateway_integration" "auth_signup_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.auth_signup.id
+  http_method             = aws_api_gateway_method.auth_signup_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.auth_signup.invoke_arn
+}
+
+# Signup OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "auth_signup_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signup.id
+  http_method = aws_api_gateway_method.auth_signup_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Signup OPTIONS Method Response
+resource "aws_api_gateway_method_response" "auth_signup_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signup.id
+  http_method = aws_api_gateway_method.auth_signup_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Signup OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "auth_signup_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signup.id
+  http_method = aws_api_gateway_method.auth_signup_options.http_method
+  status_code = aws_api_gateway_method_response.auth_signup_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# =============================================================================
+# AUTH VERIFY METHODS
+# =============================================================================
+
+# Verify POST Method
+resource "aws_api_gateway_method" "auth_verify_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_verify.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# Verify OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "auth_verify_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_verify.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Verify POST Integration
+resource "aws_api_gateway_integration" "auth_verify_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.auth_verify.id
+  http_method             = aws_api_gateway_method.auth_verify_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.auth_verify.invoke_arn
+}
+
+# Verify OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "auth_verify_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_verify.id
+  http_method = aws_api_gateway_method.auth_verify_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Verify OPTIONS Method Response
+resource "aws_api_gateway_method_response" "auth_verify_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_verify.id
+  http_method = aws_api_gateway_method.auth_verify_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Verify OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "auth_verify_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_verify.id
+  http_method = aws_api_gateway_method.auth_verify_options.http_method
+  status_code = aws_api_gateway_method_response.auth_verify_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# =============================================================================
+# AUTH SIGNIN METHODS
+# =============================================================================
+
+# Signin POST Method
+resource "aws_api_gateway_method" "auth_signin_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_signin.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# Signin OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "auth_signin_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_signin.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Signin POST Integration
+resource "aws_api_gateway_integration" "auth_signin_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.auth_signin.id
+  http_method             = aws_api_gateway_method.auth_signin_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.auth_signin.invoke_arn
+}
+
+# Signin OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "auth_signin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signin.id
+  http_method = aws_api_gateway_method.auth_signin_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Signin OPTIONS Method Response
+resource "aws_api_gateway_method_response" "auth_signin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signin.id
+  http_method = aws_api_gateway_method.auth_signin_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Signin OPTIONS Integration Response
+resource "aws_api_gateway_integration_response" "auth_signin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_signin.id
+  http_method = aws_api_gateway_method.auth_signin_options.http_method
+  status_code = aws_api_gateway_method_response.auth_signin_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
 }

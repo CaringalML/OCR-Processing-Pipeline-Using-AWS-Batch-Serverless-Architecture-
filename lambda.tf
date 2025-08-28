@@ -933,3 +933,307 @@ resource "aws_lambda_event_source_mapping" "invoice_processor_sqs" {
     aws_iam_role_policy_attachment.invoice_processor_policy
   ]
 }
+# =============================================================================
+# COGNITO AUTHENTICATION LAMBDA FUNCTIONS
+# =============================================================================
+
+# Archive files for authentication functions
+data "archive_file" "cognito_pre_signup_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/cognito_pre_signup/cognito_pre_signup.zip"
+  source_file = "${path.module}/lambda_functions/cognito_pre_signup/cognito_pre_signup.py"
+}
+
+data "archive_file" "cognito_post_confirmation_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/cognito_post_confirmation/cognito_post_confirmation.zip"
+  source_file = "${path.module}/lambda_functions/cognito_post_confirmation/cognito_post_confirmation.py"
+}
+
+data "archive_file" "cognito_pre_authentication_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/cognito_pre_authentication/cognito_pre_authentication.zip"
+  source_file = "${path.module}/lambda_functions/cognito_pre_authentication/cognito_pre_authentication.py"
+}
+
+data "archive_file" "auth_signup_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/auth_signup/auth_signup.zip"
+  source_file = "${path.module}/lambda_functions/auth_signup/auth_signup.py"
+}
+
+data "archive_file" "auth_verify_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/auth_verify/auth_verify.zip"
+  source_file = "${path.module}/lambda_functions/auth_verify/auth_verify.py"
+}
+
+data "archive_file" "auth_signin_zip" {
+  type        = var.archive_file_type
+  output_path = "${path.module}/lambda_functions/auth_signin/auth_signin.zip"
+  source_file = "${path.module}/lambda_functions/auth_signin/auth_signin.py"
+}
+
+# Cognito Pre-Signup Lambda Function
+resource "aws_lambda_function" "cognito_pre_signup" {
+  filename         = data.archive_file.cognito_pre_signup_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-cognito-pre-signup"
+  role             = aws_iam_role.cognito_trigger_role.arn
+  handler          = "cognito_pre_signup.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.cognito_pre_signup_zip.output_base64sha256
+
+  environment {
+    variables = {
+      ENVIRONMENT = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cognito_trigger_policy,
+    aws_cloudwatch_log_group.cognito_pre_signup_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-cognito-pre-signup"
+    Purpose = "Validate user registration before signup"
+  })
+}
+
+# Cognito Post-Confirmation Lambda Function
+resource "aws_lambda_function" "cognito_post_confirmation" {
+  filename         = data.archive_file.cognito_post_confirmation_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-cognito-post-confirmation"
+  role             = aws_iam_role.cognito_trigger_role.arn
+  handler          = "cognito_post_confirmation.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.cognito_post_confirmation_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USER_PROFILE_TABLE = aws_dynamodb_table.user_profiles.name
+      ENVIRONMENT        = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cognito_trigger_policy,
+    aws_cloudwatch_log_group.cognito_post_confirmation_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-cognito-post-confirmation"
+    Purpose = "Create user profile after email confirmation"
+  })
+}
+
+# Cognito Pre-Authentication Lambda Function
+resource "aws_lambda_function" "cognito_pre_authentication" {
+  filename         = data.archive_file.cognito_pre_authentication_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-cognito-pre-authentication"
+  role             = aws_iam_role.cognito_trigger_role.arn
+  handler          = "cognito_pre_authentication.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.cognito_pre_authentication_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USER_PROFILE_TABLE         = aws_dynamodb_table.user_profiles.name
+      MAX_LOGIN_ATTEMPTS         = "5"
+      LOCKOUT_DURATION_MINUTES   = "30"
+      ENVIRONMENT                = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cognito_trigger_policy,
+    aws_cloudwatch_log_group.cognito_pre_authentication_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-cognito-pre-authentication"
+    Purpose = "Validate and track user authentication attempts"
+  })
+}
+
+# Auth Signup Lambda Function (API endpoint)
+resource "aws_lambda_function" "auth_signup" {
+  filename         = data.archive_file.auth_signup_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-auth-signup"
+  role             = aws_iam_role.auth_api_role.arn
+  handler          = "auth_signup.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.auth_signup_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USER_POOL_ID = aws_cognito_user_pool.main.id
+      CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ENVIRONMENT  = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.auth_api_policy,
+    aws_cloudwatch_log_group.auth_signup_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-auth-signup"
+    Purpose = "Handle user registration API requests"
+  })
+}
+
+# Auth Verify Lambda Function (API endpoint)
+resource "aws_lambda_function" "auth_verify" {
+  filename         = data.archive_file.auth_verify_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-auth-verify"
+  role             = aws_iam_role.auth_api_role.arn
+  handler          = "auth_verify.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.auth_verify_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USER_POOL_ID = aws_cognito_user_pool.main.id
+      CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ENVIRONMENT  = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.auth_api_policy,
+    aws_cloudwatch_log_group.auth_verify_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-auth-verify"
+    Purpose = "Handle email verification API requests"
+  })
+}
+
+# Auth Signin Lambda Function (API endpoint)
+resource "aws_lambda_function" "auth_signin" {
+  filename         = data.archive_file.auth_signin_zip.output_path
+  function_name    = "${var.project_name}-${var.environment}-auth-signin"
+  role             = aws_iam_role.auth_api_role.arn
+  handler          = "auth_signin.lambda_handler"
+  runtime          = var.lambda_runtime
+  timeout          = var.lambda_timeout_short
+  memory_size      = var.lambda_memory_small
+  source_code_hash = data.archive_file.auth_signin_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USER_POOL_ID = aws_cognito_user_pool.main.id
+      CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ENVIRONMENT  = var.environment
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.auth_api_policy,
+    aws_cloudwatch_log_group.auth_signin_logs
+  ]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.project_name}-${var.environment}-auth-signin"
+    Purpose = "Handle user authentication API requests"
+  })
+}
+
+# CloudWatch Log Groups for Authentication Functions
+resource "aws_cloudwatch_log_group" "cognito_pre_signup_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-cognito-pre-signup"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "Cognito pre-signup trigger logging"
+    Function = "cognito_pre_signup"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "cognito_post_confirmation_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-cognito-post-confirmation"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "Cognito post-confirmation trigger logging"
+    Function = "cognito_post_confirmation"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "cognito_pre_authentication_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-cognito-pre-authentication"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "Cognito pre-authentication trigger logging"
+    Function = "cognito_pre_authentication"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "auth_signup_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-auth-signup"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "User signup API logging"
+    Function = "auth_signup"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "auth_verify_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-auth-verify"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "Email verification API logging"
+    Function = "auth_verify"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "auth_signin_logs" {
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-auth-signin"
+  retention_in_days = var.cloudwatch_log_retention_days
+  skip_destroy      = var.cloudwatch_log_skip_destroy
+  tags = merge(var.common_tags, {
+    Purpose  = "User signin API logging"
+    Function = "auth_signin"
+  })
+}
+
+# Lambda Permissions for API Gateway
+resource "aws_lambda_permission" "auth_signup_api" {
+  statement_id  = "AllowAPIGatewayInvokeSignup"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_signup.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "auth_verify_api" {
+  statement_id  = "AllowAPIGatewayInvokeVerify"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_verify.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "auth_signin_api" {
+  statement_id  = "AllowAPIGatewayInvokeSignin"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_signin.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}

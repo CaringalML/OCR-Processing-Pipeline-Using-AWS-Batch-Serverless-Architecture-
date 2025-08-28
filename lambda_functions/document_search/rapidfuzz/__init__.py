@@ -6,11 +6,11 @@ from __future__ import annotations
 
 __author__: str = "Max Bachmann"
 __license__: str = "MIT"
-__version__: str = "3.13.0"
+__version__: str = "3.14.0"
 
 from rapidfuzz import distance, fuzz, process, utils
 
-__all__ = ["distance", "fuzz", "process", "utils", "get_include"]
+__all__ = ["distance", "fuzz", "get_include", "process", "utils"]
 
 
 def get_include():

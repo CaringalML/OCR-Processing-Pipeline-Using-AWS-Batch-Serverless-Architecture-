@@ -201,3 +201,29 @@ output "system_overview" {
     api_response_structure = "{ metadata: {...}, ocrResults: {...}, status: '...', fileId: '...' }"
   }
 }
+
+# ========================================
+# COGNITO AUTHENTICATION OUTPUTS (Additional)
+# ========================================
+
+output "cognito_user_pool_arn" {
+  description = "Cognito User Pool ARN"
+  value       = aws_cognito_user_pool.main.arn
+}
+
+# ========================================
+# FRONTEND ENVIRONMENT VARIABLES
+# ========================================
+
+output "frontend_env_vars" {
+  description = "Environment variables needed for frontend deployment"
+  value = {
+    REACT_APP_API_GATEWAY_URL      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.api_stage_name}"
+    REACT_APP_AWS_REGION           = var.aws_region
+    REACT_APP_S3_BUCKET_NAME       = aws_s3_bucket.upload_bucket.bucket
+    REACT_APP_USER_POOL_ID         = aws_cognito_user_pool.main.id
+    REACT_APP_USER_POOL_CLIENT_ID  = aws_cognito_user_pool_client.web_client.id
+    REACT_APP_CLOUDFRONT_URL       = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
+  }
+  sensitive = false
+}
