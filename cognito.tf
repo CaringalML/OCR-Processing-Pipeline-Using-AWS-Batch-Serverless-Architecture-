@@ -77,19 +77,6 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
-  schema {
-    name                     = "custom:organization"
-    attribute_data_type      = "String"
-    developer_only_attribute = false
-    mutable                  = true
-    required                 = false
-
-    string_attribute_constraints {
-      min_length = 0
-      max_length = 256
-    }
-  }
-
   # Deletion protection
   deletion_protection = var.environment == "prod" ? "ACTIVE" : "INACTIVE"
 

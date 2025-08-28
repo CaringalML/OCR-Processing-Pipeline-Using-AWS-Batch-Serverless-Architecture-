@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
-import { Eye, EyeOff, Mail, User, Building, Lock, AlertCircle, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Mail, User, Lock, AlertCircle, CheckCircle } from 'lucide-react';
 
 const SignUp = () => {
   const navigate = useNavigate();
@@ -36,8 +36,7 @@ const SignUp = () => {
       const result = await signUp({
         email: data.email,
         password: data.password,
-        name: data.name || '',
-        organization: data.organization || ''
+        name: data.name || ''
       });
 
       if (result.success) {
@@ -187,33 +186,6 @@ const SignUp = () => {
               </div>
               {errors.name && (
                 <p className="mt-2 text-sm text-red-600">{errors.name.message}</p>
-              )}
-            </div>
-
-            {/* Organization Field */}
-            <div>
-              <label htmlFor="organization" className="block text-sm font-medium text-gray-700">
-                Organization
-              </label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Building className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  {...register('organization', {
-                    maxLength: {
-                      value: 100,
-                      message: 'Organization name must be less than 100 characters'
-                    }
-                  })}
-                  type="text"
-                  autoComplete="organization"
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="Your Company"
-                />
-              </div>
-              {errors.organization && (
-                <p className="mt-2 text-sm text-red-600">{errors.organization.message}</p>
               )}
             </div>
 

@@ -182,8 +182,7 @@ class AuthService {
           userId: user.userId,
           username: user.username,
           email: user.signInDetails?.loginId || user.username,
-          name: user.name || '',
-          organization: user['custom:organization'] || ''
+          name: user.name || ''
         };
         this.isAuthenticated = true;
       }

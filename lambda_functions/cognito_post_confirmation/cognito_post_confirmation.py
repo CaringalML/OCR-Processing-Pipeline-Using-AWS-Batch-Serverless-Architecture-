@@ -29,7 +29,6 @@ def lambda_handler(event, context):
         user_id = event['request']['userAttributes']['sub']
         email = event['request']['userAttributes']['email']
         name = event['request']['userAttributes'].get('name', '')
-        organization = event['request']['userAttributes'].get('custom:organization', '')
         
         # Create user profile in DynamoDB
         table = dynamodb.Table(USER_TABLE_NAME)
@@ -38,7 +37,6 @@ def lambda_handler(event, context):
             'user_id': user_id,
             'email': email,
             'name': name,
-            'organization': organization,
             'created_at': datetime.utcnow().isoformat(),
             'updated_at': datetime.utcnow().isoformat(),
             'email_verified': True,

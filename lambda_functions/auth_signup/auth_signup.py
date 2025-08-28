@@ -46,7 +46,6 @@ def lambda_handler(event, context):
     email = body.get('email')
     password = body.get('password')
     name = body.get('name', '')
-    organization = body.get('organization', '')
     
     # Validate required fields
     if not email or not password:
@@ -69,9 +68,6 @@ def lambda_handler(event, context):
         
         if name:
             user_attributes.append({'Name': 'name', 'Value': name})
-        
-        if organization:
-            user_attributes.append({'Name': 'custom:organization', 'Value': organization})
         
         # Sign up the user
         response = cognito.sign_up(

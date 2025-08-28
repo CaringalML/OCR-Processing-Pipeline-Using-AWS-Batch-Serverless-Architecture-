@@ -46,10 +46,6 @@ def lambda_handler(event, context):
             event['response']['autoConfirmUser'] = False
             event['response']['autoVerifyEmail'] = False
         
-        # Add any custom validation here
-        # For example, check if organization is required
-        organization = event['request']['userAttributes'].get('custom:organization', '')
-        
         # Log successful validation
         logger.info(f"User {email} passed pre-signup validation")
         
