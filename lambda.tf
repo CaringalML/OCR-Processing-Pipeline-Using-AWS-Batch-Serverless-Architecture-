@@ -333,10 +333,10 @@ resource "aws_lambda_function" "short_batch_submitter" {
 
   environment {
     variables = {
-      SQS_QUEUE_URL  = aws_sqs_queue.short_batch_queue.url
-      RESULTS_TABLE  = aws_dynamodb_table.processing_results.name
-      LOG_LEVEL      = var.lambda_log_level
-      ENVIRONMENT    = var.environment
+      SQS_QUEUE_URL = aws_sqs_queue.short_batch_queue.url
+      RESULTS_TABLE = aws_dynamodb_table.processing_results.name
+      LOG_LEVEL     = var.lambda_log_level
+      ENVIRONMENT   = var.environment
     }
   }
 
@@ -1044,10 +1044,10 @@ resource "aws_lambda_function" "cognito_pre_authentication" {
 
   environment {
     variables = {
-      USER_PROFILE_TABLE         = aws_dynamodb_table.user_profiles.name
-      MAX_LOGIN_ATTEMPTS         = "5"
-      LOCKOUT_DURATION_MINUTES   = "30"
-      ENVIRONMENT                = var.environment
+      USER_PROFILE_TABLE       = aws_dynamodb_table.user_profiles.name
+      MAX_LOGIN_ATTEMPTS       = "5"
+      LOCKOUT_DURATION_MINUTES = "30"
+      ENVIRONMENT              = var.environment
     }
   }
 

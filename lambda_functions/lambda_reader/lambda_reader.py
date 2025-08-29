@@ -5,6 +5,66 @@ from datetime import datetime, timedelta
 from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
 import time
+import sys
+import logging
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Inline auth utilities (to avoid import path issues in Lambda deployment)
+def extract_user_context(event):
+    """Extract user context from API Gateway event with Cognito authorizer"""
+    try:
+        # Debug logging
+        logger.info(f"DEBUG: Full event keys: {list(event.keys())}")
+        if 'requestContext' in event:
+            logger.info(f"DEBUG: requestContext keys: {list(event['requestContext'].keys())}")
+            if 'authorizer' in event['requestContext']:
+                logger.info(f"DEBUG: authorizer keys: {list(event['requestContext']['authorizer'].keys())}")
+        
+        if 'requestContext' not in event:
+            raise Exception("Missing request context")
+        
+        request_context = event['requestContext']
+        
+        if 'authorizer' in request_context and 'claims' in request_context['authorizer']:
+            claims = request_context['authorizer']['claims']
+            
+            user_context = {
+                'user_id': claims.get('sub'),
+                'email': claims.get('email'),
+                'email_verified': claims.get('email_verified') == 'true',
+                'name': claims.get('name', ''),
+                'cognito_username': claims.get('cognito:username', claims.get('email'))
+            }
+            
+            if not user_context['user_id']:
+                raise Exception("User ID not found in token")
+            
+            if not user_context['email']:
+                raise Exception("Email not found in token")
+            
+            logger.info(f"User context extracted for {user_context['email']} (ID: {user_context['user_id']})")
+            return user_context
+        else:
+            raise Exception("No authorization information found")
+    except Exception as e:
+        logger.error(f"Failed to extract user context: {str(e)}")
+        raise Exception(f"Unauthorized: {str(e)}")
+
+def create_unauthorized_response(message="Unauthorized"):
+    """Create a standardized unauthorized response"""
+    return {
+        'statusCode': 401,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps({
+            'error': message
+        })
+    }
 
 def calculate_real_time_duration(processing_result):
     """Calculate real-time processing duration based on current time and start time"""
@@ -700,6 +760,14 @@ def lambda_handler(event, context):
     Supports both regular results and finalized results via ?finalized=true parameter
     """
     
+    # Extract user context from Cognito token
+    try:
+        user_context = extract_user_context(event)
+        logger.info(f"Processing read request for user: {user_context['email']}")
+    except Exception as e:
+        logger.error(f"Authentication failed: {str(e)}")
+        return create_unauthorized_response(str(e))
+    
     # Initialize AWS clients
     dynamodb = boto3.resource('dynamodb')
     
@@ -769,6 +837,20 @@ def lambda_handler(event, context):
                     }
                 
                 processing_result = decimal_to_json(finalized_response['Items'][0])
+                
+                # Check if user is authorized to access this finalized file
+                if processing_result.get('user_id') != user_context['user_id']:
+                    return {
+                        'statusCode': 403,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'error': 'Access Denied',
+                            'message': 'You do not have permission to access this file'
+                        })
+                    }
             else:
                 # Get file data from regular results table
                 results_response = table.get_item(
@@ -789,6 +871,20 @@ def lambda_handler(event, context):
                     }
                 
                 processing_result = decimal_to_json(results_response['Item'])
+                
+                # Check if user is authorized to access this file
+                if processing_result.get('user_id') != user_context['user_id']:
+                    return {
+                        'statusCode': 403,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'error': 'Access Denied',
+                            'message': 'You do not have permission to access this file'
+                        })
+                    }
             
             # Generate CloudFront URL from results table data
             s3_key = processing_result.get('key', '')
@@ -1047,9 +1143,14 @@ def lambda_handler(event, context):
             
             items = decimal_to_json(response.get('Items', []))
             
+            # Filter items to only show those belonging to the current user
+            user_filtered_items = [item for item in items if item.get('user_id') == user_context['user_id']]
+            
+            logger.info(f"Filtered {len(items)} items to {len(user_filtered_items)} items for user {user_context['email']}")
+            
             # Enrich items with CloudFront URLs and results
             processed_items = []
-            for item in items:
+            for item in user_filtered_items:
                 # Since we're using a single table, all data is already in 'item'
                 # No need for additional queries
                 processing_result = item  # All data is already here

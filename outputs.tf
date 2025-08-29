@@ -6,65 +6,65 @@ output "api_endpoints" {
   value = {
     # 🌐 BASE URL
     base_url = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}"
-    
+
     # 📄 DOCUMENT PROCESSING (Primary Workflow)
-    
+
     # Smart upload with automatic routing (≤300KB → Claude AI, >300KB → AWS Batch)
     upload_document = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/upload"
-    
+
     # Get specific processed document by file ID
     get_processed_file = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?fileId={file_id}"
-    
+
     # List all processed documents with optional filtering
     list_all_processed = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed"
-    
-    
+
+
     # 🎯 OCR FINALIZATION (Choose & Lock Final Version)
-    
+
     # Finalize OCR results - choose between formattedText/refinedText with optional editing
     finalize_ocr_results = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed/finalize/{file_id}"
-    
+
     # Get all finalized OCR results
     list_finalized_results = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?finalized=true"
-    
+
     # Get specific finalized result by file ID
     get_finalized_result = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/processed?fileId={file_id}&finalized=true"
-    
+
     # Edit finalized document with complete audit trail
     edit_finalized_document = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/finalized/edit/{file_id}"
-    
+
     # 🔍 SEARCH & DISCOVERY
-    
+
     # Search documents with fuzzy matching and metadata filtering (UNIFIED - all documents)
     search_documents = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/search?q={query}"
-    
+
     # 📁 FILE MANAGEMENT & RECYCLE BIN (Now consistent under /batch/)
-    
+
     # Delete processed file (soft delete to recycle bin with 30-day retention)
     delete_processed_file = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/delete/{file_id}"
-    
+
     # View all files in recycle bin with expiry information  
     view_recycle_bin = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/recycle-bin"
-    
+
     # Restore file from recycle bin to active state
     restore_deleted_file = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/restore/{file_id}"
-    
+
     # Permanently delete file (bypasses recycle bin - irreversible)
     permanent_delete_file = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/batch/delete/{file_id}?permanent=true"
-    
+
     # ⚡ FORCED PROCESSING (Bypass Smart Routing)
-    
+
     # Force Claude AI processing (recommended for ≤300KB files)
     force_claude_processing = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/upload"
-    
+
     # Force AWS Batch processing (for large/complex files >300KB) - Full Mode Only
     force_batch_processing = var.deployment_mode == "full" ? "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/long-batch/upload" : "❌ UNAVAILABLE - Long-batch processing disabled in short-batch deployment mode"
-    
+
     # 🧾 SPECIALIZED INVOICE PROCESSING
-    
+
     # Upload invoices for specialized OCR with 60+ field extraction
     upload_invoice = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/upload"
-    
+
     # Get processed invoice data with structured business fields
     get_processed_invoice = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.main.stage_name}/short-batch/invoices/processed?fileId={file_id}"
   }
@@ -78,40 +78,40 @@ output "deployment_info" {
   value = {
     # 🚀 Current Deployment Mode
     deployment_mode = var.deployment_mode
-    
+
     # 📊 Capabilities Summary
     capabilities = {
-      max_file_size            = var.deployment_mode == "full" ? "Unlimited (AWS Batch)" : "300KB (Lambda-only)"
-      long_batch_available     = var.deployment_mode == "full"
-      batch_processing         = var.deployment_mode == "full" ? "✅ AWS Batch + Textract for large files" : "❌ Disabled"
-      claude_processing        = "✅ Claude AI for files ≤300KB"
-      api_endpoints_available  = var.deployment_mode == "full" ? "All endpoints including /long-batch/*" : "/batch/* and /short-batch/* only"
+      max_file_size           = var.deployment_mode == "full" ? "Unlimited (AWS Batch)" : "300KB (Lambda-only)"
+      long_batch_available    = var.deployment_mode == "full"
+      batch_processing        = var.deployment_mode == "full" ? "✅ AWS Batch + Textract for large files" : "❌ Disabled"
+      claude_processing       = "✅ Claude AI for files ≤300KB"
+      api_endpoints_available = var.deployment_mode == "full" ? "All endpoints including /long-batch/*" : "/batch/* and /short-batch/* only"
     }
-    
+
     # 💰 Cost Estimate (Monthly)
     estimated_monthly_cost = var.deployment_mode == "full" ? "$176-295 (production scale with VPC interface endpoints)" : "$20-80 (development scale, gateway endpoints only)"
-    
+
     # ⏱️ Deployment Stats
     deployment_time = var.deployment_mode == "full" ? "5-7 minutes (includes AWS Batch)" : "2-3 minutes (Lambda-only)"
-    
+
     # 🎯 Recommended Use Cases
     recommended_for = var.deployment_mode == "full" ? [
       "Production deployments",
-      "Enterprise document processing", 
+      "Enterprise document processing",
       "Unlimited file size processing",
       "High-volume processing workflows"
-    ] : [
+      ] : [
       "Development and testing",
       "Small-scale deployments",
-      "Cost-conscious implementations", 
+      "Cost-conscious implementations",
       "Files ≤300KB processing only"
     ]
-    
+
     # 🔄 Scaling Options
     scaling_commands = {
-      upgrade_to_full    = var.deployment_mode == "short-batch" ? "make full-apply" : "Already in full mode"
-      scale_down         = var.deployment_mode == "full" ? "make long-destroy" : "Already in short-batch mode"
-      current_resources  = var.deployment_mode == "full" ? "Full infrastructure deployed" : "Short-batch resources only"
+      upgrade_to_full   = var.deployment_mode == "short-batch" ? "make full-apply" : "Already in full mode"
+      scale_down        = var.deployment_mode == "full" ? "make long-destroy" : "Already in short-batch mode"
+      current_resources = var.deployment_mode == "full" ? "Full infrastructure deployed" : "Short-batch resources only"
     }
   }
 }
@@ -124,39 +124,39 @@ output "infrastructure" {
   value = {
     # 🗄️ Storage & CDN
     storage = {
-      s3_bucket          = aws_s3_bucket.upload_bucket.id
-      cloudfront_url     = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
-      cloudfront_domain  = aws_cloudfront_distribution.s3_distribution.domain_name
+      s3_bucket         = aws_s3_bucket.upload_bucket.id
+      cloudfront_url    = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
+      cloudfront_domain = aws_cloudfront_distribution.s3_distribution.domain_name
     }
-    
+
     # 🗃️ Database Tables
     database = {
-      main_ocr_table       = aws_dynamodb_table.processing_results.name
-      finalized_ocr_table  = aws_dynamodb_table.ocr_finalized.name
-      invoice_table        = aws_dynamodb_table.invoice_processing_results.name
-      recycle_bin_table    = aws_dynamodb_table.recycle_bin.name
+      main_ocr_table      = aws_dynamodb_table.processing_results.name
+      finalized_ocr_table = aws_dynamodb_table.ocr_finalized.name
+      invoice_table       = aws_dynamodb_table.invoice_processing_results.name
+      recycle_bin_table   = aws_dynamodb_table.recycle_bin.name
     }
-    
+
     # 🔄 Message Queues (for monitoring)
     queues = {
-      short_batch_queue  = aws_sqs_queue.short_batch_queue.url
-      long_batch_queue   = var.deployment_mode == "full" ? aws_sqs_queue.batch_queue[0].url : "❌ UNAVAILABLE - Long-batch queue disabled in short-batch deployment mode"
-      invoice_queue      = aws_sqs_queue.invoice_queue.url
-      short_batch_dlq    = aws_sqs_queue.short_batch_dlq.url
-      long_batch_dlq     = var.deployment_mode == "full" ? aws_sqs_queue.batch_dlq[0].url : "❌ UNAVAILABLE - Long-batch DLQ disabled in short-batch deployment mode"
+      short_batch_queue = aws_sqs_queue.short_batch_queue.url
+      long_batch_queue  = var.deployment_mode == "full" ? aws_sqs_queue.batch_queue[0].url : "❌ UNAVAILABLE - Long-batch queue disabled in short-batch deployment mode"
+      invoice_queue     = aws_sqs_queue.invoice_queue.url
+      short_batch_dlq   = aws_sqs_queue.short_batch_dlq.url
+      long_batch_dlq    = var.deployment_mode == "full" ? aws_sqs_queue.batch_dlq[0].url : "❌ UNAVAILABLE - Long-batch DLQ disabled in short-batch deployment mode"
     }
-    
+
     # 🌍 Environment Info
     environment = {
-      aws_region         = var.aws_region
-      environment_name   = var.environment
-      project_name       = var.project_name
-      deployment_time    = timestamp()
+      aws_region       = var.aws_region
+      environment_name = var.environment
+      project_name     = var.project_name
+      deployment_time  = timestamp()
     }
-    
+
     # 🔒 Security Configuration
     security = {
-      cors_allowed_origin = var.cors_allowed_origin
+      cors_allowed_origin  = var.cors_allowed_origin
       cors_allowed_headers = var.cors_allowed_headers
     }
   }
@@ -171,18 +171,18 @@ output "system_overview" {
   value = {
     # 🔄 Processing Flow
     workflow = "📱 UPLOAD → 🤖 SMART ROUTING → ⚡ PROCESSING → 💾 STORAGE → 🔍 SEARCH"
-    
+
     # 🛤️ Smart Routing Rules
     routing = {
-      small_files    = "≤300KB → Claude AI (30s-10min, 15min Lambda max)"
-      large_files    = ">300KB → AWS Batch (5-60min, up to 24hrs for very large files)"
-      invoices       = "Any size → Specialized invoice processing (60+ fields)"
+      small_files = "≤300KB → Claude AI (30s-10min, 15min Lambda max)"
+      large_files = ">300KB → AWS Batch (5-60min, up to 24hrs for very large files)"
+      invoices    = "Any size → Specialized invoice processing (60+ fields)"
     }
-    
+
     # ✨ Key Features
     features = [
       "🤖 Smart file size routing",
-      "📚 Rich publication metadata", 
+      "📚 Rich publication metadata",
       "🗄️ Unified table architecture",
       "⚡ Real-time status tracking",
       "🌐 CloudFront CDN delivery",
@@ -193,10 +193,10 @@ output "system_overview" {
       "📝 Post-finalization document editing with audit trail",
       "📋 Complete version history and edit tracking"
     ]
-    
+
     # 📋 Metadata Fields
     supported_metadata = "file, publication, year, title, author, description, page, tags"
-    
+
     # 📤 Response Format
     api_response_structure = "{ metadata: {...}, ocrResults: {...}, status: '...', fileId: '...' }"
   }
@@ -218,12 +218,12 @@ output "cognito_user_pool_arn" {
 output "frontend_env_vars" {
   description = "Environment variables needed for frontend deployment"
   value = {
-    REACT_APP_API_GATEWAY_URL      = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.api_stage_name}"
-    REACT_APP_AWS_REGION           = var.aws_region
-    REACT_APP_S3_BUCKET_NAME       = aws_s3_bucket.upload_bucket.bucket
-    REACT_APP_USER_POOL_ID         = aws_cognito_user_pool.main.id
-    REACT_APP_USER_POOL_CLIENT_ID  = aws_cognito_user_pool_client.web_client.id
-    REACT_APP_CLOUDFRONT_URL       = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
+    REACT_APP_API_GATEWAY_URL     = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.api_stage_name}"
+    REACT_APP_AWS_REGION          = var.aws_region
+    REACT_APP_S3_BUCKET_NAME      = aws_s3_bucket.upload_bucket.bucket
+    REACT_APP_USER_POOL_ID        = aws_cognito_user_pool.main.id
+    REACT_APP_USER_POOL_CLIENT_ID = aws_cognito_user_pool_client.web_client.id
+    REACT_APP_CLOUDFRONT_URL      = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}"
   }
   sensitive = false
 }

@@ -83,7 +83,7 @@ variable "deployment_mode" {
   EOT
   type        = string
   default     = "full"
-  
+
   validation {
     condition     = contains(["short-batch", "full"], var.deployment_mode)
     error_message = "deployment_mode must be either 'short-batch' or 'full'"
@@ -673,7 +673,7 @@ variable "cors_allowed_headers" {
 variable "cors_allowed_origin" {
   description = "CORS allowed origin. '*' allows all origins (use specific domains in production for security)."
   type        = string
-  default     = "'https://d3kmkpcucx6beu.cloudfront.net'"
+  default     = "'*'"
 }
 
 variable "frontend_domain" {

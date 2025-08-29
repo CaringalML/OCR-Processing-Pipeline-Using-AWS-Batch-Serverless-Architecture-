@@ -1,9 +1,84 @@
+import authService from './authService.js';
+
 const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL;
 
 /**
  * Document Service - Handles document operations with API Gateway
  */
 class DocumentService {
+  /**
+   * Make an authenticated request with retry logic
+   * @param {Function} requestFn - Function that makes the actual request
+   * @param {string} errorContext - Context for error logging
+   * @param {number} maxRetries - Maximum number of retries
+   * @returns {Promise<any>} The response from the request
+   */
+  async _makeAuthenticatedRequest(requestFn, errorContext, maxRetries = 1) {
+    let lastError = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await requestFn();
+      } catch (error) {
+        lastError = error;
+        
+        // If it's a 401 error and we haven't exhausted retries, try to refresh auth
+        if (error.message.includes('Authentication failed') && attempt < maxRetries) {
+          console.log(`Authentication failed, attempting to refresh (attempt ${attempt + 1})`);
+          try {
+            // Force refresh the current user to get new tokens
+            await authService.loadCurrentUser();
+            // Continue to retry the request
+          } catch (refreshError) {
+            console.error('Failed to refresh authentication:', refreshError);
+            // If refresh fails, don't retry
+            break;
+          }
+        } else {
+          // For non-auth errors or final attempt, break out
+          break;
+        }
+      }
+    }
+    
+    console.error(errorContext, lastError);
+    throw lastError;
+  }
+
+  /**
+   * Get authorization headers for API calls
+   * @returns {Promise<Object>} Headers with Authorization token
+   */
+  async getAuthHeaders() {
+    try {
+      // Check if user is authenticated first
+      const isAuthenticated = await authService.isUserAuthenticated();
+      if (!isAuthenticated) {
+        console.error('User is not authenticated');
+        throw new Error('User is not authenticated');
+      }
+
+      const accessToken = await authService.getAccessToken();
+      if (!accessToken) {
+        console.error('No access token available despite being authenticated');
+        throw new Error('No access token available');
+      }
+      
+      console.log('Auth headers created successfully');
+      return {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      // Try to redirect to login if authentication fails
+      if (error.message.includes('not authenticated') || error.message.includes('No access token')) {
+        // Don't redirect here - let the calling component handle it
+        throw new Error('Authentication required - please sign in again');
+      }
+      throw error;
+    }
+  }
   /**
    * Get all processed documents (from both short and long batch)
    * @param {Object} params - Query parameters
@@ -14,7 +89,7 @@ class DocumentService {
    * @returns {Promise<Object>} List of processed documents
    */
   async getProcessedDocuments(params = {}) {
-    try {
+    return this._makeAuthenticatedRequest(async () => {
       const queryParams = new URLSearchParams();
       if (params.fileId) queryParams.append('fileId', params.fileId);
       if (params.limit) queryParams.append('limit', params.limit);
@@ -25,24 +100,22 @@ class DocumentService {
       }
 
       const url = `${API_BASE_URL}/batch/processed${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const headers = await this.getAuthHeaders();
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Authentication failed - please sign in again');
+        }
         throw new Error(`Failed to fetch documents: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error fetching processed documents:', error);
-      throw error;
-    }
+      return await response.json();
+    }, 'Error fetching processed documents');
   }
 
   /**
@@ -51,31 +124,29 @@ class DocumentService {
    * @returns {Promise<Object>} List of all processed documents
    */
   async getAllProcessedDocuments(params = {}) {
-    try {
+    return this._makeAuthenticatedRequest(async () => {
       const queryParams = new URLSearchParams();
       if (params.fileId) queryParams.append('fileId', params.fileId);
       if (params.limit) queryParams.append('limit', params.limit);
       if (params.status) queryParams.append('status', params.status);
 
       const url = `${API_BASE_URL}/batch/processed${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const headers = await this.getAuthHeaders();
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Authentication failed - please sign in again');
+        }
         throw new Error(`Failed to fetch documents: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error fetching all processed documents:', error);
-      throw error;
-    }
+      return await response.json();
+    }, 'Error fetching all processed documents');
   }
 
   /**
@@ -95,12 +166,11 @@ class DocumentService {
       
       const url = `${API_BASE_URL}/batch/processed?${queryParams.toString()}`;
       console.log('Fetching document from:', url);
+      const headers = await this.getAuthHeaders();
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -130,12 +200,12 @@ class DocumentService {
    */
   async editOCRResults(fileId, updates) {
     try {
+      const headers = await this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      
       const response = await fetch(`${API_BASE_URL}/batch/processed/edit?fileId=${fileId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers,
         body: JSON.stringify(updates),
       });
 
@@ -176,12 +246,12 @@ class DocumentService {
         body: requestBody
       });
 
+      const headers = await this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      
       const response = await fetch(`${API_BASE_URL}/batch/processed/finalize/${fileId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers,
         body: JSON.stringify(requestBody),
       });
 
@@ -216,12 +286,12 @@ class DocumentService {
         body: requestBody
       });
 
+      const headers = await this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      
       const response = await fetch(`${API_BASE_URL}/finalized/edit/${fileId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers,
         body: JSON.stringify(requestBody),
       });
 
@@ -244,11 +314,11 @@ class DocumentService {
    */
   async deleteDocument(fileId) {
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/batch/delete/${fileId}`, {
         method: 'DELETE',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -273,11 +343,11 @@ class DocumentService {
       console.log('Permanent delete URL:', url);
       console.log('API_BASE_URL:', API_BASE_URL);
       
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(url, {
         method: 'DELETE',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       console.log('Permanent delete response status:', response.status);
@@ -310,12 +380,11 @@ class DocumentService {
       if (params.fileId) queryParams.append('fileId', params.fileId);
 
       const url = `${API_BASE_URL}/batch/recycle-bin${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const headers = await this.getAuthHeaders();
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -336,11 +405,11 @@ class DocumentService {
    */
   async restoreDocument(fileId) {
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/batch/restore/${fileId}`, {
         method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -367,12 +436,11 @@ class DocumentService {
       if (params.invoiceNumber) queryParams.append('invoiceNumber', params.invoiceNumber);
 
       const url = `${API_BASE_URL}/short-batch/invoices/processed${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const headers = await this.getAuthHeaders();
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -404,8 +472,10 @@ class DocumentService {
       }
 
       // Otherwise, use the API endpoint
+      const headers = await this.getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/documents/${fileId}/download`, {
         method: 'GET',
+        headers,
       });
 
       if (!response.ok) {

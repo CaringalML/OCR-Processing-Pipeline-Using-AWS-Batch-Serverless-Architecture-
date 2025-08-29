@@ -1,4 +1,5 @@
 // API methods integrated directly in service
+import authService from './authService.js';
 
 const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL;
 
@@ -6,6 +7,25 @@ const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL;
  * Upload Service - Handles document uploads to API Gateway
  */
 class UploadService {
+  /**
+   * Get authorization headers for API calls
+   * @returns {Promise<Object>} Headers with Authorization token
+   */
+  async getAuthHeaders() {
+    try {
+      const accessToken = await authService.getAccessToken();
+      if (!accessToken) {
+        throw new Error('No access token available');
+      }
+      
+      return {
+        'Authorization': `Bearer ${accessToken}`,
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      throw new Error('Authentication required');
+    }
+  }
   /**
    * Upload a document with smart routing (auto-decides between short/long batch)
    * @param {File} file - The file to upload
@@ -72,10 +92,13 @@ class UploadService {
         }
       }
       
+      const headers = await this.getAuthHeaders();
+      // Don't set Content-Type header - browser will set it with boundary for FormData
+      
       const response = await fetch(`${API_BASE_URL}/batch/upload`, {
         method: 'POST',
+        headers,
         body: formData,
-        // Don't set Content-Type header - browser will set it with boundary
       });
 
       console.log('Response status:', response.status);
@@ -142,8 +165,11 @@ class UploadService {
     });
 
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/short-batch/upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -177,8 +203,11 @@ class UploadService {
     });
 
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/long-batch/upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -212,8 +241,11 @@ class UploadService {
     });
 
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/short-batch/invoices/upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -236,7 +268,11 @@ class UploadService {
    */
   async getUploadStatus(uploadId) {
     try {
-      const response = await fetch(`${API_BASE_URL}/upload/status/${uploadId}`);
+      const headers = await this.getAuthHeaders();
+      
+      const response = await fetch(`${API_BASE_URL}/upload/status/${uploadId}`, {
+        headers
+      });
       
       if (!response.ok) {
         throw new Error(`Failed to get upload status: ${response.statusText}`);
@@ -256,8 +292,11 @@ class UploadService {
    */
   async cancelUpload(uploadId) {
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/upload/cancel/${uploadId}`, {
         method: 'POST',
+        headers,
       });
       
       if (!response.ok) {

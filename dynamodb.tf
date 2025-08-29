@@ -35,7 +35,7 @@ resource "aws_dynamodb_table" "processing_results" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "ocr-processor-batch-processing-results",
+    Name    = "ocr-processor-batch-processing-results",
     Purpose = "Shared OCR results storage for both short-batch and long-batch processing with user isolation"
   })
 }
@@ -135,7 +135,7 @@ resource "aws_dynamodb_table" "invoice_processing_results" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "ocr-processor-batch-invoice-processing-results",
+    Name    = "ocr-processor-batch-invoice-processing-results",
     Purpose = "Invoice OCR processing results storage"
   })
 }
@@ -188,7 +188,7 @@ resource "aws_dynamodb_table" "ocr_finalized" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "ocr-processor-batch-finalized-results",
+    Name    = "ocr-processor-batch-finalized-results",
     Purpose = "Store finalized OCR results with user-selected text version and user isolation"
   })
 }
@@ -234,7 +234,7 @@ resource "aws_dynamodb_table" "edit_history" {
   }
 
   tags = merge(var.common_tags, {
-    Name = "ocr-processor-edit-history",
+    Name    = "ocr-processor-edit-history",
     Purpose = "Store edit history entries with automatic 30-day cleanup via TTL and user isolation"
   })
 }

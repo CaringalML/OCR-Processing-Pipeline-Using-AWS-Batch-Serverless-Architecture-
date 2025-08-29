@@ -9,6 +9,60 @@ import email
 from io import StringIO
 import logging
 from typing import Dict, Any, Tuple, Optional
+import sys
+
+# Inline auth utilities (to avoid import path issues in Lambda deployment)
+def extract_user_context(event):
+    """Extract user context from API Gateway event with Cognito authorizer"""
+    try:
+        if 'requestContext' not in event:
+            raise Exception("Missing request context")
+        
+        request_context = event['requestContext']
+        
+        if 'authorizer' in request_context and 'claims' in request_context['authorizer']:
+            claims = request_context['authorizer']['claims']
+            
+            user_context = {
+                'user_id': claims.get('sub'),
+                'email': claims.get('email'),
+                'email_verified': claims.get('email_verified') == 'true',
+                'name': claims.get('name', ''),
+                'cognito_username': claims.get('cognito:username', claims.get('email'))
+            }
+            
+            if not user_context['user_id']:
+                raise Exception("User ID not found in token")
+            
+            if not user_context['email']:
+                raise Exception("Email not found in token")
+            
+            logger.info(f"User context extracted for {user_context['email']} (ID: {user_context['user_id']})")
+            return user_context
+        else:
+            raise Exception("No authorization information found")
+    except Exception as e:
+        logger.error(f"Failed to extract user context: {str(e)}")
+        raise Exception(f"Unauthorized: {str(e)}")
+
+def add_user_context_to_item(item, user_context):
+    """Add user context fields to a DynamoDB item"""
+    item['user_id'] = user_context['user_id']
+    item['user_email'] = user_context['email']
+    return item
+
+def create_unauthorized_response(message="Unauthorized"):
+    """Create a standardized unauthorized response"""
+    return {
+        'statusCode': 401,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps({
+            'error': message
+        })
+    }
 
 # Configure logging
 logger = logging.getLogger()
@@ -306,6 +360,14 @@ def lambda_handler(event, context):
     Query Parameters:
     - route=short-batch|long-batch - Override routing decision
     """
+    # Extract user context from Cognito token
+    try:
+        user_context = extract_user_context(event)
+        logger.info(f"Processing upload for user: {user_context['email']}")
+    except Exception as e:
+        logger.error(f"Authentication failed: {str(e)}")
+        return create_unauthorized_response(str(e))
+    
     s3 = boto3.client('s3')
     dynamodb = boto3.resource('dynamodb')
     
@@ -530,6 +592,9 @@ def lambda_handler(event, context):
             # Add optional form data for other purposes
             if 'priority' in form_data:
                 item['priority'] = form_data['priority']
+            
+            # Add user context to the item
+            item = add_user_context_to_item(item, user_context)
             
             table.put_item(Item=item)
             

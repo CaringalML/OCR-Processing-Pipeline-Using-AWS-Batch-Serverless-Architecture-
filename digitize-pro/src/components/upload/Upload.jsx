@@ -126,7 +126,13 @@ const Upload = () => {
         }
       } catch (error) {
         console.error('Error fetching processed documents:', error);
-        setUploadError(`Failed to load processed documents: ${error.message}`);
+        
+        // Handle authentication errors specifically
+        if (error.message.includes('Authentication failed') || error.message.includes('Authentication required')) {
+          setUploadError('Authentication expired. Please sign in again.');
+        } else {
+          setUploadError(`Failed to load processed documents: ${error.message}`);
+        }
       } finally {
         setLoadingProcessed(false);
       }

@@ -12,7 +12,7 @@ resource "aws_cognito_user_pool" "main" {
   # Username configuration - use email as username
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
-  
+
   # Case sensitivity
   username_configuration {
     case_sensitive = false
@@ -82,13 +82,13 @@ resource "aws_cognito_user_pool" "main" {
 
   # Lambda triggers
   lambda_config {
-    pre_sign_up    = aws_lambda_function.cognito_pre_signup.arn
-    post_confirmation = aws_lambda_function.cognito_post_confirmation.arn
+    pre_sign_up        = aws_lambda_function.cognito_pre_signup.arn
+    post_confirmation  = aws_lambda_function.cognito_post_confirmation.arn
     pre_authentication = aws_lambda_function.cognito_pre_authentication.arn
   }
 
   tags = merge(var.common_tags, {
-    Name = "${var.project_name}-${var.environment}-user-pool"
+    Name    = "${var.project_name}-${var.environment}-user-pool"
     Purpose = "User authentication for OCR processing system"
   })
 }
@@ -129,7 +129,7 @@ resource "aws_cognito_user_pool_client" "web_client" {
 
   # Callback and logout URLs using frontend domain variable
   callback_urls = [var.frontend_domain]
-  logout_urls = [var.frontend_domain]
+  logout_urls   = [var.frontend_domain]
 
   # Allowed OAuth flows and scopes (for future use)
   allowed_oauth_flows_user_pool_client = false
@@ -155,12 +155,12 @@ resource "random_string" "cognito_domain_suffix" {
 
 # API Gateway Authorizer
 resource "aws_api_gateway_authorizer" "cognito" {
-  name                   = "${var.project_name}-cognito-authorizer"
-  type                   = "COGNITO_USER_POOLS"
-  rest_api_id           = aws_api_gateway_rest_api.main.id
-  provider_arns         = [aws_cognito_user_pool.main.arn]
-  identity_source       = "method.request.header.Authorization"
-  
+  name            = "${var.project_name}-cognito-authorizer"
+  type            = "COGNITO_USER_POOLS"
+  rest_api_id     = aws_api_gateway_rest_api.main.id
+  provider_arns   = [aws_cognito_user_pool.main.arn]
+  identity_source = "method.request.header.Authorization"
+
   # Cache auth results for 5 minutes
   authorizer_result_ttl_in_seconds = 300
 }

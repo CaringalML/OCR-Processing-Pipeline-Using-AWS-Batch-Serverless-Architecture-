@@ -1,9 +1,9 @@
 resource "aws_batch_compute_environment" "main" {
-  count                    = var.deployment_mode == "full" ? 1 : 0
-  compute_environment_name = "${var.project_name}-${var.environment}-compute-env"
-  type                     = var.batch_compute_environment_type
-  state                    = var.batch_compute_environment_state
-  service_role             = aws_iam_role.batch_service_role[0].arn
+  count                     = var.deployment_mode == "full" ? 1 : 0
+  compute_environment_name  = "${var.project_name}-${var.environment}-compute-env"
+  type                      = var.batch_compute_environment_type
+  state                     = var.batch_compute_environment_state
+  service_role              = aws_iam_role.batch_service_role[0].arn
 
   compute_resources {
     type               = var.batch_compute_resources_type
@@ -35,8 +35,8 @@ resource "aws_batch_job_queue" "main" {
 
 resource "aws_batch_job_definition" "main" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-${var.environment}-job-def"
-  type = var.batch_job_definition_type
+  name  = "${var.project_name}-${var.environment}-job-def"
+  type  = var.batch_job_definition_type
 
   platform_capabilities = var.batch_platform_capabilities
 

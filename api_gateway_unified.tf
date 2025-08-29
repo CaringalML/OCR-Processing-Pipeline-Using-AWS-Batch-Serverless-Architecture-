@@ -225,6 +225,56 @@ resource "aws_lambda_permission" "batch_upload_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/upload"
 }
 
+# Batch Upload OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "batch_upload_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_upload.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Upload OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "batch_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_upload.id
+  http_method = aws_api_gateway_method.batch_upload_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Upload OPTIONS Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_upload.id
+  http_method = aws_api_gateway_method.batch_upload_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Upload OPTIONS Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_upload.id
+  http_method = aws_api_gateway_method.batch_upload_options.http_method
+  status_code = aws_api_gateway_method_response.batch_upload_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_upload_options]
+}
+
 # Batch Processed GET Method (view processed files)
 resource "aws_api_gateway_method" "batch_processed_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -255,13 +305,90 @@ resource "aws_lambda_permission" "batch_processed_get_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/processed"
 }
 
+# Batch Processed GET Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_processed_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_get.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Batch Processed GET Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_processed_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_get.http_method
+  status_code = aws_api_gateway_method_response.batch_processed_get.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_processed_get]
+}
+
+# Batch Processed OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "batch_processed_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_processed.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Processed OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "batch_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Processed OPTIONS Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Processed OPTIONS Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_processed_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_processed.id
+  http_method = aws_api_gateway_method.batch_processed_options.http_method
+  status_code = aws_api_gateway_method_response.batch_processed_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_processed_options]
+}
+
 
 # Batch Processed Finalize POST Method (finalize processed files)
 resource "aws_api_gateway_method" "batch_processed_finalize_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_processed_finalize_file_id.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Processed Finalize POST Integration (to finalizer Lambda)
@@ -414,7 +541,8 @@ resource "aws_api_gateway_method" "batch_recycle_bin_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_recycle_bin.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Recycle Bin GET Integration (to recycle bin reader Lambda)
@@ -437,12 +565,89 @@ resource "aws_lambda_permission" "batch_recycle_bin_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/recycle-bin"
 }
 
+# Batch Recycle Bin GET Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_recycle_bin_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_get.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Batch Recycle Bin GET Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_recycle_bin_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_get.http_method
+  status_code = aws_api_gateway_method_response.batch_recycle_bin_get.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_recycle_bin_get]
+}
+
+# Batch Recycle Bin OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "batch_recycle_bin_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Recycle Bin OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "batch_recycle_bin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Recycle Bin OPTIONS Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_recycle_bin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Recycle Bin OPTIONS Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_recycle_bin_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_recycle_bin.id
+  http_method = aws_api_gateway_method.batch_recycle_bin_options.http_method
+  status_code = aws_api_gateway_method_response.batch_recycle_bin_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_recycle_bin_options]
+}
+
 # Batch Restore POST Method (restore from recycle bin)
 resource "aws_api_gateway_method" "batch_restore_post" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.batch_restore_file_id.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Batch Restore POST Integration (to restorer Lambda)
@@ -463,6 +668,56 @@ resource "aws_lambda_permission" "batch_restore_api_gateway" {
   function_name = aws_lambda_function.restorer.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/POST/batch/restore/*"
+}
+
+# Batch Restore OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "batch_restore_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_restore_file_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Restore OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "batch_restore_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_restore_file_id.id
+  http_method = aws_api_gateway_method.batch_restore_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Restore OPTIONS Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_restore_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_restore_file_id.id
+  http_method = aws_api_gateway_method.batch_restore_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Restore OPTIONS Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_restore_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_restore_file_id.id
+  http_method = aws_api_gateway_method.batch_restore_options.http_method
+  status_code = aws_api_gateway_method_response.batch_restore_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_restore_options]
 }
 
 # Batch Search GET Method (unified search)
@@ -493,12 +748,89 @@ resource "aws_lambda_permission" "batch_search_api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/${var.api_stage_name}/GET/batch/search"
 }
 
+# Batch Search GET Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_search_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_get.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Batch Search GET Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_search_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_get.http_method
+  status_code = aws_api_gateway_method_response.batch_search_get.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_search_get]
+}
+
+# Batch Search OPTIONS Method (CORS)
+resource "aws_api_gateway_method" "batch_search_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.batch_search.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Batch Search OPTIONS Integration (CORS)
+resource "aws_api_gateway_integration" "batch_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = var.mock_response_template
+  }
+}
+
+# Batch Search OPTIONS Method Response (CORS)
+resource "aws_api_gateway_method_response" "batch_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# Batch Search OPTIONS Integration Response (CORS)
+resource "aws_api_gateway_integration_response" "batch_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.batch_search.id
+  http_method = aws_api_gateway_method.batch_search_options.http_method
+  status_code = aws_api_gateway_method_response.batch_search_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+  }
+
+  depends_on = [aws_api_gateway_integration.batch_search_options]
+}
+
 # Finalized Edit PUT Method (edit finalized documents)
 resource "aws_api_gateway_method" "finalized_edit_put" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.finalized_edit_file_id.id
   http_method   = "PUT"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # Finalized Edit PUT Integration (to finalized_editor Lambda)
@@ -991,14 +1323,22 @@ resource "aws_api_gateway_deployment" "main" {
   depends_on = [
     # Base integrations
     aws_api_gateway_integration.batch_upload_post,
+    aws_api_gateway_integration.batch_upload_options,
     aws_api_gateway_integration.batch_processed_get,
+    aws_api_gateway_integration_response.batch_processed_get,
+    aws_api_gateway_integration.batch_processed_options,
     aws_api_gateway_integration.batch_processed_finalize_post,
     aws_api_gateway_integration.batch_processed_finalize_options,
     aws_api_gateway_integration.batch_delete_post,
     aws_api_gateway_integration.batch_delete_options,
     aws_api_gateway_integration.batch_recycle_bin_get,
+    aws_api_gateway_integration_response.batch_recycle_bin_get,
+    aws_api_gateway_integration.batch_recycle_bin_options,
     aws_api_gateway_integration.batch_restore_post,
+    aws_api_gateway_integration.batch_restore_options,
     aws_api_gateway_integration.batch_search_get,
+    aws_api_gateway_integration_response.batch_search_get,
+    aws_api_gateway_integration.batch_search_options,
     aws_api_gateway_integration.finalized_edit_put,
     aws_api_gateway_integration.finalized_edit_options,
     aws_api_gateway_integration.short_batch_upload_post,
@@ -1014,6 +1354,11 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.auth_verify_options,
     aws_api_gateway_integration.auth_signin_post,
     aws_api_gateway_integration.auth_signin_options,
+    # Gateway responses for CORS
+    aws_api_gateway_gateway_response.unauthorized,
+    aws_api_gateway_gateway_response.forbidden,
+    aws_api_gateway_gateway_response.default_4xx,
+    aws_api_gateway_gateway_response.default_5xx,
   ]
 
 
@@ -1039,6 +1384,11 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.finalized_edit_options.id,
       aws_api_gateway_resource.short_batch.id,
       aws_api_gateway_resource.short_batch_upload.id,
+      # Gateway Responses for CORS
+      aws_api_gateway_gateway_response.unauthorized.id,
+      aws_api_gateway_gateway_response.forbidden.id,
+      aws_api_gateway_gateway_response.default_4xx.id,
+      aws_api_gateway_gateway_response.default_5xx.id,
       ], var.deployment_mode == "full" ? [
       aws_api_gateway_resource.long_batch[0].id,
       aws_api_gateway_resource.long_batch_upload[0].id,
@@ -1059,6 +1409,76 @@ resource "aws_api_gateway_stage" "main" {
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.api_stage_name}-stage"
   })
+}
+
+# ========================================
+# GATEWAY RESPONSES (CORS for error responses)
+# ========================================
+
+# Gateway Response for 401 Unauthorized
+resource "aws_api_gateway_gateway_response" "unauthorized" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "UNAUTHORIZED"
+  status_code   = "401"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+    "gatewayresponse.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
+}
+
+# Gateway Response for 403 Forbidden  
+resource "aws_api_gateway_gateway_response" "forbidden" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "ACCESS_DENIED"
+  status_code   = "403"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+    "gatewayresponse.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
+}
+
+# Gateway Response for Default 4XX errors
+resource "aws_api_gateway_gateway_response" "default_4xx" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "DEFAULT_4XX"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+    "gatewayresponse.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
+}
+
+# Gateway Response for Default 5XX errors
+resource "aws_api_gateway_gateway_response" "default_5xx" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "DEFAULT_5XX"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = var.cors_allowed_origin
+    "gatewayresponse.header.Access-Control-Allow-Headers" = var.cors_allowed_headers
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
 }
 
 # ========================================

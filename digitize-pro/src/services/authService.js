@@ -236,6 +236,9 @@ class AuthService {
       await this.loadCurrentUser();
       return this.isAuthenticated;
     } catch (error) {
+      console.error('Authentication check failed:', error);
+      this.user = null;
+      this.isAuthenticated = false;
       return false;
     }
   }

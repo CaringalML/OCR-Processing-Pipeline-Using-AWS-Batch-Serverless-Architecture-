@@ -48,7 +48,7 @@ resource "aws_iam_role_policy" "lambda_batch_policy" {
 # AWS Batch service role
 resource "aws_iam_role" "batch_service_role" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-batch-service-role"
+  name  = "${var.project_name}-batch-service-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -73,7 +73,7 @@ resource "aws_iam_role_policy_attachment" "batch_service_role_policy" {
 # ECS instance role for Batch
 resource "aws_iam_role" "ecs_instance_role" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-ecs-instance-role"
+  name  = "${var.project_name}-ecs-instance-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -97,14 +97,14 @@ resource "aws_iam_role_policy_attachment" "ecs_instance_role_policy" {
 
 resource "aws_iam_instance_profile" "ecs_instance_profile" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-ecs-instance-profile"
-  role = aws_iam_role.ecs_instance_role[0].name
+  name  = "${var.project_name}-ecs-instance-profile"
+  role  = aws_iam_role.ecs_instance_role[0].name
 }
 
 # Task execution role for Batch jobs
 resource "aws_iam_role" "batch_task_execution_role" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-batch-task-execution-role"
+  name  = "${var.project_name}-batch-task-execution-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -129,7 +129,7 @@ resource "aws_iam_role_policy_attachment" "batch_task_execution_role_policy" {
 # Task role for Batch jobs
 resource "aws_iam_role" "batch_task_role" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-batch-task-role"
+  name  = "${var.project_name}-batch-task-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -147,8 +147,8 @@ resource "aws_iam_role" "batch_task_role" {
 
 resource "aws_iam_role_policy" "batch_task_policy" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-batch-task-policy"
-  role = aws_iam_role.batch_task_role[0].id
+  name  = "${var.project_name}-batch-task-policy"
+  role  = aws_iam_role.batch_task_role[0].id
 
   policy = jsonencode({
     Version = var.iam_policy_version
@@ -352,7 +352,7 @@ resource "aws_iam_role" "short_batch_submitter_role" {
 # SQS Processor Lambda Role (Full Mode Only)
 resource "aws_iam_role" "sqs_processor_role" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-${var.environment}-sqs-processor-role"
+  name  = "${var.project_name}-${var.environment}-sqs-processor-role"
 
   assume_role_policy = jsonencode({
     Version = var.iam_policy_version
@@ -741,7 +741,7 @@ resource "aws_iam_policy" "short_batch_processor_policy" {
 # SQS Processor Lambda Policy (Full Mode Only)
 resource "aws_iam_policy" "sqs_processor_policy" {
   count = var.deployment_mode == "full" ? 1 : 0
-  name = "${var.project_name}-${var.environment}-sqs-processor-policy"
+  name  = "${var.project_name}-${var.environment}-sqs-processor-policy"
 
   policy = jsonencode({
     Version = var.iam_policy_version

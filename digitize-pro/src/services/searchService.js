@@ -1,9 +1,31 @@
+import authService from './authService.js';
+
 const API_BASE_URL = process.env.REACT_APP_API_GATEWAY_URL;
 
 /**
  * Search Service - Handles document search operations with API Gateway
  */
 class SearchService {
+  /**
+   * Get authorization headers for API calls
+   * @returns {Promise<Object>} Headers with Authorization token
+   */
+  async getAuthHeaders() {
+    try {
+      const accessToken = await authService.getAccessToken();
+      if (!accessToken) {
+        throw new Error('No access token available');
+      }
+      
+      return {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      throw new Error('Authentication required');
+    }
+  }
   /**
    * Search documents with intelligent fuzzy matching
    * @param {Object} params - Search parameters
@@ -44,11 +66,11 @@ class SearchService {
       console.log('🔍 Search API URL:', url);
       console.log('🔍 Search params:', params);
       
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -154,11 +176,11 @@ class SearchService {
    */
   async getSearchSuggestions(query) {
     try {
+      const headers = await this.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/search/suggestions?q=${encodeURIComponent(query)}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {

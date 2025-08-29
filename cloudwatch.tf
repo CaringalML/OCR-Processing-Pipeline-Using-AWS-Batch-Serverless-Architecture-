@@ -114,7 +114,7 @@ resource "aws_cloudwatch_metric_alarm" "batch_failed_jobs" {
 # SNS Topic for Critical Alerts Only
 resource "aws_sns_topic" "critical_alerts" {
   name = "${var.project_name}-${var.environment}-critical-alerts"
-  
+
   tags = merge(var.common_tags, {
     Purpose   = "Critical system notifications DLQ Rate limiting Budget Setup"
     AlertType = "Critical"
@@ -124,7 +124,7 @@ resource "aws_sns_topic" "critical_alerts" {
 # Send initial setup notification after topic is created
 resource "null_resource" "sns_welcome_message" {
   depends_on = [aws_sns_topic.critical_alerts]
-  
+
   provisioner "local-exec" {
     command = "aws sns publish --topic-arn ${aws_sns_topic.critical_alerts.arn} --subject 'OCR System Notifications Enabled' --message 'SNS notifications are now active for Dead Letter Queue failures, Rate limiting attacks, Short-batch budget alerts, and system setup. Please subscribe to receive alerts.' --region ${var.aws_region} || true"
   }
@@ -235,7 +235,7 @@ resource "aws_cloudwatch_metric_alarm" "short_batch_budget_alert" {
   alarm_actions       = [aws_sns_topic.critical_alerts.arn]
 
   dimensions = {
-    Currency = "USD"
+    Currency    = "USD"
     ServiceName = "AmazonAPIGateway" # Proxy for Claude API usage
   }
 
