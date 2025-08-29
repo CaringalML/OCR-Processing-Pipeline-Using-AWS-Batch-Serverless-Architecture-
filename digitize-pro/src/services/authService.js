@@ -204,11 +204,23 @@ class AuthService {
   async getSession() {
     try {
       const session = await fetchAuthSession();
-      return {
+      
+      const result = {
         accessToken: session.tokens?.accessToken?.toString(),
         idToken: session.tokens?.idToken?.toString(),
         refreshToken: session.tokens?.refreshToken?.toString()
       };
+      
+      // Debug logging
+      console.log('Session debug:', {
+        hasAccessToken: !!result.accessToken,
+        hasIdToken: !!result.idToken,
+        hasRefreshToken: !!result.refreshToken,
+        accessTokenLength: result.accessToken?.length,
+        idTokenLength: result.idToken?.length
+      });
+      
+      return result;
     } catch (error) {
       console.error('Get session error:', error);
       return null;
@@ -217,13 +229,28 @@ class AuthService {
 
   /**
    * Get access token for API requests
+   * Note: For Cognito User Pool authorizers, we actually need the ID token, not access token
    */
   async getAccessToken() {
     try {
       const session = await this.getSession();
-      return session?.accessToken;
+      // For Cognito User Pool authorizers in API Gateway, use ID token instead of access token
+      return session?.idToken || session?.accessToken;
     } catch (error) {
       console.error('Get access token error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get ID token for API Gateway Cognito authorizer
+   */
+  async getIdToken() {
+    try {
+      const session = await this.getSession();
+      return session?.idToken;
+    } catch (error) {
+      console.error('Get ID token error:', error);
       return null;
     }
   }

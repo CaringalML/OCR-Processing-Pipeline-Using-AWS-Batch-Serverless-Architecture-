@@ -64,7 +64,11 @@ class DocumentService {
         throw new Error('No access token available');
       }
       
+      // Debug: Log token info (without exposing the actual token)
       console.log('Auth headers created successfully');
+      console.log('Token length:', accessToken?.length);
+      console.log('Token starts with:', accessToken?.substring(0, 20) + '...');
+      
       return {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
